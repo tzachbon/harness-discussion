@@ -14,6 +14,52 @@ from unittest.mock import Mock, patch
 from tests.win_edit_fakes import UNSUPPORTED, Document, Range, clipboard, native_host, target
 
 class CaptureSafety(unittest.TestCase):
+    def test_held_keys_copy_dictation_without_attempting_input(self):
+        from tests.test_app_writer import _App
+        from harness_discussion.win import edit
+        chord = edit.keys.chord
+        for held in (0x11, 0x5B, ord("V")):
+            with self.subTest(held=held):
+                document, native = Document(), Mock()
+                native.GetAsyncKeyState.side_effect = lambda vk: 0x8000 if vk == held else 0
+                with target(document) as (_, _, _, cleanup), patch.object(edit.keys, "u32", native), \
+                        patch.object(edit.keys, "chord", chord):
+                    context = edit.capture(False)
+                    app = _App()
+                    app.edit, app._dictate_ctx = edit, context
+                    app._dictated(app._rewrite_id, None, ("synthetic result", "Local", None),
+                                  (10, 10, None), (0, .1, None, "Local"))
+                    self.assertFalse(context._insertion_attempted)
+                    self.assertIsNone(context._receipt)
+                    self.assertEqual(document.text, "Left old right")
+                    native.SendInput.assert_not_called()
+                    cleanup.assert_called_once_with(expected_sequence=11)
+                    self.assertEqual(app.copied, ["synthetic result"])
+                    self.assertEqual(app.toast_.shown[-1][0], "Copied to clipboard")
+
+    def test_partial_input_does_not_copy_dictation_or_retry(self):
+        from tests.test_app_writer import _App
+        from harness_discussion.win import edit
+        chord, native = edit.keys.chord, Mock()
+        native.GetAsyncKeyState.return_value = 0
+        native.SendInput.side_effect = [1, 1]
+        with target(Document()) as (_, _, _, cleanup), patch.object(edit.keys, "u32", native), \
+                patch.object(edit.keys, "chord", chord):
+            context = edit.capture(False)
+            app = _App()
+            app.edit, app._dictate_ctx = edit, context
+            app._dictated(app._rewrite_id, None, ("synthetic result", "Local", None),
+                          (10, 10, None), (0, .1, None, "Local"))
+            self.assertTrue(context._insertion_attempted)
+            self.assertIsNone(context._receipt)
+            self.assertEqual(app.copied, [])
+            self.assertFalse(app.toast_.visible)
+            cleanup.assert_called_once_with(expected_sequence=11)
+        first, cleanup = native.SendInput.call_args_list
+        self.assertEqual(first.args[0], 4)
+        self.assertEqual(cleanup.args[0], 1)
+        self.assertEqual(cleanup.args[1][0].ki.dwFlags, 2)
+
     def test_unconfirmed_paste_is_distinguished_from_a_preflight_refusal(self):
         from harness_discussion.win import edit
         document = Document()

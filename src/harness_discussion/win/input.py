@@ -30,14 +30,16 @@ u32.SendInput.argtypes = [wintypes.UINT, ctypes.POINTER(_Input), ctypes.c_int]
 u32.SendInput.restype = wintypes.UINT
 
 
-def chord(key):
-    """One Ctrl+key batch, False on held keys, UIPI, or short delivery. Never retries the action."""
+def chord(key, on_attempt=None):
+    """One Ctrl+key batch. Notify just before input, after held-key refusal. Never retry the action."""
     if any(u32.GetAsyncKeyState(vk) & 0x8000 for vk in (*MODIFIERS, key)):
         return False
     events = [(0x11, 0), (key, 0), (key, UP), (0x11, UP)]
     batch = (_Input * len(events))(*(_Input(type=1, ki=_Keyboard(wVk=vk, dwFlags=flag))
                                     for vk, flag in events))
     held = {0x11, key}
+    if on_attempt is not None:
+        on_attempt()
     try:
         count = u32.SendInput(len(batch), batch, ctypes.sizeof(_Input))
         if count == len(batch):

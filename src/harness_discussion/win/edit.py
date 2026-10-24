@@ -157,9 +157,8 @@ def _replace(text, context):
             try:
                 check = _inspect()
                 ready = check and _matches(context, check[0]) and clipboard.sequence() == ours
-                if ready:
-                    context._insertion_attempted = True
-                if ready and keys.chord(ord("V")):
+                if ready and keys.chord(ord("V"),
+                                        on_attempt=lambda: setattr(context, "_insertion_attempted", True)):
                     deadline = time.monotonic() + 1.0
                     while time.monotonic() < deadline:
                         result = _inspect()
