@@ -1,4 +1,6 @@
 """macOS host: AppKit on the main thread, a menu bar item, Accessibility for the selection."""
+import os
+
 import AppKit
 import objc
 from Foundation import NSObject
@@ -134,6 +136,10 @@ class MacHost:
 
     def set_permission_missing(self, missing):
         self._missing = missing
+        if missing:
+            for shortcut in self.shortcuts.values():
+                if shortcut.on_release is not None:
+                    shortcut.stop()
         self.refresh_menu()
         win = self.app.settings_win
         if win and win.alive:
@@ -150,6 +156,17 @@ class MacHost:
 
     def read_selection(self, clipboard_fallback):
         return selection.read(clipboard_fallback)
+
+    def dictation_target(self):
+        """Freeze identity without Accessibility traversal or clipboard capture."""
+        try:
+            pid = edit._frontmost_pid()
+            if not pid or pid == os.getpid():
+                return None
+            window = edit._window_number(pid)
+            return (pid, window) if window else None
+        except Exception:
+            return None
 
     def start_trigger(self, on_selection, on_press):
         self._trigger_args = on_selection, on_press
@@ -168,13 +185,16 @@ class MacHost:
             self.hotkey.stop()
         self.hotkey = HotKey(spec, on_hotkey) if spec else None
 
-    def set_shortcut(self, name, spec, fn, on_release=None):
+    def set_shortcut(self, name, spec, fn, on_release=None, *, on_activity=None, on_cancel=None):
         """Replaces one of the writer's shortcuts; "" turns it off. on_release makes it a hold shortcut."""
         old = self.shortcuts.pop(name, None)
         if old:
             old.stop()
         if spec:
-            self.shortcuts[name] = HotKey(spec, fn, on_release)
+            options = {"on_activity": on_activity} if on_activity is not None else {}
+            if on_cancel is not None:
+                options["on_cancel"] = on_cancel
+            self.shortcuts[name] = HotKey(spec, fn, on_release, **options)
 
     def mic_permission(self, then):
         """Calls then(granted) on the main thread, asking the first time."""
@@ -206,8 +226,12 @@ class MacHost:
     def esc_watcher(self, fn):
         return EscWatcher(fn)
 
-    def copy_text(self, text):
+    def copy_text(self, text, *, cancelled=lambda: False):
+        if cancelled():
+            return False
         board = AppKit.NSPasteboard.generalPasteboard()
+        if cancelled():
+            return False
         board.clearContents()
         return bool(board.setString_forType_(text, AppKit.NSPasteboardTypeString))
 

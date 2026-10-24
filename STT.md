@@ -49,9 +49,16 @@ uses the source order under **Settings → Dictation** on both platforms,
 independently of the HTTP server. It can tidy the transcript with the selected dictation mode, or insert
 the raw transcript when tidying is off. Esc cancels recording or transcription.
 
-Typing is guarded by the original field, document and caret or selection. If
-there is no safe input target, dictation automatically copies the result to the
-clipboard. Windows exposes
+The field, document and caret or selection captured during preparation, before
+**Listening** appears, become the insertion target. This is not a snapshot of
+the exact key-down instant. A programmatic focus change before that capture can
+therefore establish a different target within the same window. Mouse clicks or
+unrelated keystrokes from the hold's activation until insertion prevent pasting,
+while recording continues. If the captured target later changes or cannot be
+verified, dictation automatically copies the result to the clipboard. Escape
+cancels the session without inserting or copying its result. Preparation, device
+cleanup and transcription have deadlines, with a single worker retaining device
+ownership until cleanup finishes. Windows exposes
 microphone status and a link to Windows microphone privacy settings. Choose an
 input under **Settings → Dictation → Input device**, or leave **System default**.
 The recording pill shows live input bars while the shortcut is held. Flat bars

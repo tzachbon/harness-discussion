@@ -61,9 +61,11 @@ class Recorder:
         self._power, self._samples = 0, 0
 
     def start(self):
-        import sounddevice
-        factory = self._factory or (lambda cb: sounddevice.RawInputStream(
-            samplerate=RATE, channels=1, dtype="int16", callback=cb, device=_input_device(self.device)))
+        factory = self._factory
+        if factory is None:
+            import sounddevice
+            factory = lambda cb: sounddevice.RawInputStream(
+                samplerate=RATE, channels=1, dtype="int16", callback=cb, device=_input_device(self.device))
         self._chunks, self._size = [], 0
         self._power, self._samples = 0, 0
         self._stream = factory(self._callback)
@@ -111,3 +113,9 @@ class Recorder:
         with self._lock:
             pcm = b"".join(self._chunks)
         return wav(pcm) if pcm else b""
+
+    @property
+    def duration(self):
+        """Seconds actually captured, excluding permission, startup and device cleanup."""
+        with self._lock:
+            return self._size / (RATE * 2)

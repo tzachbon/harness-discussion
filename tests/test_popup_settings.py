@@ -93,9 +93,13 @@ class PopupSettings(unittest.TestCase):
         return self.app.chain._active
 
     def click(self, button):
+        self.host.root.update()
         label = button.parts[1]
-        label.event_generate("<ButtonPress-1>", x=2, y=2)
-        label.event_generate("<ButtonRelease-1>", x=2, y=2)
+        label.winfo_toplevel().lift()
+        self.host.root.update_idletasks()
+        x, y = label.winfo_rootx() + 2, label.winfo_rooty() + 2
+        label.event_generate("<ButtonPress-1>", rootx=x, rooty=y, x=2, y=2)
+        label.event_generate("<ButtonRelease-1>", rootx=x, rooty=y, x=2, y=2)
         while not self.app.events.empty():
             self.app._handle(*self.app.events.get_nowait())
         self.host.root.update()

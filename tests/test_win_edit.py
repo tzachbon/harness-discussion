@@ -3,6 +3,7 @@ import sys
 import unittest
 import ctypes
 import subprocess
+import threading
 
 if sys.platform != "win32":
     raise unittest.SkipTest("Windows only")
@@ -14,6 +15,29 @@ from unittest.mock import Mock, patch
 from tests.win_edit_fakes import UNSUPPORTED, Document, Range, clipboard, native_host, target
 
 class CaptureSafety(unittest.TestCase):
+    def test_dictation_activity_during_last_inspection_prevents_any_paste(self):
+        from harness_discussion.win import edit
+        document, activity = Document(), threading.Event()
+        with target(document) as (_, key, _, cleanup):
+            context = edit.capture(False)
+            inspect, reads = edit._inspect, []
+
+            def changed_after_read():
+                found = inspect()
+                reads.append(1)
+                if len(reads) == 2:
+                    document.start, document.end = 0, 4
+                    activity.set()
+                return found
+
+            with patch.object(edit, "_inspect", side_effect=changed_after_read):
+                self.assertFalse(edit.type_at_caret("new", context, cancelled=activity.is_set))
+            self.assertEqual(len(reads), 2)
+            self.assertEqual(document.text, "Left old right")
+            key.assert_not_called()
+            cleanup.assert_called_once_with(expected_sequence=11)
+
+
     def test_held_keys_copy_dictation_without_attempting_input(self):
         from tests.test_app_writer import _App
         from harness_discussion.win import edit
@@ -27,7 +51,7 @@ class CaptureSafety(unittest.TestCase):
                     context = edit.capture(False)
                     app = _App()
                     app.edit, app._dictate_ctx = edit, context
-                    app._dictated(app._rewrite_id, None, ("synthetic result", "Local", None),
+                    app.deliver(app._rewrite_id, None, ("synthetic result", "Local", None),
                                   (10, 10, None), (0, .1, None, "Local"))
                     self.assertFalse(context._insertion_attempted)
                     self.assertIsNone(context._receipt)
@@ -48,7 +72,7 @@ class CaptureSafety(unittest.TestCase):
             context = edit.capture(False)
             app = _App()
             app.edit, app._dictate_ctx = edit, context
-            app._dictated(app._rewrite_id, None, ("synthetic result", "Local", None),
+            app.deliver(app._rewrite_id, None, ("synthetic result", "Local", None),
                           (10, 10, None), (0, .1, None, "Local"))
             self.assertTrue(context._insertion_attempted)
             self.assertIsNone(context._receipt)

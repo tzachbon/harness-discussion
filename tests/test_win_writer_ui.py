@@ -24,15 +24,19 @@ def click(root, widget, text):
     """Presses and releases the mouse on the visible label with this text, as a user would."""
     root.update()
     label = next(lbl for lbl in labels(widget) if lbl["text"] == text and lbl.winfo_viewable())
+    label.winfo_toplevel().lift()
+    root.update_idletasks()
     x, y = label.winfo_rootx() + 2, label.winfo_rooty() + 2
     label.event_generate("<ButtonPress-1>", rootx=x, rooty=y, x=2, y=2)
     label.event_generate("<ButtonRelease-1>", rootx=x, rooty=y, x=2, y=2)
     root.update()
 
-def pump(root, seconds):
+def pump(root, seconds, until=lambda: False):
     end = time.monotonic() + seconds
     while time.monotonic() < end:
         root.update()
+        if until():
+            break
         time.sleep(0.01)
 
 class Base(unittest.TestCase):
@@ -45,9 +49,9 @@ class ToastTest(Base):
     def test_reentering_the_toast_cancels_the_pending_submenu_close(self):
         toast = win_toast.Toast(self.root)
         self.addCleanup(toast.destroy)
+        toast.show("Choose mode", 200, 200, [("Mode", [("Email", lambda: None, True)])])
+        click(self.root, toast.win, "Mode ▾")
         with patch.object(win_toast, "HIDE_MS", 50):
-            toast.show("Choose mode", 200, 200, [("Mode", [("Email", lambda: None, True)])])
-            click(self.root, toast.win, "Mode ▾")
             menu = next(lbl for lbl in labels(self.root) if lbl["text"] == "✓ Email").winfo_toplevel()
             toast.win.event_generate("<Leave>")
             toast.win.event_generate("<Enter>")
@@ -62,9 +66,9 @@ class ToastTest(Base):
     def test_leaving_an_open_mode_menu_resumes_toast_auto_hide(self):
         toast = win_toast.Toast(self.root)
         self.addCleanup(toast.destroy)
+        toast.show("Choose mode", 200, 200, [("Mode", [("Email", lambda: None, True)])])
+        click(self.root, toast.win, "Mode ▾")
         with patch.object(win_toast, "HIDE_MS", 50):
-            toast.show("Choose mode", 200, 200, [("Mode", [("Email", lambda: None, True)])])
-            click(self.root, toast.win, "Mode ▾")
             toast.win.event_generate("<Leave>")
             pump(self.root, 0.4)
             self.assertFalse(toast.visible)
@@ -73,9 +77,9 @@ class ToastTest(Base):
     def test_entering_the_submenu_cancels_its_pending_close(self):
         toast = win_toast.Toast(self.root)
         self.addCleanup(toast.destroy)
+        toast.show("Choose mode", 200, 200, [("Mode", [("Email", lambda: None, True)])])
+        click(self.root, toast.win, "Mode ▾")
         with patch.object(win_toast, "HIDE_MS", 50):
-            toast.show("Choose mode", 200, 200, [("Mode", [("Email", lambda: None, True)])])
-            click(self.root, toast.win, "Mode ▾")
             menu = next(lbl for lbl in labels(self.root) if lbl["text"] == "✓ Email").winfo_toplevel()
             toast.win.event_generate("<Leave>")
             menu.event_generate("<Enter>")
@@ -201,9 +205,10 @@ class ToastTest(Base):
             self.assertTrue(toast.spinner.winfo_viewable())
             first_frame = toast.spinner["text"]
             toast.win.event_generate("<Leave>")
+            pump(self.root, 0.5, until=lambda: toast.spinner["text"] != first_frame)
+            self.assertNotEqual(toast.spinner["text"], first_frame)
             pump(self.root, 0.12)
             self.assertTrue(toast.visible, "a busy toast stays visible after Leave")
-            self.assertNotEqual(toast.spinner["text"], first_frame)
 
             toast.show("Finished", 200, 200, (), False)
             pump(self.root, 0.12)

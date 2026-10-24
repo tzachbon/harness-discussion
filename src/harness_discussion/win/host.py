@@ -52,7 +52,7 @@ class TkHost:
         return Popup(self.root, speed, **callbacks)
 
     def esc_watcher(self, on_escape):
-        watcher = Escape(lambda: self.app.events.put(("call", on_escape)),
+        watcher = Escape(on_escape,
                          suppress=lambda: bool(self.app.rewriting), autostart=False)
         self._writer_esc.append(watcher)
         self._cancel_writer = on_escape
@@ -74,14 +74,14 @@ class TkHost:
                                  command=lambda name=name: pick(name))
         menu.post(*self.pointer())
 
-    def copy_text(self, text):
+    def copy_text(self, text, *, cancelled=lambda: False):
         try:
             if not isinstance(text, str) or "\0" in text:
                 raise ValueError("Invalid clipboard text")
-            clipboard.write_text(text)
-            return True
+            return clipboard.write_text(text, cancelled=cancelled)
         except (OSError, ValueError):
-            self.notify("Could not copy the result.")
+            if not cancelled():
+                self.notify("Could not copy the result.")
             return False
 
     def open_settings(self, welcome=False):
@@ -99,6 +99,14 @@ class TkHost:
 
     def mic_status(self):
         return microphone.status()
+
+    def dictation_target(self):
+        """Cheap foreground identity before the worker performs editor capture."""
+        try:
+            identity = edit._foreground()
+            return identity if identity and all(identity) and identity[0] != os.getpid() else None
+        except Exception:
+            return None
 
     def mic_permission(self, then):
         # Desktop apps use Windows' shared privacy switch, without an app permission prompt.
@@ -133,12 +141,15 @@ class TkHost:
             self.hotkey.stop()
         self.hotkey = HotKey(spec, on_hotkey) if spec else None
 
-    def set_shortcut(self, name, spec, on_hotkey, on_release=None):
+    def set_shortcut(self, name, spec, on_hotkey, on_release=None, *, on_activity=None, on_cancel=None):
         old = self.shortcuts.pop(name, None)
         if old:
             old.stop()
         if spec:
-            self.shortcuts[name] = HotKey(spec, on_hotkey, on_release)
+            options = {"on_activity": on_activity} if on_activity is not None else {}
+            if on_cancel is not None:
+                options["on_cancel"] = on_cancel
+            self.shortcuts[name] = HotKey(spec, on_hotkey, on_release, **options)
 
     def pointer(self):
         point = wintypes.POINT()
