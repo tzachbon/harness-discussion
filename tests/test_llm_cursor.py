@@ -43,6 +43,13 @@ class FakeAcp:
 
 
 class CursorWriterTest(unittest.TestCase):
+    def test_status_decodes_cli_output_as_utf8_on_windows(self):
+        with mock.patch.object(llm_cursor, "agent_exe", return_value="cursor-agent"), mock.patch.object(
+                llm_cursor.subprocess, "run", return_value=mock.Mock(returncode=0, stdout="✓ Logged in")) as run:
+            self.assertEqual(llm_cursor.login_status(), "ready")
+        self.assertEqual(run.call_args.kwargs.get("encoding"), "utf-8")
+        self.assertEqual(run.call_args.kwargs.get("errors"), "replace")
+
     def setUp(self):
         self.acp = FakeAcp()
         self.source = llm_cursor.CursorWriter(lambda: self.acp)

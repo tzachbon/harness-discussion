@@ -1,7 +1,7 @@
 """Settings → Writing and Dictation on macOS: sources with models, the default mode, modes, and shortcuts."""
 import AppKit
 
-from .. import settings, writer
+from .. import mic, settings, writer
 from .. import writer_settings as ws
 from . import ui
 
@@ -65,21 +65,34 @@ class WritingPage:
         self.stt_rows = {name: self._writer_row(name, True) for name in settings.STT_SOURCES}
         self.stt_list = ui.stack([], spacing=10)
         self.mic_status = ui.label("", 11, secondary=True)
-        mic = ui.stack([ui.stack([ui.label("Microphone", 13), self.mic_status], spacing=1), _spacer(),
+        permission = ui.stack([ui.stack([ui.label("Microphone", 13), self.mic_status], spacing=1), _spacer(),
                         ui.button("Open Settings", self.app.host.open_mic_settings)], vertical=False)
-        mic.widthAnchor().constraintEqualToConstant_(WIDTH).setActive_(True)
+        permission.widthAnchor().constraintEqualToConstant_(WIDTH).setActive_(True)
+        self._mic_devices = ["", *mic.input_devices()]
+        chosen = self.cfg["dictate_microphone"]
+        if chosen not in self._mic_devices:
+            self._mic_devices.append(chosen)
+        self.microphone = _popup(lambda i: self._set("dictate_microphone", self._mic_devices[i]))
+        self.microphone.setAccessibilityLabel_("Input device")
+        _fill(self.microphone, ["System default", *self._mic_devices[1:]], self._mic_devices.index(chosen))
+        self.microphone.widthAnchor().constraintEqualToConstant_(WIDTH - 90).setActive_(True)
+        input_row = ui.stack([ui.label("Input device", 13), _spacer(), self.microphone], vertical=False)
+        input_row.widthAnchor().constraintEqualToConstant_(WIDTH).setActive_(True)
         polish, self.polish_switch = ui.option("Tidy dictation after transcribing", "Off types exactly what was heard, sooner.",
                               self.cfg["dictate_polish"], self._polish_changed, WIDTH)
+        local_tidy, _ = ui.option("Prefer local tidy for faster results",
+                "Uses Writing → Local when downloaded and enabled. Otherwise uses your writing sources.",
+                self.cfg["dictate_local_tidy"], lambda on: self._set("dictate_local_tidy", on), WIDTH)
         self.dictate_popup = _popup(lambda i: self._set("dictate_mode", self._mode_list()[i].name))
         self.dictate_popup.setAccessibilityLabel_("Dictation mode")
         mode = ui.stack([ui.label("Dictation mode", 13), _spacer(), self.dictate_popup], vertical=False)
         mode.widthAnchor().constraintEqualToConstant_(WIDTH).setActive_(True)
-        return [_card([self.stt_list]), _card([polish, _divider(), mode]),
+        return [_card([self.stt_list]), _card([polish, _divider(), local_tidy, _divider(), mode]),
                 _note("Create or edit a custom prompt in Writing → Modes, then select it here."),
-                _card([self._shortcut_row("dictate_hotkey"), _divider(), mic]),
+                _card([self._shortcut_row("dictate_hotkey"), _divider(), input_row, _divider(), permission]),
                 _note("Hold the shortcut and speak. Release to transcribe and type at the cursor, tidied with the "
-                      "dictation mode when that is on. A short tap does nothing. The audio goes to the first ready "
-                      "source and is not saved.")]
+                      "dictation mode when that is on. A short tap does nothing. Local keeps audio on this Mac. "
+                      "Enabled Cursor or Codex sources receive audio if earlier sources fail. Audio is not saved.")]
 
     def _polish_changed(self, on):
         self._set("dictate_polish", on)

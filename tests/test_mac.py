@@ -14,6 +14,17 @@ from harness_discussion import codex_rt  # noqa: E402
 from harness_discussion.mac import pasteboard, permission, selection, startup, voice  # noqa: E402
 
 
+class ClipboardHostTest(unittest.TestCase):
+    def test_copy_reports_the_native_pasteboard_result(self):
+        from harness_discussion.mac import host
+        for success in (True, False):
+            with self.subTest(success=success), mock.patch.object(host.AppKit, "NSPasteboard") as pasteboard_api:
+                board = pasteboard_api.generalPasteboard.return_value
+                board.setString_forType_.return_value = success
+                self.assertEqual(host.MacHost.copy_text(None, "dictation"), success)
+                board.clearContents.assert_called_once_with()
+
+
 class AvRateTest(unittest.TestCase):
     def test_normal_speed_is_default_rate(self):
         self.assertAlmostEqual(voice.av_rate(1.0), voice.AVSpeechUtteranceDefaultSpeechRate)

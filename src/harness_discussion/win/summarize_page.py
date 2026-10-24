@@ -42,7 +42,7 @@ class SummarizePage:
         if progress is None:
             self.summary_bar.pack_forget()
         else:
-            text = text.format(percent=int(progress * 100), size=summarize.SIZE_LABEL)
+            text = text.format(percent=int(progress * 100), size=summarize.download_size_label())
             self.summary_bar["value"] = progress
             self.summary_bar.pack(anchor="w", pady=(6, 0))
         self.summary_status["text"] = text

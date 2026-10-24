@@ -16,7 +16,9 @@ The app sends the text you play to the first ready voice source in Settings → 
 
 *Prepare speech as soon as I select text* is off by default. When it is on, and Cursor or Edge reads first, the opening sentences are sent when the bar appears, before you press play.
 
-On Windows and Mac, rewriting and dictation send the selection or the recorded audio to Cursor or Codex, in the order set in Writing and Dictation. Both platforms have separate Settings → Writing and Settings → Dictation pages. Local rewriting stays on your computer. Dictation audio is not saved.
+On Windows and Mac, Dictation tries Local first by default. Downloading Whisper Small (486 MB) is a separate action in Settings → Dictation. Local transcription runs on your computer. If it is unavailable or fails, enabled Cursor or Codex sources can receive the recording in the saved order. Dictation audio is not saved.
+
+Tidy prefers the installed, enabled Local writing model by default. Otherwise it follows the Writing source order, which can send the transcript to Cursor or Codex. Turn off **Prefer local tidy for faster results** to always follow that order. For fully offline dictation, disable Cursor and Codex in both Writing and Dictation, and download both local models first. Local transcription by itself does not make cloud cleanup or fallback offline.
 
 The optional speech-to-text server (Settings → Speech-to-text, off by default) sends audio and any prompt hint that other apps on your computer send it to OpenAI through your Codex sign-in. See [STT.md](STT.md).
 

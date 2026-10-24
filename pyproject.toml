@@ -11,6 +11,7 @@ dependencies = [
     "aiortc>=1.15.0",
     "comtypes>=1.4.17; sys_platform == 'win32'",
     "edge-tts>=7.2.8",
+    "faster-whisper==1.2.1",
     "kokoro-onnx==0.6.1",
     "pillow>=12.3.0",
     "pynput>=1.8.2; sys_platform == 'win32'",
@@ -26,6 +27,13 @@ dependencies = [
 
 [project.gui-scripts]
 harness-discussion = "harness_discussion.__main__:main"
+
+[project.optional-dependencies]
+cuda = [
+    "nvidia-cuda-nvrtc-cu12==12.9.86; sys_platform == 'win32' and platform_machine == 'AMD64'",
+    "nvidia-cublas-cu12==12.8.4.1; sys_platform == 'win32' and platform_machine == 'AMD64'",
+    "nvidia-cudnn-cu12==9.3.0.75; sys_platform == 'win32' and platform_machine == 'AMD64'",
+]
 
 [build-system]
 requires = ["uv_build>=0.11.32,<0.12.0"]

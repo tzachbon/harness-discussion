@@ -14,6 +14,61 @@ from unittest.mock import Mock, patch
 from tests.win_edit_fakes import UNSUPPORTED, Document, Range, clipboard, native_host, target
 
 class CaptureSafety(unittest.TestCase):
+    def test_unconfirmed_paste_is_distinguished_from_a_preflight_refusal(self):
+        from harness_discussion.win import edit
+        document = Document()
+        with target(document) as (_, key, _, _):
+            context = edit.capture(False)
+            def paste(vk):
+                document.text = "Left new right"
+                document.start = document.end = 8
+                document.identity = [9, 10]  # a reactive editor replaced its accessible field after input
+                return True
+            key.side_effect = paste
+            self.assertFalse(edit.type_at_caret("new", context))
+            self.assertEqual(document.text, "Left new right")
+            self.assertTrue(context._insertion_attempted)
+            self.assertIsNone(context._receipt)
+            key.assert_called_once_with(ord("V"))
+            self.assertFalse(edit.type_at_caret("again", context))
+            self.assertFalse(context._insertion_attempted)
+            self.assertEqual(key.call_count, 1)
+
+    def test_clipboard_cleanup_failure_does_not_hide_that_input_was_attempted(self):
+        from harness_discussion.win import edit
+        document = Document()
+        with target(document) as (_, key, _, cleanup):
+            context = edit.capture(False)
+            def paste(vk):
+                document.text = "Left new right"
+                document.start = document.end = 8
+                return True
+            key.side_effect = paste
+            cleanup.side_effect = OSError("clipboard busy")
+            self.assertFalse(edit.type_at_caret("new", context))
+            self.assertTrue(context._insertion_attempted)
+            self.assertIsNone(context._receipt)
+
+    def test_failed_key_request_is_still_an_attempt_but_not_a_verified_insertion(self):
+        from harness_discussion.win import edit
+        with target(Document()) as (_, key, _, _):
+            context = edit.capture(False)
+            self.assertFalse(edit.type_at_caret("new", context))
+            self.assertTrue(context._insertion_attempted)
+            self.assertIsNone(context._receipt)
+            key.assert_called_once_with(ord("V"))
+
+    def test_invalid_or_secure_reuse_resets_attempt_status_without_input(self):
+        from harness_discussion.win import edit
+        for text, secure in ((None, False), ("x\0y", False), ("new", True)):
+            with self.subTest(text=text, secure=secure), target(Document()) as (_, key, _, _):
+                context = edit.capture(False)
+                context._insertion_attempted = True
+                context.secure = secure
+                self.assertFalse(edit.type_at_caret(text, context))
+                self.assertFalse(context._insertion_attempted)
+                key.assert_not_called()
+
     def test_shared_undo_keeps_receipts_across_mode_and_repeated_review_replacements(self):
         from harness_discussion import edit_logic
         from harness_discussion.win import edit
