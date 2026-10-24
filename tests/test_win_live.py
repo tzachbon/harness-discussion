@@ -149,6 +149,23 @@ class Place(unittest.TestCase):
             field = self.edit.observe()
             self.assertEqual(self.edit.bounds(field, [(2, 8, "think!")]), [None])
 
+    def test_a_provider_that_never_moves_is_given_up_on(self):
+        document = LiveDocument("i thinks so ok")
+        moves = []
+        with target(document), patch.object(LiveRange, "MoveEndpointByUnit",
+                                            lambda self, *a, **k: moves.append(a) or 0):
+            field = self.edit.observe()
+            self.assertEqual(self.edit.bounds(field, [self.span(field, "thinks")]), [None])
+        self.assertLessEqual(len(moves), 2 * 12)
+
+    def test_observe_and_bounds_never_use_the_clipboard_or_keys(self):
+        document = LiveDocument("i thinks so ok")
+        with target(document) as (_, key, snap, _):
+            field = self.edit.observe()
+            self.edit.bounds(field, [self.span(field, "thinks")])
+            key.assert_not_called()
+            snap.assert_not_called()
+
 
 class SelectRange(unittest.TestCase):
     def setUp(self):

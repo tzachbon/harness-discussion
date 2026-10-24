@@ -65,6 +65,11 @@ class Toast:
     def visible(self):
         return bool(self.win.isVisible())
 
+    def contains(self, x, y):
+        f = self.win.frame()
+        top = _cocoa_y(f.origin.y + f.size.height)
+        return self.visible and f.origin.x <= x < f.origin.x + f.size.width and top <= y < top + f.size.height
+
     @property
     def message(self):
         return str(self.label.stringValue())

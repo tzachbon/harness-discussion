@@ -26,8 +26,8 @@ class Live:
         self._init_live()
 
     def _close_writer(self):
+        self._close_live()  # first: a poll in flight must not start a check on a closing source
         super()._close_writer()
-        self._close_live()
 
     def apply(self, key, value):
         super().apply(key, value)
@@ -55,6 +55,7 @@ class Live:
         self._live_cancel, self._live_checking = threading.Event(), None  # the line being checked, or None
         self._live_seen = None  # (app, window, digest) of the last poll, and when it first looked like that
         self._live_changed_at = 0.0
+        self._live_typed = None  # (app, window, handle, line start) of the line last typed in, while it is focused
         self._live_view, self._live_posted = None, None  # what the last live_marks event drew
         self._live_stop = threading.Event()
         self.marks = self.host.make_marks() if self.live_ready else None
@@ -96,8 +97,13 @@ class Live:
         if field is None or field.app_name in self.cfg.get("live_off_apps", ()):
             self._live_hide()
             return
-        seen = (field.app, field.window, field.digest)
+        seen = (field.app, field.window, field.handle, field.digest)
+        start, end = live.paragraph_at(field.text, field.caret[0])
         if seen != self._live_seen:
+            if self._live_seen is not None and seen[:3] == self._live_seen[:3]:  # typed in: the text changed
+                self._live_typed = (*seen[:3], start)
+            elif self._live_typed is not None and self._live_typed[:3] != seen[:3]:
+                self._live_typed = None  # another field: a line is sent only after typing in it
             self._live_seen, self._live_changed_at = seen, now
         mode = self._find_mode(None)
         found = live.suggestions(field.text, self.live_cache, self._live_dismissed, mode)[:live.MAX_SUGGESTIONS]
@@ -108,10 +114,9 @@ class Live:
         checking = self._live_checking
         if checking is not None and checking not in {line.strip() for _, line in live.lines(field.text)}:
             self._live_cancel.set()  # the line being checked is gone
-        start, end = live.paragraph_at(field.text, field.caret[0])
         line = live.text_at(field.text, start, end).strip()
-        if (checking is None and now - self._live_changed_at >= live.PAUSE_S and live.checkable(line)
-                and not self.live_cache.has(line, mode)):
+        if (checking is None and self._live_typed == (*seen[:3], start) and now - self._live_changed_at >= live.PAUSE_S
+                and live.checkable(line) and not self.live_cache.has(line, mode) and self._live_on()):
             self._live_check(line, mode)
 
     def _live_check(self, line, mode):
@@ -124,7 +129,8 @@ class Live:
         def work():
             log.info("live check %d chars", len(line))  # before sending: proof of every send, never the text
             try:
-                new, source = writer.rewrite(line, mode, sources, models=models, cancelled=cancel.is_set)
+                new, source = writer.rewrite(line, mode, sources, models=models,
+                                             cancelled=lambda: cancel.is_set() or not self._live_on())
                 log.info("live check done with %s", source)
                 if not cancel.is_set():
                     self.live_cache.put(line, mode, new)
@@ -163,7 +169,7 @@ class Live:
 
     def _live_press(self, x, y):
         """True when the click was on an underline or the badge; core then ignores it."""
-        if not (self.marks and self._live_view):
+        if not (self.marks and self._live_view) or self._ours(x, y):
             return False
         hit = self.marks.hit(x, y)
         if hit is None:
@@ -174,6 +180,11 @@ class Live:
         elif hit in by_key:
             self._live_card(field, by_key[hit], x, y)
         return True
+
+    def _ours(self, x, y):
+        """A click on the bar, the card or its menu, or Review, all of which may cover an underline."""
+        return any(w is not None and (getattr(w, "menu_open", False) or w.contains(x, y))
+                   for w in (self.popup, self.toast, self.review))
 
     def _live_card(self, field, s, x, y):
         old, new = (" ".join(t.split()) for t in (s.old, s.new))
@@ -190,6 +201,10 @@ class Live:
 
     def _live_turn_off(self, field):
         self.change("live_off_apps", [*self.cfg.get("live_off_apps", ()), field.app_name])
+        win = self.settings_win
+        if win and win.alive and hasattr(win, "refresh_writing"):  # its copy of the list must not turn it back on
+            win.cfg["live_off_apps"] = self.cfg["live_off_apps"]
+            win.refresh_writing()
         self.toast.hide()
         self._live_marks(None, [], [], 0)
 

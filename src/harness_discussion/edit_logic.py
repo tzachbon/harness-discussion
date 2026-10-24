@@ -21,8 +21,9 @@ class Context:
 @dataclass(frozen=True)
 class Field:
     """The focused text field as Check as you type sees it, read without the clipboard or keys. `text` has "\\n" line
-    breaks, `caret` is the selection's (start, end) in UTF-16 units of `text`, and `digest` is the SHA-256 of `text`
-    in UTF-16-LE. `app_name` is what the per-app off list stores; `label` is shown to the user."""
+    breaks on Windows and is the raw AXValue on macOS, `caret` is the selection's (start, end) in UTF-16 units of
+    `text`, and `digest` is the SHA-256 of `text` in UTF-16-LE. `app_name` is what the per-app off list stores; `label`
+    is shown to the user."""
     app: int
     window: int
     app_name: str

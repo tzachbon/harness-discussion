@@ -60,6 +60,10 @@ def patched(ax):
             mock.patch.object(edit, "AXValueGetValue", side_effect=ax.get)]
 
 
+def settable(value=True):
+    return mock.patch.object(edit, "AXUIElementIsAttributeSettable", return_value=(edit.kAXErrorSuccess, value))
+
+
 def field_for(text):
     return Field(7, 2, "com.apple.TextEdit", "TextEdit", text, (0, 0), edit._digest(text), None, FIELD)
 
@@ -118,7 +122,7 @@ class Observe(unittest.TestCase):
         with mock.patch.object(edit.permission, "trusted", return_value=True), self.app("com.apple.TextEdit"), \
                 mock.patch.object(edit.selection, "_expose"), \
                 mock.patch.object(edit, "_focused", return_value=FIELD), \
-                mock.patch.object(edit, "_editable", return_value=True), \
+                mock.patch.object(edit, "_editable", return_value=True), settable(), \
                 mock.patch.object(edit, "_attr", side_effect=lambda e, n: attrs.get(n)), \
                 mock.patch.object(edit, "_range", return_value=(5, 0)), \
                 mock.patch.object(edit, "_frontmost_pid", return_value=7), \
@@ -132,6 +136,31 @@ class Observe(unittest.TestCase):
             attrs["AXNumberOfCharacters"] = 5
             with mock.patch.object(edit.selection, "secure_input", return_value=True):
                 self.assertIsNone(edit.observe())
+            with mock.patch.object(edit.selection, "secure_input", return_value=False), \
+                    settable(False):
+                self.assertIsNone(edit.observe())  # a read-only text area
+
+    def test_observe_and_bounds_never_use_the_pasteboard_or_keys(self):
+        boom = mock.Mock(side_effect=AssertionError("clipboard or keys"))
+        attrs = {"AXRole": "AXTextArea", "AXNumberOfCharacters": 11, "AXValue": "i thinks so"}
+        ax = FakeAX("i thinks so")
+        with mock.patch.object(edit.permission, "trusted", return_value=True), self.app("com.apple.TextEdit"), \
+                mock.patch.object(edit.selection, "_expose"), mock.patch.object(edit, "_focused", return_value=FIELD), \
+                mock.patch.object(edit, "_editable", return_value=True), settable(), \
+                mock.patch.object(edit, "_attr", side_effect=lambda e, n: attrs.get(n)), \
+                mock.patch.object(edit, "_range", return_value=(11, 0)), \
+                mock.patch.object(edit, "_frontmost_pid", return_value=7), \
+                mock.patch.object(edit, "_window_number", return_value=2), \
+                mock.patch.object(edit, "_rect_of", return_value=(0, 0, 10, 10)), \
+                mock.patch.object(edit.selection, "secure_input", return_value=False), \
+                mock.patch.object(edit, "_key", boom), mock.patch.object(edit.pasteboard, "snapshot", boom), \
+                mock.patch.object(edit.pasteboard, "copy_selection", boom):
+            field = edit.observe()
+            for p in patched(ax):
+                p.start()
+                self.addCleanup(p.stop)
+            self.assertEqual(edit.bounds(field, [(2, 8, "thinks")]), [[(16, 0, 64, 18)]])
+        boom.assert_not_called()
 
 
 class SelectRange(unittest.TestCase):

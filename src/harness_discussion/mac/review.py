@@ -7,7 +7,7 @@ import AppKit
 
 from .. import writer
 from . import ui
-from .popup import _Button
+from .popup import _Button, _cocoa_y
 
 HUNK = "harnessHunk"
 WIDTH, HEIGHT = 720, 320
@@ -83,6 +83,11 @@ class Review:
     @property
     def visible(self):
         return bool(self.win.isVisible())
+
+    def contains(self, x, y):
+        f = self.win.frame()
+        top = _cocoa_y(f.origin.y + f.size.height)
+        return self.visible and f.origin.x <= x < f.origin.x + f.size.width and top <= y < top + f.size.height
 
     @property
     def result(self):

@@ -234,6 +234,9 @@ def observe():
     if element is None or not _editable(element) or selection.secure_input() or selection.SECURE in (
             _attr(element, "AXRole"), _attr(element, "AXSubrole")):
         return None
+    err, settable = AXUIElementIsAttributeSettable(element, "AXValue", None)
+    if err != kAXErrorSuccess or not settable:  # a read-only text area: a log, a console, a locked document
+        return None
     count = _attr(element, "AXNumberOfCharacters")
     if count is not None and int(count) > live.LIVE_MAX_DOC:
         return None
