@@ -1,0 +1,323 @@
+"""Check as you type, the shared flow with a fake field, marks, toast, and source: when it checks, what it sends,
+what it draws, and Apply, Dismiss, Review, Turn off, and Undo."""
+import hashlib
+import logging
+import queue
+import unittest
+from types import SimpleNamespace
+
+from harness_discussion import app_live, app_summarize, live
+from harness_discussion.edit_logic import Context, Field
+
+from tests.test_app_writer import FakeToast, Source
+
+
+def digest(text):
+    return hashlib.sha256(text.encode("utf-16-le", "surrogatepass")).digest()
+
+
+class FakeField:
+    """One editable document with its own caret, read and changed like a platform edit module would."""
+    NEWLINE = "\n"
+
+    def __init__(self, text="", app_name="notepad.exe"):
+        self.text, self.app_name, self.secure, self.placeable = text, app_name, False, True
+        self.selected = None  # (start, end) after select_range
+        self.observed, self.pasted = 0, []
+
+    def field(self):
+        caret = live.units(self.text)
+        return Field(1, 2, self.app_name, self.app_name.split(".")[0].capitalize(), self.text, (caret, caret),
+                     digest(self.text), (0, 0, 400, 200), "element")
+
+    def observe(self):
+        self.observed += 1
+        return None if self.secure else self.field()
+
+    def bounds(self, field, spans):
+        if field.digest != digest(self.text):
+            return None
+        return [[(s * 8, 0, e * 8, 18)] if self.placeable and live.text_at(self.text, s, e) == x else None
+                for s, e, x in spans]
+
+    def select_range(self, field, start, end, expected):
+        if field.digest != digest(self.text) or live.text_at(self.text, start, end) != expected:
+            return None
+        self.selected = (start, end)
+        return Context(expected, 1, 2, True, False, "element", (start, end - start))
+
+    def replace(self, text, ctx):
+        start, end = self.selected
+        self.text = live.text_at(self.text, 0, start) + text + live.text_at(self.text, end, live.units(self.text))
+        self.pasted.append(text)
+        self.selected = None
+        self.caret = start + live.units(text)
+        return True
+
+    def undo(self, ctx, original, inserted):
+        at = self.text.rfind(inserted)
+        if at < 0:
+            return False
+        self.text = self.text[:at] + original + self.text[at + len(inserted):]
+        return True
+
+    # Writer's capture-based API, unused by these tests
+    def capture(self, clipboard_fallback):
+        return None
+
+
+class FakeMarks:
+    def __init__(self):
+        self.shown, self.hidden, self.word = None, 0, {}
+
+    def show(self, strips, badge):
+        self.shown = (strips, badge)
+        self.word = {key: rect for key, rect in strips}
+
+    def hide(self):
+        self.shown, self.word = None, {}
+        self.hidden += 1
+
+    def hit(self, x, y):
+        if self.shown and self.shown[1] and (x, y) == (self.shown[1][0], self.shown[1][1]):
+            return "badge"
+        for key, (left, top, right, bottom) in self.word.items():
+            if left <= x < right and top <= y < bottom:
+                return key
+        return None
+
+
+class _App(app_summarize.Summaries, app_live.Live):
+    def __init__(self, reply="I think so, ok"):
+        self.events, self.copied, self.changes = queue.Queue(), [], []
+        self.toast_, self.marks_ = FakeToast(), FakeMarks()
+        self.review_ = SimpleNamespace(shown=[], show=lambda *a: self.review_.shown.append(a))
+        self.field_ = FakeField()
+        self.host = SimpleNamespace(
+            edit=self.field_, make_toast=lambda: self.toast_, make_review=lambda: self.review_,
+            make_marks=lambda: self.marks_, esc_watcher=lambda fn: SimpleNamespace(start=lambda: None, stop=lambda: None),
+            pointer=lambda: (10, 10), after=lambda ms, fn: None, copy_text=self.copied.append,
+            set_shortcut=lambda *a: None)
+        self.cfg = {"writer": True, "live_check": True, "live_off_apps": [],
+                    "writer_sources": [["Cursor", True]], "writer_models": {}, "modes": [],
+                    "default_mode": "Fix errors", "clipboard_fallback": True, "stt_sources": [],
+                    "dictate_polish": False, "dictate_mode": "Clean dictation"}
+        self.popup = SimpleNamespace(visible=False, set_rewriting=lambda on: None, set_last_mode=lambda m: None,
+                                     hide=lambda: None)
+        self.summary_server = SimpleNamespace(stop=lambda: None)
+        self._summary_gen = 0
+        self._init_writer()
+        self.source = Source("Cursor", reply)
+        self.writer_sources = [self.source]
+        self._live_stop.set()  # the tests drive polls themselves
+
+    def change(self, key, value, save=True):
+        self.cfg[key] = value
+        self.changes.append((key, value))
+        self._apply_live(key, value)
+
+    def _arm_summary_stop(self):
+        pass
+
+    def pump(self):
+        while not self.events.empty():
+            kind, *args = self.events.get_nowait()
+            getattr(self, self.LIVE_EVENTS[kind])(*args)
+
+    def tick(self, at):
+        self._live_tick(now=at)
+        for _ in range(100):
+            if self._live_checking is None:
+                break
+            threading_wait()
+        self.pump()
+
+
+def threading_wait():
+    import time
+    time.sleep(0.01)
+
+
+class WhenItChecks(unittest.TestCase):
+    def setUp(self):
+        self.app = _App()
+        self.field = self.app.field_
+
+    def test_off_by_default_reads_nothing(self):
+        self.app.cfg["live_check"] = False
+        self.field.text = "i thinks so, ok"
+        for at in range(10):
+            self.app.tick(at)
+        self.assertEqual(self.field.observed, 0)
+        self.assertTrue(self.app.events.empty())
+
+    def test_one_check_after_a_pause_and_none_for_the_same_line_again(self):
+        self.field.text = "hello\ni thinks so, ok"
+        self.app.tick(0)
+        self.app.tick(1)
+        self.assertEqual(self.app.source.texts, [])  # still typing
+        self.app.tick(2)
+        self.assertEqual(len(self.app.source.texts), 1)
+        self.assertIn("i thinks so, ok", self.app.source.texts[0])
+        self.assertNotIn("hello", self.app.source.texts[0])
+        for at in range(3, 10):
+            self.app.tick(at)
+        self.assertEqual(len(self.app.source.texts), 1)
+
+    def test_text_that_keeps_changing_is_not_sent(self):
+        for at in range(10):
+            self.field.text = "i thinks so" + " ok" * at
+            self.app.tick(at * 0.5)
+        self.assertEqual(self.app.source.texts, [])
+
+    def test_never_for_secure_off_listed_or_disabled_writer(self):
+        self.field.text = "i thinks so, ok"
+        self.field.secure = True
+        for at in range(5):
+            self.app.tick(at)
+        self.field.secure, self.app.cfg["live_off_apps"] = False, ["notepad.exe"]
+        for at in range(5, 10):
+            self.app.tick(at)
+        self.app.cfg["live_off_apps"], self.app.cfg["writer"] = [], False
+        for at in range(10, 15):
+            self.app.tick(at)
+        self.assertEqual(self.app.source.texts, [])
+
+    def test_no_check_while_a_rewrite_runs_and_a_manual_rewrite_cancels_one(self):
+        self.field.text = "i thinks so, ok"
+        self.app.rewriting = True
+        for at in range(5):
+            self.app.tick(at)
+        self.assertEqual(self.app.source.texts, [])
+        self.app.rewriting = False
+        cancel = self.app._live_cancel
+        self.app.live_cancel()
+        self.assertTrue(cancel.is_set())
+
+    def test_logs_one_length_only_line_and_never_the_text(self):
+        self.field.text = "i thinks so, ok"
+        with self.assertLogs("harness_discussion", logging.INFO) as logs:
+            self.app.tick(0)
+            self.app.tick(2)
+        self.assertEqual([r.getMessage() for r in logs.records], ["live check 15 chars with Cursor"])
+
+
+class WhatItDraws(unittest.TestCase):
+    def setUp(self):
+        self.app = _App()
+        self.field = self.app.field_
+        self.field.text = "i thinks so, ok"
+        self.app.tick(0)
+        self.app.tick(2)
+        self.app.tick(3)
+
+    def test_an_underline_per_change(self):
+        strips, badge = self.app.marks_.shown
+        self.assertEqual([key[2:] for key, _ in strips], [("i thinks", "I think")])
+        self.assertIsNone(badge)
+
+    def test_an_idle_field_posts_nothing_new(self):
+        for at in range(4, 10):
+            self.app._live_tick(now=at)
+        self.assertTrue(self.app.events.empty())
+
+    def test_unplaceable_suggestions_show_the_badge_at_the_field(self):
+        self.field.placeable = False
+        self.app.tick(4)
+        strips, badge = self.app.marks_.shown
+        self.assertEqual((strips, badge), ([], (400, 0, 1)))
+
+    def test_turning_it_off_hides_the_marks(self):
+        self.app.change("live_check", False)
+        self.assertIsNone(self.app.marks_.shown)
+        self.app.tick(5)
+        self.assertIsNone(self.app.marks_.shown)
+
+    def test_editing_the_line_drops_its_underlines(self):
+        self.field.text = "i thinks so, ok then"
+        self.app.tick(4)
+        self.assertIsNone(self.app.marks_.shown)
+
+
+class Actions(unittest.TestCase):
+    def setUp(self):
+        self.app = _App(reply="I think we should have gone.")
+        self.field = self.app.field_
+        self.field.text = "i thinks we should of gone."
+        self.app.tick(0)
+        self.app.tick(2)
+        self.app.tick(3)
+
+    def click(self, old):
+        for key, (left, top, right, bottom) in self.app.marks_.word.items():
+            if key[2] == old:
+                self.assertTrue(self.app._live_press(left + 1, top + 1))
+                return self.app.toast_.shown[-1]
+        self.fail(f"no underline for {old!r}")
+
+    def test_a_click_elsewhere_is_not_ours(self):
+        self.assertFalse(self.app._live_press(1000, 1000))
+
+    def test_apply_changes_only_that_span_and_keeps_the_rest_without_a_new_check(self):
+        message, actions, _ = self.click("i thinks")
+        self.assertEqual(message, "i thinks → I think")
+        self.assertEqual(set(actions), {"Apply", "Dismiss", "Review", "More"})
+        actions["Apply"]()
+        self.assertEqual(self.field.text, "I think we should of gone.")
+        self.assertEqual(self.app.toast_.shown[-1][0], "Applied")
+        for at in range(4, 8):
+            self.app.tick(at)
+        self.assertEqual(len(self.app.source.texts), 1)
+        self.assertEqual([k[2] for k in self.app.marks_.word], ["of"])
+
+    def test_undo_restores_the_original(self):
+        self.click("i thinks")[1]["Apply"]()
+        self.app.toast_.action("Undo")()
+        self.assertEqual(self.field.text, "i thinks we should of gone.")
+
+    def test_apply_after_the_text_changed_offers_copy_and_pastes_nothing(self):
+        actions = self.click("i thinks")[1]
+        self.field.text = "i thinks we should of gone!"
+        actions["Apply"]()
+        self.assertEqual(self.field.pasted, [])
+        self.assertEqual(self.app.toast_.shown[-1][0], "The text changed. Copy the suggestion?")
+        self.app.toast_.action("Copy")()
+        self.assertEqual(self.app.copied, ["I think"])
+
+    def test_dismiss_survives_later_polls(self):
+        self.click("i thinks")[1]["Dismiss"]()
+        self.app.tick(4)
+        self.assertEqual([k[2] for k in self.app.marks_.word], ["of"])
+
+    def test_turn_off_in_this_app(self):
+        menu = self.click("i thinks")[1]["More"]
+        title, turn_off, _ = menu[0]
+        self.assertEqual(title, "Turn off in Notepad")
+        turn_off()
+        self.assertEqual(self.app.cfg["live_off_apps"], ["notepad.exe"])
+        self.assertIsNone(self.app.marks_.shown)
+        self.field.text = "she go home now ok"
+        for at in range(4, 10):
+            self.app.tick(at)
+        self.assertEqual(len(self.app.source.texts), 1)
+
+    def test_review_replaces_the_whole_line_through_the_guard(self):
+        self.click("i thinks")[1]["Review"]()
+        original, rewrite, replace, copy = self.app.review_.shown[-1]
+        self.assertEqual((original, rewrite), ("i thinks we should of gone.", "I think we should have gone."))
+        replace("I think we should of gone.")
+        self.assertEqual(self.field.text, "I think we should of gone.")
+
+    def test_the_badge_opens_review(self):
+        self.field.placeable = False
+        self.app.tick(4)
+        self.assertTrue(self.app._live_press(400, 0))
+        self.assertEqual(self.app.review_.shown[-1][0], "i thinks we should of gone.")
+
+    def test_changing_modes_or_sources_clears_the_cache(self):
+        self.app.change("writer_sources", [["Cursor", True]])
+        self.assertFalse(self.app.live_cache.has("i thinks we should of gone.", self.app._find_mode(None)))
+
+
+if __name__ == "__main__":
+    unittest.main()

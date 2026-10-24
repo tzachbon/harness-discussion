@@ -3,17 +3,19 @@
 There is no AX setter that keeps the app's own undo, so text goes in through the pasteboard and Cmd+V,
 and the user's pasteboard is put back afterwards.
 """
+import hashlib
 import os
 import time
 
 import AppKit
 import Quartz
-from ApplicationServices import (AXUIElementCopyAttributeValue, AXUIElementCreateApplication,
-                                 AXUIElementIsAttributeSettable, AXUIElementSetAttributeValue, AXValueCreate,
-                                 AXValueGetValue, kAXErrorSuccess, kAXValueCFRangeType)
+from ApplicationServices import (AXUIElementCopyAttributeValue, AXUIElementCopyParameterizedAttributeValue,
+                                 AXUIElementCreateApplication, AXUIElementIsAttributeSettable,
+                                 AXUIElementSetAttributeValue, AXValueCreate, AXValueGetValue, kAXErrorSuccess,
+                                 kAXValueCFRangeType, kAXValueCGPointType, kAXValueCGRectType, kAXValueCGSizeType)
 from CoreFoundation import CFEqual, CFRangeMake
 
-from .. import edit_logic
+from .. import edit_logic, live
 from ..edit_logic import Context
 from . import pasteboard, permission, selection
 
@@ -189,3 +191,113 @@ def collapse():
         if AXUIElementSetAttributeValue(element, "AXSelectedTextRange", value) == kAXErrorSuccess:
             return
     _key(KEY_RIGHT)
+
+
+# Check as you type: read the focused field and place text ranges without the pasteboard or keys.
+
+# Terminals expose scrollback as an editable text area, which must never be sent anywhere.
+TERMINALS = {"com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable", "net.kovidgoyal.kitty",
+             "io.alacritty", "org.alacritty", "com.github.wez.wezterm", "com.mitchellh.ghostty"}
+
+def _digest(text):
+    return hashlib.sha256(text.encode("utf-16-le", "surrogatepass")).digest()
+
+def _param(element, name, value):
+    err, result = AXUIElementCopyParameterizedAttributeValue(element, name, value, None)
+    return result if err == kAXErrorSuccess else None
+
+def _cf_range(start, length):
+    return AXValueCreate(kAXValueCFRangeType, CFRangeMake(start, length))
+
+def _rect_of(element):
+    position, size = _attr(element, "AXPosition"), _attr(element, "AXSize")
+    ok_p, p = AXValueGetValue(position, kAXValueCGPointType, None) if position is not None else (False, None)
+    ok_s, s = AXValueGetValue(size, kAXValueCGSizeType, None) if size is not None else (False, None)
+    if not (ok_p and ok_s):
+        return None
+    return int(p.x), int(p.y), int(p.x + s.width), int(p.y + s.height)
+
+def observe():
+    """The focused editable, non-secure field as an edit_logic.Field, or None. The text is the raw AXValue, since AX
+    ranges count its UTF-16 units as they are."""
+    if not permission.trusted():
+        return None
+    app = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
+    if app is None or app.processIdentifier() == os.getpid() or app.bundleIdentifier() in TERMINALS:
+        return None
+    pid, bundle = app.processIdentifier(), app.bundleIdentifier() or ""
+    selection._expose(pid)
+    element = _focused(pid)
+    if element is None or not _editable(element) or selection.secure_input() or selection.SECURE in (
+            _attr(element, "AXRole"), _attr(element, "AXSubrole")):
+        return None
+    count = _attr(element, "AXNumberOfCharacters")
+    if count is not None and int(count) > live.LIVE_MAX_DOC:
+        return None
+    value, rng = _attr(element, "AXValue"), _range(element)
+    if value is None or rng is None:
+        return None
+    text = str(value)
+    if live.units(text) > live.LIVE_MAX_DOC or _frontmost_pid() != pid:
+        return None
+    return edit_logic.Field(pid, _window_number(pid), bundle, str(app.localizedName() or bundle), text,
+                            (rng[0], rng[0] + rng[1]), _digest(text), _rect_of(element), element)
+
+def _same_field(field):
+    """The field's element, still focused, with the same text; or None."""
+    if _frontmost_pid() != field.app:
+        return None
+    element = _focused(field.app)
+    if element is None or not CFEqual(element, field.handle):
+        return None
+    value = _attr(element, "AXValue")
+    return element if value is not None and _digest(str(value)) == field.digest else None
+
+def _place(element, text, start, end, expected):
+    """Rectangles for [start, end), one per line, or None when AX cannot prove the range reads `expected`."""
+    if live.text_at(text, start, end) != expected:
+        return None
+    rects, at = [], start
+    while at < end:
+        line = _param(element, "AXLineForIndex", at)
+        line_range = _param(element, "AXRangeForLine", line) if line is not None else None
+        ok, rng = AXValueGetValue(line_range, kAXValueCFRangeType, None) if line_range is not None else (False, None)
+        if not ok or rng[0] + rng[1] <= at:
+            return None
+        stop = min(end, rng[0] + rng[1])
+        piece = _cf_range(at, stop - at)
+        if str(_param(element, "AXStringForRange", piece) or "") != live.text_at(text, at, stop):
+            return None
+        bounds = _param(element, "AXBoundsForRange", piece)
+        ok, r = AXValueGetValue(bounds, kAXValueCGRectType, None) if bounds is not None else (False, None)
+        if not ok:
+            return None
+        if r.size.width > 0 and r.size.height > 0:
+            rects.append((int(r.origin.x), int(r.origin.y), int(r.origin.x + r.size.width),
+                          int(r.origin.y + r.size.height)))
+        at = stop
+    return rects
+
+def bounds(field, spans):
+    """Screen rectangles (top-left origin) per (start, end, expected) span: a list, empty when not visible, or None
+    when the span cannot be placed exactly. None for the whole call when the field changed."""
+    element = _same_field(field)
+    if element is None:
+        return None
+    return [_place(element, field.text, start, end, expected) for start, end, expected in spans]
+
+def select_range(field, start, end, expected):
+    """Selects [start, end) of the unchanged `field` and returns the Context for replace(), or None. A selection
+    that does not read back exactly is collapsed again."""
+    element = _same_field(field)
+    if element is None or live.text_at(field.text, start, end) != expected:
+        return None
+    if AXUIElementSetAttributeValue(element, "AXSelectedTextRange", _cf_range(start, end - start)) != kAXErrorSuccess:
+        return None
+    now = capture(False)
+    if (now is not None and (now.app, now.window) == (field.app, field.window) and now.editable and not now.secure
+            and now.field is not None and CFEqual(now.field, field.handle) and now.caret == (start, end - start)
+            and now.text == expected):
+        return now
+    collapse()
+    return None

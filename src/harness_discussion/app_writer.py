@@ -138,6 +138,8 @@ class Writer:
         rid, cancel = self._rewrite_id, threading.Event()
         self._rewrite_cancel = cancel
         self._set_rewriting(True)
+        if hasattr(self, "live_cancel"):
+            self.live_cancel()  # a check in flight must not hold the source this rewrite needs
         self.popup.set_last_mode(mode.name)
         self._summary_gen += 1  # a summary's idle stop must not stop the local model under this rewrite
         sources = writer.chain(self.writer_sources, self.cfg["writer_sources"])
@@ -261,6 +263,8 @@ class Writer:
             return
         self._dictate_generation += 1
         generation = self._dictate_generation
+        if hasattr(self, "live_cancel"):
+            self.live_cancel()
         self._dictate_ctx = self.edit.capture(False)
         self._holding = True
         self._watch_escape()

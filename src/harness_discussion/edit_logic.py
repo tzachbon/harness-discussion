@@ -30,6 +30,7 @@ class Field:
     text: str
     caret: tuple
     digest: bytes
+    rect: tuple = None  # (left, top, right, bottom) of the field on screen, where the badge goes; None when unknown
     handle: object = _field(default=None, compare=False)  # the platform's focused-element identity
 
 

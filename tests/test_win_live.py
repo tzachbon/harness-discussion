@@ -198,5 +198,49 @@ class SelectRange(unittest.TestCase):
             self.assertEqual((document.start, document.end), (0, 0))
 
 
+
+class MarksTest(unittest.TestCase):
+    def setUp(self):
+        import tkinter as tk
+        from harness_discussion.win import marks
+        self.marks_module = marks
+        self.root = tk.Tk()
+        self.root.withdraw()
+        self.marks = marks.Marks(self.root)
+
+    def tearDown(self):
+        self.marks.destroy()
+        self.marks = None
+        self.root.destroy()
+        self.root = None
+
+    def test_strips_are_click_through_and_reused(self):
+        from harness_discussion.win.captions import _get_parent, _get_style
+        self.marks.show([("a", (10, 20, 50, 38)), ("a", (0, 40, 30, 58)), ("b", (60, 20, 90, 38))], None)
+        self.root.update_idletasks()
+        self.assertEqual(len(self.marks._strips), 3)
+        style = _get_style(_get_parent(self.marks._strips[0].winfo_id()), -20)
+        self.assertEqual(style & self.marks_module.CLICK_THROUGH, self.marks_module.CLICK_THROUGH)
+        self.assertEqual(self.marks._strips[0].geometry(), "40x2+10+37")
+        self.marks.show([("c", (0, 0, 10, 18))], None)
+        self.root.update_idletasks()
+        self.assertEqual(len(self.marks._strips), 3)
+        self.assertEqual([w.state() for w in self.marks._strips], ["normal", "withdrawn", "withdrawn"])
+
+    def test_hit_finds_the_word_or_the_badge(self):
+        self.marks.show([("a", (10, 20, 50, 38)), ("a", (0, 40, 30, 58))], (400, 100, 3))
+        self.root.update_idletasks()
+        self.assertEqual(self.marks.hit(12, 25), "a")
+        self.assertEqual(self.marks.hit(5, 45), "a")
+        self.assertIsNone(self.marks.hit(55, 25))
+        left, top, right, bottom = self.marks._badge_at
+        self.assertLessEqual(right, 400)
+        self.assertEqual(self.marks.hit(left + 1, top + 1), "badge")
+        self.assertEqual(self.marks.count.cget("text"), "3")
+        self.marks.hide()
+        self.assertIsNone(self.marks.hit(12, 25))
+        self.assertIsNone(self.marks.hit(left + 1, top + 1))
+
+
 if __name__ == "__main__":
     unittest.main()

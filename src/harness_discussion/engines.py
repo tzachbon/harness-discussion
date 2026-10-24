@@ -248,3 +248,12 @@ class Chain:
     def close(self):
         for e in self.engines:
             e.close()
+
+def causes(err):
+    """"NoAudioError from HTTPError 401": type names and HTTP codes only, since messages could echo the text."""
+    names = []
+    while err is not None and len(names) < 5:
+        code = getattr(err, "code", None)
+        names.append(f"{type(err).__name__} {code}" if isinstance(code, int) else type(err).__name__)
+        err = err.__cause__ or err.__context__
+    return " from ".join(names)
