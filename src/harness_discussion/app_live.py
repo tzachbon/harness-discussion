@@ -41,6 +41,14 @@ class Live(Writer):
             return  # an underline or the badge: its card or Review opens, and the bar ignores the click
         super()._handle(kind, *args)
 
+    def rewrite_selection(self, mode_name=None, prev=None):
+        self.live_cancel()  # a manual rewrite wins: a check in flight must not hold the source it needs
+        super().rewrite_selection(mode_name, prev)
+
+    def _dictate_down(self, *args, **kwargs):
+        self.live_cancel()
+        super()._dictate_down(*args, **kwargs)
+
     def _init_live(self):
         self.live_ready = self.writer_ready and all(
             hasattr(self.edit, f) for f in ("observe", "bounds", "select_range")) and hasattr(self.host, "make_marks")
