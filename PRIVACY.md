@@ -16,7 +16,7 @@ The app sends the text you play to the first ready voice source in Settings → 
 
 *Prepare speech as soon as I select text* is off by default. When it is on, and Cursor or Edge reads first, the opening sentences are sent when the bar appears, before you press play.
 
-On Windows and Mac, rewriting and dictation send the selection or the recorded audio to Cursor or Codex, in the order set in Writing and Dictation. On Windows, both are under Settings → Writing; Mac has separate Settings → Writing and Settings → Dictation pages. Local rewriting stays on your computer. Dictation audio is not saved.
+On Windows and Mac, rewriting and dictation send the selection or the recorded audio to Cursor or Codex, in the order set in Writing and Dictation. Both platforms have separate Settings → Writing and Settings → Dictation pages. Local rewriting stays on your computer. Dictation audio is not saved.
 
 The optional speech-to-text server (Settings → Speech-to-text, off by default) sends audio and any prompt hint that other apps on your computer send it to OpenAI through your Codex sign-in. See [STT.md](STT.md).
 
@@ -29,6 +29,6 @@ Password fields are never read or rewritten. The log records the engine, timing,
 
 ## Keeping everything on your computer
 
-The Windows installer offers **Use only voices that run on this PC**. It turns on Kokoro and the Windows voices, and turns off Cursor, Codex, Edge, preparing speech early, the speech-to-text server, and Writing and Dictation through Cursor or Codex. It does not change update checks, which send no text. At any time, turn those sources off in Settings → Voices, and turn off Cursor and Codex separately for Writing and Dictation (both under Settings → Writing on Windows; separate Settings pages on Mac).
+The Windows installer offers **Use only voices that run on this PC**. It turns on Kokoro and the Windows voices, and turns off Cursor, Codex, Edge, preparing speech early, the speech-to-text server, and Writing and Dictation through Cursor or Codex. It does not change update checks, which send no text. At any time, turn those sources off in Settings → Voices, and turn off Cursor and Codex separately for Writing and Dictation (Settings → Writing and Settings → Dictation).
 
 The services above have their own privacy policies: [Cursor](https://cursor.com/privacy), [OpenAI](https://openai.com/policies/privacy-policy/), and [Microsoft](https://privacy.microsoft.com/privacystatement).

@@ -6,10 +6,10 @@ to Codex's remote realtime service. The HTTP listener itself is localhost only.
 
 ## Built-in dictation
 
-Enable **Settings → Writing → Enable rewriting and dictation**. Hold Ctrl+Shift+D
+Enable **Settings → Writing → Rewrite selected text**. Hold Ctrl+Shift+D
 on Windows, or ⌥⌘D on Mac, to record; release to transcribe. The built-in flow
-uses the source order under **Settings → Writing → Dictation** on Windows
-(**Settings → Dictation** on Mac), independently of the HTTP server. It can tidy the transcript with the selected dictation mode, or insert
+uses the source order under **Settings → Dictation** on both platforms,
+independently of the HTTP server. It can tidy the transcript with the selected dictation mode, or insert
 the raw transcript when tidying is off. Esc cancels recording or transcription.
 
 Typing is guarded by the original field, document and caret or selection. If
