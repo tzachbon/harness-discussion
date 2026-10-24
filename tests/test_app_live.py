@@ -6,7 +6,7 @@ import queue
 import unittest
 from types import SimpleNamespace
 
-from harness_discussion import app_live, app_summarize, live
+from harness_discussion import app_live, app_summarize, app_writer, live
 from harness_discussion.edit_logic import Context, Field
 
 from tests.test_app_writer import FakeToast, Source
@@ -25,10 +25,17 @@ class FakeField:
         self.selected = None  # (start, end) after select_range
         self.observed, self.pasted = 0, []
 
+    rect = (0, 0, 400, 200)
+    collapsed = 0
+
     def field(self):
         caret = live.units(self.text)
         return Field(1, 2, self.app_name, self.app_name.split(".")[0].capitalize(), self.text, (caret, caret),
-                     digest(self.text), (0, 0, 400, 200), "element")
+                     digest(self.text), self.rect, "element")
+
+    def collapse(self):
+        self.selected = None
+        self.collapsed += 1
 
     def observe(self):
         self.observed += 1
@@ -87,7 +94,7 @@ class FakeMarks:
         return None
 
 
-class _App(app_summarize.Summaries, app_live.Live):
+class _App(app_live.Live, app_summarize.Summaries, app_writer.Writer):
     def __init__(self, reply="I think so, ok"):
         self.events, self.copied, self.changes = queue.Queue(), [], []
         self.toast_, self.marks_ = FakeToast(), FakeMarks()
@@ -199,7 +206,17 @@ class WhenItChecks(unittest.TestCase):
         with self.assertLogs("harness_discussion", logging.INFO) as logs:
             self.app.tick(0)
             self.app.tick(2)
-        self.assertEqual([r.getMessage() for r in logs.records], ["live check 15 chars with Cursor"])
+        self.assertEqual([r.getMessage() for r in logs.records], ["live check 15 chars", "live check done with Cursor"])
+
+    def test_no_check_while_dictation_is_held(self):
+        self.field.text = "i thinks so, ok"
+        self.app._holding = True
+        for at in range(5):
+            self.app.tick(at)
+        self.app._holding, self.app._recorder = False, object()
+        for at in range(5, 10):
+            self.app.tick(at)
+        self.assertEqual(self.app.source.texts, [])
 
 
 class WhatItDraws(unittest.TestCase):
@@ -226,6 +243,11 @@ class WhatItDraws(unittest.TestCase):
         self.app.tick(4)
         strips, badge = self.app.marks_.shown
         self.assertEqual((strips, badge), ([], (400, 0, 1)))
+
+    def test_without_the_field_rectangle_the_badge_goes_by_the_pointer(self):
+        self.field.placeable, self.field.rect = False, None
+        self.app.tick(4)
+        self.assertEqual(self.app.marks_.shown[1], (10, 10, 1))
 
     def test_turning_it_off_hides_the_marks(self):
         self.app.change("live_check", False)
@@ -284,6 +306,21 @@ class Actions(unittest.TestCase):
         self.app.toast_.action("Copy")()
         self.assertEqual(self.app.copied, ["I think"])
 
+    def test_a_refused_paste_collapses_the_selection_and_offers_copy(self):
+        actions = self.click("i thinks")[1]
+        self.field.replace = lambda text, ctx: False
+        actions["Apply"]()
+        self.assertEqual((self.field.selected, self.field.collapsed), (None, 1))
+        self.assertEqual(self.app.toast_.shown[-1][0], "The text changed. Copy the suggestion?")
+
+    def test_review_replace_can_be_undone(self):
+        self.click("i thinks")[1]["Review"]()
+        replace = self.app.review_.shown[-1][2]
+        replace("I think we should of gone.")
+        self.assertEqual(self.app.toast_.shown[-1][0], "Applied")
+        self.app.toast_.action("Undo")()
+        self.assertEqual(self.field.text, "i thinks we should of gone.")
+
     def test_dismiss_survives_later_polls(self):
         self.click("i thinks")[1]["Dismiss"]()
         self.app.tick(4)
@@ -314,9 +351,73 @@ class Actions(unittest.TestCase):
         self.assertTrue(self.app._live_press(400, 0))
         self.assertEqual(self.app.review_.shown[-1][0], "i thinks we should of gone.")
 
-    def test_changing_modes_or_sources_clears_the_cache(self):
-        self.app.change("writer_sources", [["Cursor", True]])
-        self.assertFalse(self.app.live_cache.has("i thinks we should of gone.", self.app._find_mode(None)))
+    def test_changing_the_mode_or_sources_clears_the_cache(self):
+        for key, value in (("writer_sources", [["Cursor", True]]), ("default_mode", "Fix errors")):
+            self.app.live_cache.put("i thinks we should of gone.", self.app._find_mode(None), "x")
+            self.app.change(key, value)
+            self.assertFalse(self.app.live_cache.has("i thinks we should of gone.", self.app._find_mode(None)))
+
+
+
+class RealApp(unittest.TestCase):
+    """app_live.App is core.App with Check as you type: the platform entry points start this class."""
+
+    def make(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from harness_discussion import settings
+        from tests.test_core import Engine, FakeHost
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        path = Path(folder.name) / "settings.json"
+        cfg = {**settings.DEFAULTS, "sources": [["macOS", True]], "writer": True, "live_check": True}
+        path.write_text(json.dumps(cfg), encoding="utf-8")
+        for p in (patch.object(settings, "PATH", str(path)), patch.object(settings, "load", return_value=cfg),
+                  patch.object(settings, "save")):
+            p.start()
+            self.addCleanup(p.stop)
+        host = FakeHost([Engine("macOS")])
+        self.marks, self.field = FakeMarks(), FakeField("i thinks so, ok")
+        host.edit, host.make_marks = self.field, lambda: self.marks
+        host.make_toast, host.make_review = FakeToast, lambda: SimpleNamespace(show=lambda *a: None)
+        host.esc_watcher = lambda fn: SimpleNamespace(start=lambda: None, stop=lambda: None)
+        host.set_shortcut = lambda *a: None
+        make_popup = host.make_popup
+
+        def popup(speed, **callbacks):
+            p = make_popup(speed, **callbacks)
+            for name in ("set_last_mode", "set_rewriting", "configure_writer", "set_writer"):
+                setattr(p, name, lambda *a, **k: None)
+            return p
+        host.make_popup = popup
+        app = app_live.App(host)
+        app._live_stop.set()
+        return app
+
+    def test_the_app_runs_check_as_you_type_through_its_events_and_clicks(self):
+        app = self.make()
+        self.assertTrue(app.live_ready)
+        app.writer_sources = [Source("Cursor", "I think so, ok")]
+        app.cfg["writer_sources"] = [["Cursor", True]]
+        app._live_tick(now=0)
+        app._live_tick(now=2)
+        for _ in range(100):
+            if app._live_checking is None:
+                break
+            threading_wait()
+        app._live_tick(now=3)
+        app.pump()
+        (key, (left, top, _, _)), = app.marks.shown[0]
+        app.events.put(("press", left + 1, top + 1))
+        app.pump()
+        self.assertEqual(app.toast.shown[-1][0], "i thinks → I think")
+        app.change("live_check", False, save=False)
+        self.assertIsNone(self.marks.shown)
+        app.events.put(("quit",))
+        app.pump()
+        self.assertTrue(app._live_stop.is_set())
 
 
 if __name__ == "__main__":

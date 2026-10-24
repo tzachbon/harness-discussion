@@ -15,7 +15,7 @@ from . import app_skip, lang, sentences, settings, stt_server
 from .app_skip import Skips
 from .app_summarize import Summaries
 from .app_updates import Updates
-from .app_live import Live as Writer  # the Writer with Check as you type
+from .app_writer import Writer
 from .captions import Captions
 from .engines import causes as _causes
 from .sources import Sources

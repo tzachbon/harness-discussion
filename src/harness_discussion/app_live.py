@@ -1,7 +1,7 @@
 """Check as you type: after a pause, the line at the caret goes through the Writer with the default mode, and each
 change is underlined in the field. A click shows the suggestion with Apply, Dismiss, Review, and More.
 
-A poll thread reads the field through `host.edit.observe()` (never the clipboard or keys) and asks for the
+`App` is core.App with this part; the platform entry points start it. A poll thread reads the field through `host.edit.observe()` (never the clipboard or keys) and asks for the
 rectangles of every suggestion; the main thread draws them through `host.make_marks()`. Suggestions are derived
 from the current text on each poll, so one never points at text that changed. Apply selects the exact span with
 `edit.select_range` and pastes through the Writer's guarded `edit.replace`.
@@ -10,18 +10,16 @@ import logging
 import threading
 import time
 
-from . import live, writer
-from .app_writer import Writer
+from . import core, live, writer
 
 log = logging.getLogger("harness_discussion")
 
 
-class Live(Writer):
-    """The Writer, which owns host, cfg, edit, toast, review, and the rewrite state, plus Check as you type. core.App
-    takes it as its Writer: its init, quit, and events run this part too, and `apply` and `_handle` run here first."""
+class Live:
+    """Mixed in before core.App's Writer, which owns host, cfg, edit, toast, review, and the rewrite state. Its init,
+    quit, settings, events, and clicks run this part first."""
     LIVE_EVENTS = {"live_marks": "_live_marks", "live_check_start": "_live_check_start",
                    "live_check_done": "_live_check_done"}
-    WRITER_EVENTS = {**Writer.WRITER_EVENTS, **LIVE_EVENTS}
 
     def _init_writer(self):
         super()._init_writer()
@@ -37,9 +35,10 @@ class Live(Writer):
             self._apply_live(key, value)
 
     def _handle(self, kind, *args):
-        if kind == "press" and self._live_press(*args):
-            return  # an underline or the badge: its card or Review opens, and the bar ignores the click
-        super()._handle(kind, *args)
+        if kind in self.LIVE_EVENTS:
+            getattr(self, self.LIVE_EVENTS[kind])(*args)
+        elif not (kind == "press" and self._live_press(*args)):  # an underline or badge opens its card instead
+            super()._handle(kind, *args)
 
     def rewrite_selection(self, mode_name=None, prev=None):
         self.live_cancel()  # a manual rewrite wins: a check in flight must not hold the source it needs
@@ -63,7 +62,9 @@ class Live(Writer):
             threading.Thread(target=self._live_loop, name="live-check", daemon=True).start()
 
     def _live_on(self):
-        return self.cfg["writer"] and self.cfg.get("live_check") and not self.rewriting
+        """Checking runs only when on and while no rewrite or dictation is under way."""
+        busy = self.rewriting or getattr(self, "_holding", False) or getattr(self, "_recorder", None) is not None
+        return self.cfg["writer"] and self.cfg.get("live_check") and not busy
 
     def _live_loop(self):
         while not self._live_stop.wait(live.POLL_S):
@@ -120,9 +121,10 @@ class Live(Writer):
         self.events.put(("live_check_start",))
 
         def work():
+            log.info("live check %d chars", len(line))  # before sending: proof of every send, never the text
             try:
                 new, source = writer.rewrite(line, mode, sources, models=models, cancelled=cancel.is_set)
-                log.info("live check %d chars with %s", len(line), source)
+                log.info("live check done with %s", source)
                 if not cancel.is_set():
                     self.live_cache.put(line, mode, new)
             except Exception as e:
@@ -153,8 +155,9 @@ class Live(Writer):
             return
         self._live_view = (field, {s.key: s for s in found})
         badge = None
-        if unplaced and field.rect:
-            badge = (field.rect[2], field.rect[1], len(found))
+        if unplaced:
+            right, top = (field.rect[2], field.rect[1]) if field.rect else self.host.pointer()
+            badge = (right, top, len(found))
         self.marks.show(placed, badge)
 
     def _live_press(self, x, y):
@@ -189,10 +192,22 @@ class Live(Writer):
         self.toast.hide()
         self._live_marks(None, [], [], 0)
 
+    def _live_paste(self, field, start, end, old, new):
+        """Selects [start, end) and pastes `new` through the guarded replace; the context, or None. A paste that was
+        refused before any input leaves the selection, so it is collapsed: the next key must not overwrite it."""
+        ctx = self.edit.select_range(field, start, end, old)
+        if ctx is None:
+            return None
+        if self.edit.replace(new, ctx):
+            return ctx
+        if hasattr(self.edit, "collapse"):
+            self.edit.collapse()
+        return None
+
     def _live_apply(self, field, s):
         mode = self._find_mode(None)
-        ctx = self.edit.select_range(field, s.start, s.end, s.old)
-        if ctx is None or not self.edit.replace(s.new, ctx):
+        ctx = self._live_paste(field, s.start, s.end, s.old, s.new)
+        if ctx is None:
             self._toast("The text changed. Copy the suggestion?", [("Copy", lambda: self.host.copy_text(s.new))])
             return
         live.applied(self.live_cache, mode, s)
@@ -218,8 +233,8 @@ class Live(Writer):
         at = start + live.units(line[:line.index(core)])
 
         def replace(text):
-            ctx = self.edit.select_range(field, at, at + live.units(core), core)
-            if ctx is None or not self.edit.replace(text, ctx):
+            ctx = self._live_paste(field, at, at + live.units(core), core, text)
+            if ctx is None:
                 self._toast("The text changed. Copy the result?", [("Copy", lambda: self.host.copy_text(text))])
                 return
             self._last_edit = (ctx, core, text, mode.name)
@@ -227,7 +242,7 @@ class Live(Writer):
         self.review.show(core, new, replace, self.host.copy_text)
 
     def _apply_live(self, key, value):
-        if key in ("modes", "writer_sources", "writer_models"):
+        if key in ("default_mode", "modes", "writer_sources", "writer_models"):
             self.live_cache.clear()
         if key in ("live_check", "writer", "live_off_apps", "default_mode", "modes") and self.marks:
             self._live_marks(None, [], [], 0)
@@ -239,3 +254,7 @@ class Live(Writer):
         self._live_cancel.set()
         if self.marks:
             self.marks.hide()
+
+
+class App(Live, core.App):
+    """core.App with Check as you type."""

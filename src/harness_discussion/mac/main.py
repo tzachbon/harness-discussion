@@ -7,7 +7,8 @@ import sys
 import time
 
 from .. import settings
-from ..core import App, log
+from ..app_live import App
+from ..core import log
 
 OLD_BUNDLE_ID = "com.tzachbon.codexspeak"  # Codex Speak, the app's earlier name
 

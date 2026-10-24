@@ -360,6 +360,14 @@ def _collapse(span):
     if caret.MoveEndpointByRange(END, caret, START, waitTime=0):
         caret.Select(waitTime=0)
 
+def collapse():
+    """Collapses the focused field's selection to its start, so a refused paste leaves nothing selected."""
+    def run():
+        found = _inspect(live.LIVE_MAX_DOC)
+        if found and found[2] is not None and found[0]._start != found[0]._end:
+            _collapse(found[2])
+    _run(run)
+
 def select_range(field, start, end, expected):
     """Selects [start, end) of the unchanged `field` and returns the Context for replace(), or None. A selection
     that does not read back exactly is collapsed again, so the next key press cannot overwrite it."""

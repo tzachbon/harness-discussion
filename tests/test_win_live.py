@@ -194,6 +194,13 @@ class SelectRange(unittest.TestCase):
             self.assertEqual(selections, [(2, 8), (2, 2)])
             self.assertEqual((document.start, document.end), (2, 2))
 
+    def test_collapse_clears_a_selection(self):
+        document = LiveDocument("i thinks so ok", caret=0)
+        document.start, document.end = 2, 8
+        with target(document):
+            self.edit.collapse()
+        self.assertEqual((document.start, document.end), (2, 2))
+
     def test_changed_document_is_never_selected(self):
         document = LiveDocument("i thinks so ok", caret=0)
         with target(document):
