@@ -1,7 +1,7 @@
 """The Writing and Dictation pages of the Windows Settings window, organized like macOS."""
 import tkinter as tk
 from copy import deepcopy
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
 from .. import settings, writer
 from .. import writer_settings as ws
@@ -9,7 +9,8 @@ from .sources_ui import CARD
 
 PLAN_DEFAULTS = {k: settings.DEFAULTS[k] for k in ("writer", "writer_sources", "writer_models", "modes",
                                                    "default_mode", "rewrite_hotkey", "dictate_hotkey", "stt_sources",
-                                                   "dictate_polish", "dictate_mode")}
+                                                   "dictate_polish", "dictate_mode", "live_check",
+                                                   "live_off_apps")}
 LOCAL_MODEL = "Qwen3-4B"  # fixed: Local has no model or effort choice
 FIXES = {"missing": "Install…", "signed_out": "Sign in…", "expired": "Sign in…", "not_downloaded": "Download…"}
 
@@ -28,11 +29,19 @@ class WritingPage:
         card = self._card(page, "Rewrite")
         self.writer_on = tk.BooleanVar(self.win, self.cfg["writer"])
         self.writer_check = ttk.Checkbutton(card, text="Rewrite selected text", style="Card.TCheckbutton",
-                                            variable=self.writer_on,
-                                            command=lambda: self._set("writer", self.writer_on.get()))
+                                            variable=self.writer_on, command=self._writer_changed)
         self.writer_check.pack(anchor="w")
         ttk.Label(card, text="Adds ✎ to the bar over text you can edit, and the shortcut.",
                   style="Sub.Card.TLabel", wraplength=440).pack(anchor="w", pady=(4, 0))
+        self.live_on = tk.BooleanVar(self.win, self.cfg["live_check"])
+        self.live_check = ttk.Checkbutton(card, text="Check as I type", style="Card.TCheckbutton",
+                                          variable=self.live_on, command=self._live_changed)
+        self.live_check.pack(anchor="w", pady=(12, 0))
+        ttk.Label(card, text="When you pause, underlines the default mode's changes to the line you are typing. "
+                  "Never in password fields.", style="Sub.Card.TLabel", wraplength=440).pack(anchor="w", pady=(4, 0))
+        self.live_off_frame = tk.Frame(card, bg=CARD)
+        self.live_off_frame.pack(fill="x")
+        self._show_live_off()
         row = tk.Frame(card, bg=CARD)
         row.pack(fill="x", pady=(12, 0))
         ttk.Label(row, text="Default mode", style="Card.TLabel", width=14).pack(side="left")
@@ -49,6 +58,39 @@ class WritingPage:
                   "send the selected text to their service. Local keeps it on this PC.",
                   style="Sub.Card.TLabel", wraplength=440).pack(anchor="w", pady=(8, 0))
         self._modes_section(self._card(page, "Modes"), font)
+
+    def _writer_changed(self):
+        self._set("writer", self.writer_on.get())
+        self.live_check.state(["!disabled"] if self.writer_on.get() else ["disabled"])
+
+    def _live_changed(self):
+        if self.live_on.get():
+            names = [n for n, on in self.cfg["writer_sources"] if on] or ["no source"]
+            ok = messagebox.askokcancel(
+                "Check as I type",
+                f"When you pause typing, the line you are typing is sent to {', '.join(names)} in order, "
+                "in every app except password fields, terminals, and apps you turn it off for. "
+                "Cursor and Codex send it to their service. Local keeps it on this PC.",
+                icon="question", parent=self.win)
+            if not ok:
+                self.live_on.set(False)
+                return
+        self._set("live_check", self.live_on.get())
+
+    def _show_live_off(self):
+        """One row per app the user turned checking off for, each with Turn on."""
+        for child in self.live_off_frame.winfo_children():
+            child.destroy()
+        self.live_check.state(["!disabled"] if self.cfg["writer"] else ["disabled"])
+        for name in self.cfg["live_off_apps"]:
+            row = tk.Frame(self.live_off_frame, bg=CARD)
+            row.pack(fill="x", pady=(6, 0))
+            ttk.Label(row, text=f"Off in {name}", style="Card.TLabel").pack(side="left")
+            ttk.Button(row, text="Turn on", command=lambda name=name: self._live_turn_on(name)).pack(side="right")
+
+    def _live_turn_on(self, name):
+        self._set("live_off_apps", [n for n in self.cfg["live_off_apps"] if n != name])
+        self._show_live_off()
 
     def _dictation_page(self, page):
         card = self._card(page, "Sources")
@@ -253,6 +295,8 @@ class WritingPage:
         self._show_rows("writer_sources", self.writer_rows, ("toggle", "status", "model", "effort", "up", "down", "fix"))
         self._show_rows("stt_sources", self.dictation_rows, ("toggle", "status", "up", "down", "fix"))
         self.mic_status["text"] = f"Microphone: {self.dictate_status()}"
+        self.live_on.set(self.cfg["live_check"])
+        self._show_live_off()
         self._refresh_modes()
 
     def _writer_toggled(self, name, key):

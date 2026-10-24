@@ -18,6 +18,8 @@ The app sends the text you play to the first ready voice source in Settings → 
 
 On Windows and Mac, rewriting and dictation send the selection or the recorded audio to Cursor or Codex, in the order set in Writing and Dictation. Both platforms have separate Settings → Writing and Settings → Dictation pages. Local rewriting stays on your computer. Dictation audio is not saved.
 
+*Check as I type* (Settings → Writing, off by default) sends the line you are typing, without selecting it, to the same writing sources after you pause, in every app except password fields, terminals, and apps you turn it off for. It asks before turning on. Results stay in memory and are never saved. With only Local on, nothing leaves your computer.
+
 The optional speech-to-text server (Settings → Speech-to-text, off by default) sends audio and any prompt hint that other apps on your computer send it to OpenAI through your Codex sign-in. See [STT.md](STT.md).
 
 Password fields are never read or rewritten. The log records the engine, timing, and errors, never the text.

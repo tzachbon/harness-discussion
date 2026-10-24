@@ -15,6 +15,7 @@ from ..icons import icon_image
 from ..kokoro_tts import KokoroEngine
 from . import clipboard, edit, microphone, selection, uia_thread
 from .popup import Popup
+from .marks import Marks
 from .review import Review
 from .settings_ui import SettingsWindow
 from .toast import Toast
@@ -63,6 +64,9 @@ class TkHost:
 
     def make_review(self):
         return Review(self.root)
+
+    def make_marks(self):
+        return Marks(self.root)
 
     def pick_mode(self, names, current, pick):
         if self._mode_menu:
