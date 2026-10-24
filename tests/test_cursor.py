@@ -154,6 +154,7 @@ class Synthesize(TempDb):
 
         class Redirect(http.server.BaseHTTPRequestHandler):
             def do_POST(self):
+                self.rfile.read(int(self.headers.get("Content-Length", "0")))
                 seen.append((self.path, self.headers.get("Authorization")))
                 self.send_response(302 if self.path == "/tts" else 200)
                 self.send_header("Location", "/elsewhere")

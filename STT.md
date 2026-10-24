@@ -12,8 +12,13 @@ uses the source order under **Settings → Dictation** on both platforms,
 independently of the HTTP server. It can tidy the transcript with the selected dictation mode, or insert
 the raw transcript when tidying is off. Esc cancels recording or transcription.
 
-Typing is guarded by the original field, document and caret or selection. If
-that target changes or cannot be verified, the app offers Copy. Windows exposes
+The field, document and caret or selection captured during preparation, before
+**Listening** appears, become the insertion target. This is not a snapshot of
+the exact key-down instant. A programmatic focus change before that capture can
+therefore establish a different target within the same window. Mouse clicks or
+unrelated keystrokes from the hold's activation until insertion make the result
+Copy-only while recording continues. If the captured target later changes or
+cannot be verified, the app also offers Copy. Windows exposes
 microphone status and a link to Windows microphone privacy settings.
 
 Windows support is experimental. Native microphone start/Esc cancellation and a

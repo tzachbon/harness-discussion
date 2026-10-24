@@ -3,6 +3,7 @@ import sys
 import unittest
 import ctypes
 import subprocess
+import threading
 
 if sys.platform != "win32":
     raise unittest.SkipTest("Windows only")
@@ -14,6 +15,28 @@ from unittest.mock import Mock, patch
 from tests.win_edit_fakes import UNSUPPORTED, Document, Range, clipboard, native_host, target
 
 class CaptureSafety(unittest.TestCase):
+    def test_dictation_activity_during_last_inspection_prevents_any_paste(self):
+        from harness_discussion.win import edit
+        document, activity = Document(), threading.Event()
+        with target(document) as (_, key, _, cleanup):
+            context = edit.capture(False)
+            inspect, reads = edit._inspect, []
+
+            def changed_after_read():
+                found = inspect()
+                reads.append(1)
+                if len(reads) == 2:
+                    document.start, document.end = 0, 4
+                    activity.set()
+                return found
+
+            with patch.object(edit, "_inspect", side_effect=changed_after_read):
+                self.assertFalse(edit.type_at_caret("new", context, cancelled=activity.is_set))
+            self.assertEqual(len(reads), 2)
+            self.assertEqual(document.text, "Left old right")
+            key.assert_not_called()
+            cleanup.assert_called_once_with(expected_sequence=11)
+
     def test_shared_undo_keeps_receipts_across_mode_and_repeated_review_replacements(self):
         from harness_discussion import edit_logic
         from harness_discussion.win import edit

@@ -104,6 +104,7 @@ def app():
     a._continuous, a._last_caption, a._held_caption = False, "", ""
     a._caption_steps = a._caption_held = None
     a._hotkey_wait = None
+    a._holding, a._recorder = False, None
     a.cfg = {"sources": [["Codex", True], ["Edge", True]], "voices": {}, "speed": 1.0, "prefetch": False}
     a.popup, a.chain, a.settings_win = Popup(), Chain(), None
     a.chain.active_name = None

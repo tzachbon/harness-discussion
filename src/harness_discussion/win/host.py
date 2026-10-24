@@ -100,6 +100,14 @@ class TkHost:
     def mic_status(self):
         return microphone.status()
 
+    def dictation_target(self):
+        """Cheap foreground identity before the worker performs editor capture."""
+        try:
+            identity = edit._foreground()
+            return identity if identity and all(identity) and identity[0] != os.getpid() else None
+        except Exception:
+            return None
+
     def mic_permission(self, then):
         # Desktop apps use Windows' shared privacy switch, without an app permission prompt.
         then(self.mic_status() == "Available")
@@ -133,12 +141,13 @@ class TkHost:
             self.hotkey.stop()
         self.hotkey = HotKey(spec, on_hotkey) if spec else None
 
-    def set_shortcut(self, name, spec, on_hotkey, on_release=None):
+    def set_shortcut(self, name, spec, on_hotkey, on_release=None, *, on_activity=None):
         old = self.shortcuts.pop(name, None)
         if old:
             old.stop()
         if spec:
-            self.shortcuts[name] = HotKey(spec, on_hotkey, on_release)
+            options = {"on_activity": on_activity} if on_activity is not None else {}
+            self.shortcuts[name] = HotKey(spec, on_hotkey, on_release, **options)
 
     def pointer(self):
         point = wintypes.POINT()
