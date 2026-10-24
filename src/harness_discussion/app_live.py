@@ -63,7 +63,8 @@ class Live:
 
     def _live_on(self):
         """Checking runs only when on and while no rewrite or dictation is under way."""
-        busy = self.rewriting or getattr(self, "_holding", False) or getattr(self, "_recorder", None) is not None
+        busy = (self.rewriting or getattr(self, "_holding", False) or getattr(self, "_recorder", None) is not None
+                or getattr(self, "_dictation_job", None) is not None)
         return self.cfg["writer"] and self.cfg.get("live_check") and not busy
 
     def _live_loop(self):

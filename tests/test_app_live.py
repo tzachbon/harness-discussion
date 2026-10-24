@@ -383,7 +383,7 @@ class RealApp(unittest.TestCase):
         host.edit, host.make_marks = self.field, lambda: self.marks
         host.make_toast, host.make_review = FakeToast, lambda: SimpleNamespace(show=lambda *a: None)
         host.esc_watcher = lambda fn: SimpleNamespace(start=lambda: None, stop=lambda: None)
-        host.set_shortcut = lambda *a: None
+        host.set_shortcut = lambda *a, **k: None
         make_popup = host.make_popup
 
         def popup(speed, **callbacks):
