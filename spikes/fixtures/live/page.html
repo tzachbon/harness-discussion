@@ -1,0 +1,32 @@
+<!doctype html>
+<!-- Check as you type: the test page for docs/live-check/VERIFICATION.md. Open it from disk in each browser. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Check as you type test page</title>
+<style>
+  body { font: 16px system-ui, sans-serif; max-width: 52rem; margin: 2rem auto; padding: 0 1rem; }
+  textarea, input { font: inherit; width: 100%; box-sizing: border-box; margin: .25rem 0 1rem; }
+  td { padding: .3rem .6rem; vertical-align: top; }
+</style>
+</head>
+<body>
+<h1>Check as you type</h1>
+<p>Copy a line into a field, or type it, then pause.</p>
+<table>
+  <tr><td>en</td><td lang="en">We recieved the report yesterday but nobody has read it yet ,so lets meet tomorow</td></tr>
+  <tr><td>he</td><td lang="he" dir="rtl">אני חושב שהפגישה מחר בשעה 10 אבל לפעמיים כדאי לבדוק ב-Zoom ,ואז לשלוח את הדוח</td></tr>
+  <tr><td>ar</td><td lang="ar" dir="rtl">سوف نلتقي غدا في الساعة 10 لمناقشة المشرووع مع فريق Google ,ثم نرسل التقرير</td></tr>
+  <tr><td>ru</td><td lang="ru">Мы получили отчёт вчера но никто его ещё не прочетал ,поэтому давайте встретимся завтра</td></tr>
+  <tr><td>es</td><td lang="es">Ayer recivimos el informe pero nadie lo a leído todavía ,así que nos vemos mañana</td></tr>
+  <tr><td>fr</td><td lang="fr">Nous avons recu le rapport hier mais personne ne l'a encore lu ,donc on se voit demain</td></tr>
+  <tr><td>style</td><td lang="en">So basically the thing is that we kind of need to make a decision about the budget really soon if possible</td></tr>
+</table>
+<label for="area">Textarea</label>
+<textarea id="area" rows="4" dir="auto"></textarea>
+<label for="line">Text input</label>
+<input id="line" type="text" dir="auto">
+<label for="secret">Password (must never be checked)</label>
+<input id="secret" type="password">
+</body>
+</html>
