@@ -249,8 +249,26 @@ class DictationTest(unittest.TestCase):
         with unittest.mock.patch.object(app_writer.local_stt, "downloaded", return_value=True):
             app._local_stt_downloaded(error)
         self.assertEqual(app.stt_statuses["Local"], "ready")
-        self.assertEqual(notices[-1], "Local dictation is ready.")
+        self.assertEqual(notices, [])
         app.summarize_action.assert_not_called()
+
+    def test_local_speech_download_notifies_only_on_failure(self):
+        app = _App()
+        notices = []
+        app.host.notify, app.settings_win = notices.append, None
+        app.refresh_writer = unittest.mock.Mock()
+        with unittest.mock.patch.object(app_writer.local_stt, "download", side_effect=OSError("private details")), \
+                unittest.mock.patch.object(app_writer.threading, "Thread",
+                                          lambda target, daemon: SimpleNamespace(start=target)):
+            app.fix_writer("Local", True)
+        self.assertEqual(notices, [])
+        kind, error = app.events.get_nowait()
+        self.assertEqual((kind, error), ("local_stt_downloaded", True))
+        with unittest.mock.patch.object(app_writer.local_stt, "downloaded", return_value=False):
+            app._local_stt_downloaded(error)
+        self.assertFalse(app._local_stt_downloading)
+        self.assertEqual(app.stt_statuses["Local"], "missing")
+        self.assertEqual(notices, ["Could not download the local dictation model. Try again in Settings → Dictation."])
 
     def test_tidy_off_never_checks_writing_sources_and_still_inserts(self):
         local = Source("Local")

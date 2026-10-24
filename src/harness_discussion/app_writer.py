@@ -107,7 +107,6 @@ class Writer:
             self._local_stt_downloading = True
             self.stt_statuses["Local"] = "downloading"
             self._writer_info()
-            self.host.notify("Downloading Whisper Small for local dictation (486 MB).")
             def work():
                 error = None
                 try:
@@ -134,8 +133,8 @@ class Writer:
         self._local_stt_downloading = False
         self.stt_statuses["Local"] = "ready" if local_stt.downloaded() else "missing"
         self._writer_info()
-        self.host.notify("Could not download the local dictation model. Try again in Settings → Dictation."
-                         if error else "Local dictation is ready.")
+        if error:
+            self.host.notify("Could not download the local dictation model. Try again in Settings → Dictation.")
         self.refresh_writer()
 
     def mode_names(self):

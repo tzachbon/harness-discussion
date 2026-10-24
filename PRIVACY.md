@@ -27,6 +27,7 @@ Password fields are never read or rewritten. The log records the engine, timing,
 ## Downloads and update checks
 
 - Kokoro downloads from GitHub, and the Summarize model from GitHub and Hugging Face, only when you ask in Settings.
+- Whisper Small downloads from Hugging Face only when you start the download in Settings → Dictation.
 - The app checks GitHub releases 30 seconds after it starts and daily, when *Check for updates automatically* (Mac, on by default) or *Install updates automatically* (Windows, off by default) is on. On Windows that setting also downloads and installs a new release. Otherwise the app checks only when you click, and downloading needs your click.
 
 ## Keeping everything on your computer
