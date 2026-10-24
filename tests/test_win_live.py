@@ -183,11 +183,16 @@ class SelectRange(unittest.TestCase):
         document = LiveDocument("i thinks so ok", caret=0)
         with target(document):
             field = self.edit.observe()
-            wrong = lambda rng, waitTime=0: (setattr(document, "start", rng.start),
-                                            setattr(document, "end", rng.end + 1), True)[-1]
-            with patch.object(LiveRange, "Select", wrong):
+            selections = []
+
+            def overshoot_once(rng, waitTime=0):  # the provider selects one character too many, once
+                selections.append((rng.start, rng.end))
+                document.start, document.end = rng.start, rng.end + (len(selections) == 1)
+                return True
+            with patch.object(LiveRange, "Select", overshoot_once):
                 self.assertIsNone(self.edit.select_range(field, 2, 8, "thinks"))
-            self.assertEqual(document.start, document.end)
+            self.assertEqual(selections, [(2, 8), (2, 2)])
+            self.assertEqual((document.start, document.end), (2, 2))
 
     def test_changed_document_is_never_selected(self):
         document = LiveDocument("i thinks so ok", caret=0)
