@@ -53,8 +53,11 @@ def _editable(element):
     return err == kAXErrorSuccess and bool(settable)
 
 
+def _frontmost_app():
+    return AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
+
 def _frontmost_pid():
-    app = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
+    app = _frontmost_app()
     return app.processIdentifier() if app is not None else None
 
 
@@ -222,7 +225,7 @@ def observe():
     ranges count its UTF-16 units as they are."""
     if not permission.trusted():
         return None
-    app = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
+    app = _frontmost_app()
     if app is None or app.processIdentifier() == os.getpid() or app.bundleIdentifier() in TERMINALS:
         return None
     pid, bundle = app.processIdentifier(), app.bundleIdentifier() or ""

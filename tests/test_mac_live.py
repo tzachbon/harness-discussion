@@ -53,15 +53,11 @@ class FakeAX:
         return True, value[1]
 
 
-def patched(ax, frontmost=7):
-    app = SimpleNamespace(processIdentifier=lambda: frontmost, bundleIdentifier=lambda: "com.apple.TextEdit",
-                          localizedName=lambda: "TextEdit")
+def patched(ax):
     return [mock.patch.object(edit, "_same_field", side_effect=lambda f: FIELD if ax.text == f.text else None),
             mock.patch.object(edit, "_param", side_effect=ax.param),
             mock.patch.object(edit, "_cf_range", side_effect=lambda s, n: ("range", s, n)),
-            mock.patch.object(edit, "AXValueGetValue", side_effect=ax.get),
-            mock.patch.object(edit.AppKit.NSWorkspace, "sharedWorkspace",
-                              return_value=SimpleNamespace(frontmostApplication=lambda: app))]
+            mock.patch.object(edit, "AXValueGetValue", side_effect=ax.get)]
 
 
 def field_for(text):
@@ -105,8 +101,7 @@ class Observe(unittest.TestCase):
     def app(self, bundle, pid=7):
         app = SimpleNamespace(processIdentifier=lambda: pid, bundleIdentifier=lambda: bundle,
                               localizedName=lambda: "App")
-        return mock.patch.object(edit.AppKit.NSWorkspace, "sharedWorkspace",
-                                 return_value=SimpleNamespace(frontmostApplication=lambda: app))
+        return mock.patch.object(edit, "_frontmost_app", return_value=app)
 
     def test_terminals_and_our_own_app_are_never_read(self):
         with mock.patch.object(edit.permission, "trusted", return_value=True), \
