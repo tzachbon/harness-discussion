@@ -1,6 +1,7 @@
 """Dictation pieces with no microphone or network: WAV, the tap threshold, the 60 s cap, and the transcript chain."""
 import unittest
-from unittest.mock import Mock
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from harness_discussion import dictation, mic, stt
 
@@ -20,6 +21,58 @@ class FakeStream:
 
 
 class MicTest(unittest.TestCase):
+    def test_selected_microphone_reaches_the_native_stream(self):
+        device = "Microphone (HyperX SoloCast 2), MME"
+        devices = [{"name": "Wrong mic", "hostapi": 0, "max_input_channels": 1},
+                   {"name": "Microphone (HyperX SoloCast 2)", "hostapi": 0, "max_input_channels": 2}]
+        with patch("sounddevice.RawInputStream") as stream, patch(
+                "sounddevice.query_devices", return_value=devices), patch(
+                "sounddevice.query_hostapis", return_value=[{"name": "MME"}]):
+            rec = mic.Recorder(device=device)
+            rec.start()
+            rec.stop()
+        self.assertEqual(stream.call_args.kwargs["device"], 1)
+
+    def test_missing_or_ambiguous_microphone_never_opens_another_input(self):
+        exact = {"name": "HyperX", "hostapi": 0, "max_input_channels": 1}
+        for devices in ([{**exact, "name": "2- HyperX"}], [exact, exact]):
+            with self.subTest(devices=devices), patch("sounddevice.RawInputStream") as stream, patch(
+                    "sounddevice.query_devices", return_value=devices), patch(
+                    "sounddevice.query_hostapis", return_value=[{"name": "MME"}]):
+                with self.assertRaisesRegex(ValueError, "selected microphone"):
+                    mic.Recorder(device="HyperX, MME").start()
+                stream.assert_not_called()
+
+    def test_device_menu_uses_input_names_in_the_default_host_api(self):
+        devices = [{"name": "HyperX", "hostapi": 0, "max_input_channels": 2},
+                   {"name": "Speakers", "hostapi": 0, "max_input_channels": 0},
+                   {"name": "HyperX", "hostapi": 1, "max_input_channels": 2}]
+        with patch("sounddevice.query_devices", return_value=devices), patch(
+                "sounddevice.query_hostapis", return_value={"name": "MME"}), patch(
+                "sounddevice.default", SimpleNamespace(hostapi=0)):
+            self.assertEqual(mic.input_devices(), ["HyperX, MME"])
+
+    def test_input_level_follows_audio_and_resets_after_each_read(self):
+        rec = mic.Recorder(FakeStream)
+        rec.start()
+        rec._callback(b"\x00\x00" * 240, 240, None, None)
+        self.assertEqual(rec.level(), 0.0)
+        rec._callback(b"\x00\x20" * 240, 240, None, None)
+        self.assertGreater(rec.level(), 0.5)
+        self.assertEqual(rec.level(), 0.0)
+        rec.stop()
+
+    def test_native_cffi_buffer_is_recorded_and_measured(self):
+        from cffi import FFI
+        ffi = FFI()
+        pcm = b"\x00\x20" * 240
+        storage = ffi.new("char[]", pcm)
+        rec = mic.Recorder(FakeStream)
+        rec.start()
+        rec._callback(ffi.buffer(storage, len(pcm)), 240, None, None)
+        self.assertGreater(rec.level(), 0.5)
+        self.assertEqual(stt.decode_audio(rec.stop()), pcm)
+
     def test_start_failure_closes_the_created_stream_and_can_be_retried(self):
         stream = Mock()
         stream.start.side_effect = RuntimeError("start failed")

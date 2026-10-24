@@ -145,6 +145,36 @@ class ClipboardSafety(unittest.TestCase):
 
 
 class InputSafety(unittest.TestCase):
+    def test_held_keys_refuse_before_the_attempt_callback(self):
+        from harness_discussion.win import input as keys
+        for held in (0x11, 0x5B, ord("V")):
+            with self.subTest(held=held):
+                native, attempt = Mock(), Mock()
+                native.GetAsyncKeyState.side_effect = lambda vk: 0x8000 if vk == held else 0
+                with patch.object(keys, "u32", native):
+                    self.assertFalse(keys.chord(ord("V"), on_attempt=attempt))
+                attempt.assert_not_called()
+                native.SendInput.assert_not_called()
+
+    def test_attempt_callback_precedes_initial_delivery_and_never_repeats_for_cleanup(self):
+        from harness_discussion.win import input as keys
+        for outcome in (4, 0, 1, OSError("synthetic failure")):
+            with self.subTest(outcome=outcome):
+                native, attempt = Mock(), Mock()
+                native.GetAsyncKeyState.return_value = 0
+                results = iter((outcome, 2))
+                def send(*args):
+                    attempt.assert_called_once_with()
+                    result = next(results)
+                    if isinstance(result, Exception):
+                        raise result
+                    return result
+                native.SendInput.side_effect = send
+                with patch.object(keys, "u32", native):
+                    self.assertIs(keys.chord(ord("V"), on_attempt=attempt), outcome == 4)
+                attempt.assert_called_once_with()
+                self.assertEqual(native.SendInput.call_count, 1 if outcome in (0, 4) else 2)
+
     def test_partial_paste_releases_synthetic_control_without_retry(self):
         from harness_discussion.win import input as keys
         native = Mock()

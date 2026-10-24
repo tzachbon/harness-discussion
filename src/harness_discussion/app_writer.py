@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 
-from . import dictation, edit_logic, hotkeys, mic, sources, writer
+from . import dictation, edit_logic, hotkeys, local_stt, mic, sources, writer
 from . import writer_settings as ws
 from .llm_codex import CodexWriter
 from .llm_cursor import CursorWriter
@@ -32,7 +32,8 @@ def _edges(text):
 class Writer:
     rewriting, writer_ready = False, False
     WRITER_EVENTS = {"rewrite": "_rewrite_done", "rewrite_hotkey": "_rewrite_hotkey", "dictate_down": "_dictate_down",
-                     "dictate_up": "_dictate_up", "dictated": "_dictated", "writer_info": "_writer_info"}
+                     "dictate_up": "_dictate_up", "dictated": "_dictated", "writer_info": "_writer_info",
+                     "local_stt_downloaded": "_local_stt_downloaded"}
 
     def _init_writer(self):
         self.edit = getattr(self.host, "edit", None)
@@ -44,6 +45,7 @@ class Writer:
         self.toast = self.review = self._esc = None
         self.stt_sources = dictation.sources()
         self.writer_statuses, self.stt_statuses, self.writer_models = {}, {}, {}
+        self._local_stt_downloading = False
         self._writer_checking = threading.Lock()
         self._recorder, self._recorded_at, self._dictate_ctx, self._holding = None, 0.0, None, False
         self._dictate_generation = 0
@@ -85,10 +87,38 @@ class Writer:
         if self.settings_win and self.settings_win.alive and hasattr(self.settings_win, "refresh_writing"):
             self.settings_win.refresh_writing()
 
+    def _dictation_writers(self):
+        chain = writer.chain(self.writer_sources, self.cfg["writer_sources"])
+        if self.cfg.get("dictate_local_tidy", True):
+            local = next((s for s in chain if s.name == "Local"), None)
+            try:
+                if local is not None and local.status() == "ready":
+                    chain = [local] + [s for s in chain if s is not local]
+            except Exception as e:
+                log.info("Local writer status failed: %s", type(e).__name__)
+        return chain
+
     def fix_writer(self, name, stt=False):
-        """Sign in or install for Codex and Cursor. Local downloads its model from the Summarize page."""
+        """Sign in, install, or download the distinct local speech/writing model."""
         status = (self.stt_statuses if stt else self.writer_statuses).get(name)
-        if name == "Local":
+        if name == "Local" and stt:
+            if self._local_stt_downloading:
+                return
+            self._local_stt_downloading = True
+            self.stt_statuses["Local"] = "downloading"
+            self._writer_info()
+            def work():
+                error = None
+                try:
+                    local_stt.download()
+                except Exception as e:
+                    log.info("Local dictation download failed: %s", type(e).__name__)
+                    error = True
+                self.events.put(("local_stt_downloaded", error))
+            threading.Thread(target=work, daemon=True).start()
+            self.refresh_writer()
+            return
+        elif name == "Local":
             self.summarize_action()
         elif found := sources.fix(name, status):
             try:
@@ -98,6 +128,14 @@ class Writer:
                 return
         for s in sources.RECHECK_S:
             self.host.after(s * 1000, self.refresh_writer)
+
+    def _local_stt_downloaded(self, error):
+        self._local_stt_downloading = False
+        self.stt_statuses["Local"] = "ready" if local_stt.downloaded() else "missing"
+        self._writer_info()
+        if error:
+            self.host.notify("Could not download the local dictation model. Try again in Settings → Dictation.")
+        self.refresh_writer()
 
     def mode_names(self):
         return [m.name for m in writer.all_modes(self.cfg["modes"])]
@@ -275,21 +313,36 @@ class Writer:
         if not self._holding:
             return  # released while the permission prompt was up
         try:
-            recorder = mic.Recorder()
+            recorder = mic.Recorder(device=self.cfg.get("dictate_microphone", ""))
             recorder.start()
         except Exception as e:
             self._holding = False
             log.info("microphone failed: %s", type(e).__name__)
-            self._toast("The microphone could not start.", [("Open Settings", self.host.open_mic_settings)])
+            self._toast("The microphone could not start. Choose an input in Settings → Dictation.",
+                        [("Settings", lambda: self.events.put(("settings",)))])
             return
         self._recorder, self._recorded_at = recorder, time.monotonic()
-        first = next((n for n, on in self.cfg["stt_sources"] if on), "Cursor")
-        self._toast(f"Listening · {first}", busy=True)
+        self._summary_gen += 1  # an old idle timer must not stop a local Tidy warmup during recording
+        def cancel():
+            if self._recorder is recorder:
+                self._stop_recording()
+                self.toast.hide()
+        self._toast("Listening", [("×", cancel)], busy=True)
+        self._show_input_level(recorder)
+        first_stt = next(iter(writer.chain(self.stt_sources, self.cfg["stt_sources"])), None)
+        if first_stt is not None and hasattr(first_stt, "prewarm"):
+            threading.Thread(target=first_stt.prewarm, args=(), daemon=True).start()
         if self.cfg["dictate_polish"]:  # get the rewrite ready while the user speaks
-            writer_first = next(iter(writer.chain(self.writer_sources, self.cfg["writer_sources"])), None)
+            writer_first = next(iter(self._dictation_writers()), None)
             if writer_first is not None and hasattr(writer_first, "prewarm"):
                 model = (self.cfg["writer_models"].get(writer_first.name) or {}).get("model")
                 threading.Thread(target=writer_first.prewarm, args=(model,), daemon=True).start()
+
+    def _show_input_level(self, recorder):
+        if self._recorder is not recorder or not self._holding:
+            return
+        self.toast.set_input_level(recorder.level())
+        self.host.after(100, lambda: self._show_input_level(recorder))
 
     def _dictate_up(self):
         held = time.monotonic() - self._recorded_at
@@ -308,15 +361,15 @@ class Writer:
         self._set_rewriting(True)
         self._summary_gen += 1
         at = self._anchor()
-        sources = writer.chain(self.writer_sources, self.cfg["writer_sources"])
+        sources = self._dictation_writers() if mode else []
         models, order, chain = self.cfg["writer_models"], self.cfg["stt_sources"], self.stt_sources
-        self._toast(f"Transcribing · {mode.name}" if mode else "Transcribing", [("Cancel", self.cancel_rewrite)],
+        self._toast("Transcribing", [("×", lambda: self.cancel_rewrite() if rid == self._rewrite_id else None)],
                     busy=True, at=at)
 
         def work():
             stt_s = rewrite_s = stt_name = None
             try:
-                text, stt_name = dictation.transcribe(audio, chain, order)
+                text, stt_name = dictation.transcribe(audio, chain, order, cancelled=cancel.is_set)
                 stt_s = time.monotonic() - released
                 if cancel.is_set():
                     raise writer.Cancelled("The dictation was cancelled.")
@@ -348,6 +401,8 @@ class Writer:
             log.info("microphone stop failed: %s", type(e).__name__)
             self._toast("The recording could not finish.", [("Open Settings", self.host.open_mic_settings)])
             return None
+        finally:
+            self._arm_summary_stop()  # taps and Esc also need to release the warmed writing model
 
     def _dictated(self, rid, mode, result, at, timing):
         if rid != self._rewrite_id:
@@ -370,13 +425,20 @@ class Writer:
                  f" then {source}" if source else "", time.monotonic() - released, stt_s, secs(rewrite_s))
         ctx, now = self._dictate_ctx, self.edit.capture(False)
         copy = lambda: self.host.copy_text(text)
-        if ctx is None or now is None or (now.app, now.window) != (ctx.app, ctx.window) or now.secure:
-            self._toast("The window changed. Copy the text?", [("Copy", copy)], at=at)
-            return
-        if not self.edit.type_at_caret(text, ctx):
-            self._toast("Couldn't type here.", [("Copy", copy)], at=at)
-            return
-        self._toast(f"Dictated · {mode} · {source}" if mode else f"Dictated · {stt_name}", [("Copy", copy)], at=at)
+        can_insert = (ctx is not None and now is not None and (now.app, now.window) == (ctx.app, ctx.window)
+                      and not now.secure)
+        if can_insert:
+            inserted = self.edit.type_at_caret(text, ctx)
+            attempted = getattr(ctx, "_insertion_attempted", False)
+            if inserted or attempted:
+                if not inserted:
+                    log.info("dictation insertion: paste request unconfirmed")
+                self.toast.hide()
+                return
+        if copy():
+            self._toast("Copied to clipboard", at=at)
+        else:
+            self._toast("Could not copy the dictation.", [("Copy", copy)], at=at)
 
     def _escape(self):
         """Esc cancels a rewrite, else hides the toast, else dismisses the bar. Both watchers can see one Esc."""
@@ -411,10 +473,13 @@ class Writer:
         self._press_gen += 1
         self._stop_recording()
         self._rewrite_cancel.set()
-        for source in self.writer_sources:
+        for source in self.writer_sources + self.stt_sources:
             close = getattr(source, "close", None)
             if close:
-                close()
+                if source.name == "Local" and source in self.stt_sources:
+                    threading.Thread(target=close, daemon=True).start()
+                else:
+                    close()
         if self._esc:
             self._esc.stop()
             self.host.set_shortcut("rewrite", "", None)

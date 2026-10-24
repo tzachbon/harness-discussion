@@ -209,7 +209,7 @@ class MacHost:
     def copy_text(self, text):
         board = AppKit.NSPasteboard.generalPasteboard()
         board.clearContents()
-        board.setString_forType_(text, AppKit.NSPasteboardTypeString)
+        return bool(board.setString_forType_(text, AppKit.NSPasteboardTypeString))
 
     def pick_mode(self, names, current, pick):
         """The mode menu at the pointer, for a double press of the rewrite shortcut."""

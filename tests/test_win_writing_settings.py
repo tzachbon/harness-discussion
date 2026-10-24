@@ -20,6 +20,41 @@ CATALOGS = {"Codex": [{"id": "gpt-5.5", "label": "GPT-5.5", "efforts": ["low", "
 
 
 class WritingSettingsUi(unittest.TestCase):
+    def test_recording_meter_is_replaced_by_transcription_activity(self):
+        from harness_discussion.win.toast import Toast
+        toast = Toast(self.root)
+        try:
+            toast.show("Listening", 100, 100, busy=True)
+            toast.set_input_level(0.75)
+            self.assertTrue(toast.meter.winfo_manager())
+            self.assertFalse(toast.spinner.winfo_manager())
+            self.assertEqual(toast.label["text"], "Listening")
+            self.assertTrue(toast._busy)
+            toast.show("Transcribing", 100, 100, busy=True)
+            self.assertFalse(toast.meter.winfo_manager())
+            self.assertTrue(toast.spinner.winfo_manager())
+        finally:
+            toast.destroy()
+
+    def test_microphone_menu_displays_and_saves_the_selected_input(self):
+        cfg = {**settings.DEFAULTS, "dictate_microphone": "HyperX, MME"}
+        with patch("harness_discussion.win.writing_page.mic.input_devices", return_value=["HyperX, MME"]):
+            w = self.make_window(cfg)
+        self.assertEqual(w.microphone.get(), "HyperX, MME")
+        self.pick(w.microphone, "System default")
+        self.assertEqual(self.changes[-1], ("dictate_microphone", ""))
+
+    def test_local_dictation_download_and_tidy_preference_are_separate_controls(self):
+        fixes = []
+        w = self.make_window(stt_statuses=lambda: {"Local": "missing"},
+                             on_writer_fix=lambda *args: fixes.append(args))
+        self.assertEqual(w.dictation_rows["Local"]["fix"]["text"], "Download…")
+        w.dictation_rows["Local"]["fix"].invoke()
+        self.assertEqual(fixes, [("Local", True)])
+        self.assertTrue(w.local_tidy_on.get())
+        w.local_tidy_check.invoke()
+        self.assertEqual(self.changes[-1], ("dictate_local_tidy", False))
+
     def test_dictation_has_its_own_statuses_fixes_and_microphone_settings(self):
         fixes, opened = [], []
         w = self.make_window(writer_statuses=lambda: {"Codex": "ready"},
@@ -36,6 +71,12 @@ class WritingSettingsUi(unittest.TestCase):
         self.assertEqual(opened, [True])
 
     def setUp(self):
+        win_key = patch("harness_discussion.win.shortcut_row.win_down", return_value=False)
+        win_key.start()
+        self.addCleanup(win_key.stop)
+        devices = patch("harness_discussion.win.writing_page.mic.input_devices", return_value=[])
+        devices.start()
+        self.addCleanup(devices.stop)
         self.root = tk.Tk()
         self.root.withdraw()
         self.changes, self.window = [], None
@@ -305,11 +346,11 @@ class WritingSettingsUi(unittest.TestCase):
         mic = ["Not checked"]
         w = self.make_window(dictate_status=lambda: mic[0])
         self.assertEqual(w.mic_status["text"], "Microphone: Not checked")
-        self.assertTrue(w.dictation_rows["Cursor"]["up"].instate(["disabled"]))  # Cursor transcribes first
+        self.assertTrue(w.dictation_rows["Local"]["up"].instate(["disabled"]))
         w.dictation_rows["Codex"]["up"].invoke()
-        self.assertEqual(self.changes[-1], ("stt_sources", [["Codex", True], ["Cursor", True]]))
+        self.assertEqual(self.changes[-1], ("stt_sources", [["Local", True], ["Codex", True], ["Cursor", True]]))
         w.dictation_rows["Cursor"]["toggle"].invoke()
-        self.assertEqual(self.changes[-1], ("stt_sources", [["Codex", True], ["Cursor", False]]))
+        self.assertEqual(self.changes[-1], ("stt_sources", [["Local", True], ["Codex", True], ["Cursor", False]]))
         self.assertTrue(w.polish_on.get())
         w.polish_check.invoke()
         self.assertEqual(self.changes[-1], ("dictate_polish", False))

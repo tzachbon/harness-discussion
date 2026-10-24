@@ -29,7 +29,7 @@ class Summaries:
         if self._summarize_status != "ready":
             if self.host.confirm("Download the Summarize model?",
                                  f"Summarize runs {summarize.MODEL_NAME} on this computer. It downloads once "
-                                 f"from Hugging Face: {summarize.SIZE_LABEL}."):
+                                 f"from GitHub and Hugging Face: {summarize.download_size_label()}."):
                 self._download_summarize()
             return
         self.stop()  # a read in progress is replaced by the summary
@@ -127,4 +127,4 @@ class Summaries:
 
     def _close_summaries(self):
         self._summarize_cancel.set()
-        self.summary_server.stop()
+        self.summary_server.close()

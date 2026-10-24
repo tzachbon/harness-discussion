@@ -6,6 +6,43 @@ to Codex's remote realtime service. The HTTP listener itself is localhost only.
 
 ## Built-in dictation
 
+**Settings → Dictation → Local → Download** installs Whisper Small (486 MB), a
+multilingual speech model that runs on this computer. The files are pinned to a
+specific revision and checked by size and SHA-256. This download is separate from
+the Local writing model. Local is tried first by default. It warms while you hold
+the shortcut and stays loaded for later recordings. Inference uses CPU int8 and
+does not require a GPU or contact a model service. An optional Windows NVIDIA
+build uses GPU int8/float16 instead, and retries locally on CPU if GPU inference fails.
+
+For an NVIDIA Windows source run, use `uv sync --extra cuda` and
+`uv run --extra cuda harness-discussion`. Build that Windows installer with
+`packaging/build.ps1 -Cuda`. The extra bundles about 1.2 GB of pinned NVIDIA
+libraries inside the app, without changing the system driver. The ordinary
+build omits them. On this PC's RTX 4080 Super, the 7.8 s synthetic English clip
+took 0.2 s warm on GPU. A 57 s repeated clip took about 11 s, versus 43 s on CPU.
+
+**Prefer local tidy for faster results** uses the enabled, downloaded Local
+writing model before the other Writing sources. It also warms while you speak.
+Turn this off to follow the Writing order for Tidy. The ordinary Rewrite action
+always follows Writing order.
+
+Windows x64 local cleanup uses llama.cpp's Vulkan runtime to run Qwen3-4B on the
+graphics processor when available, with a CPU backend included. Existing CPU-only
+installations need the 32 MB runtime update through Writing → Local → Download.
+The already verified 2.5 GB model is reused. Two different synthetic drafts took
+0.30 and 0.79 seconds to tidy on this PC after warmup. First-ever shader preparation
+was slower, so these are warm inference timings, not first-use or native insertion results.
+
+Enabled cloud sources remain fallbacks. For fully offline dictation, download
+both local models and disable Cursor and Codex in both Writing and Dictation.
+Otherwise a failed local transcription can send audio to a cloud source, and
+cloud Tidy can send the transcript. The HTTP server below continues to use Codex.
+
+On one Windows CPU synthetic English sample, warm Small transcription took about
+2.4 seconds, compared with 12.5 seconds for a cached large-v3-turbo model. These
+are model timings, not native release-to-insertion measurements. Real microphone,
+Hebrew/mixed speech quality and macOS frozen-runtime performance remain to be checked.
+
 Enable **Settings → Writing → Rewrite selected text**. Hold Ctrl+Shift+D
 on Windows, or ⌥⌘D on Mac, to record; release to transcribe. The built-in flow
 uses the source order under **Settings → Dictation** on both platforms,
@@ -13,8 +50,19 @@ independently of the HTTP server. It can tidy the transcript with the selected d
 the raw transcript when tidying is off. Esc cancels recording or transcription.
 
 Typing is guarded by the original field, document and caret or selection. If
-that target changes or cannot be verified, the app offers Copy. Windows exposes
-microphone status and a link to Windows microphone privacy settings.
+there is no safe input target, dictation automatically copies the result to the
+clipboard. Windows exposes
+microphone status and a link to Windows microphone privacy settings. Choose an
+input under **Settings → Dictation → Input device**, or leave **System default**.
+The recording pill shows live input bars while the shortcut is held. Flat bars
+mean little or no input, which can reveal a muted or incorrectly routed virtual
+microphone. The selected device is saved for this app without changing the system
+default. If it is disconnected, choose another input in Settings.
+
+The recording and transcription pill has an **×** cancel button. Dictation
+finishes quietly after requesting insertion. It neither retries nor copies an
+unconfirmed paste. With no safe input target it shows **Copied to clipboard**
+after copying the result, or reports a clipboard failure with a manual Copy retry.
 
 Windows support is experimental. Native microphone start/Esc cancellation and a
 Codex rewrite/paste were checked on Windows 11; real English, Hebrew and mixed

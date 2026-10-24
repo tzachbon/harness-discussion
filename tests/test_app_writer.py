@@ -42,6 +42,10 @@ class FakeToast:
 
     def __init__(self):
         self.shown, self.on_hide = [], lambda: None
+        self.levels = []
+
+    def set_input_level(self, level):
+        self.levels.append(level)
 
     def show(self, message, x, y, actions=(), busy=False, above=None):
         self.visible = True
@@ -83,7 +87,7 @@ class _App(app_summarize.Summaries, app_writer.Writer):
             mic_permission=lambda then: then(self.mic_ok), open_mic_settings=lambda: None,
             edit=FakeEdit(), make_toast=lambda: self.toast_, make_review=lambda: self.review_,
             esc_watcher=lambda fn: self.esc, pointer=lambda: (10, 10), after=lambda ms, fn: self.timers.append(fn),
-            copy_text=self.copied.append, set_shortcut=lambda *a: None,
+            copy_text=lambda text: self.copied.append(text) or True, set_shortcut=lambda *a: None,
             pick_mode=lambda names, current, pick: self.picks.append((names, current, pick)))
         self.cfg = {"writer": True, "writer_sources": [["Cursor", True], ["Codex", True], ["Local", True]],
                     "stt_sources": [["Codex", True], ["Cursor", True]],
@@ -104,17 +108,223 @@ class _App(app_summarize.Summaries, app_writer.Writer):
 
 
 class FakeRecorder:
-    def __init__(self, audio=b"RIFFwav"):
+    def __init__(self, audio=b"RIFFwav", device=""):
         self.audio, self.started = audio, False
+        self.device = device
 
     def start(self):
         self.started = True
+
+    def level(self):
+        return 0.5
 
     def stop(self):
         return self.audio
 
 
 class DictationTest(unittest.TestCase):
+    def test_missing_input_automatically_copies_the_dictation(self):
+        app = self.app
+        app._dictate_ctx = None
+        app.host.edit.ctx = None
+        app.host.edit.type_at_caret = unittest.mock.Mock()
+        app._dictated(app._rewrite_id, None, ("hello", "Local", None), (10, 10, None), (0, .1, None, "Local"))
+        self.assertEqual(app.copied, ["hello"])
+        app.host.edit.type_at_caret.assert_not_called()
+        self.assertEqual(app.toast_.shown[-1][0], "Copied to clipboard")
+        self.assertEqual(app.toast_.shown[-1][1], {})
+
+    def test_changed_or_secure_input_copies_without_requesting_paste(self):
+        for current in (None, Context("", 9, 9, True, False), Context("", 1, 2, True, True)):
+            with self.subTest(current=current):
+                app = _App()
+                app._dictate_ctx = CTX
+                app.host.edit.ctx = current
+                app.host.edit.type_at_caret = unittest.mock.Mock()
+                app._dictated(app._rewrite_id, None, ("hello", "Local", None), (10, 10, None),
+                              (0, .1, None, "Local"))
+                self.assertEqual(app.copied, ["hello"])
+                app.host.edit.type_at_caret.assert_not_called()
+
+    def test_copy_failure_is_not_reported_as_success_and_can_be_retried(self):
+        app = self.app
+        app.host.copy_text = unittest.mock.Mock(return_value=False)
+        app._dictated(app._rewrite_id, None, ("hello", "Local", None), (10, 10, None), (0, .1, None, "Local"))
+        self.assertEqual(app.toast_.shown[-1][0], "Could not copy the dictation.")
+        app.host.copy_text.assert_called_once_with("hello")
+        app.toast_.action("Copy")()
+        self.assertEqual(app.host.copy_text.call_count, 2)
+
+    def test_canceled_stale_or_failed_results_never_copy(self):
+        for stale, result in ((True, ("hello", "Local", None)),
+                              (False, writer.Cancelled("Canceled")), (False, writer.Error("Failed"))):
+            with self.subTest(stale=stale, result=result):
+                app = _App()
+                app._dictated(app._rewrite_id - int(stale), None, result, (10, 10, None), (0, .1, None, "Local"))
+                self.assertEqual(app.copied, [])
+
+    def test_recording_x_cancels_and_its_stale_callback_cannot_cancel_a_new_hold(self):
+        self.app._dictate_down()
+        cancel = self.app.toast_.action("×")
+        cancel()
+        self.assertIsNone(self.app._recorder)
+        self.assertFalse(self.app.toast_.visible)
+        self.assertTrue(self.app.events.empty())
+        self.app._dictate_down()
+        recorder = self.app._recorder
+        cancel()
+        self.assertIs(self.app._recorder, recorder)
+        self.app._stop_recording()
+
+    def test_consecutive_recording_x_clicks_are_not_debounced(self):
+        clock = [10.0]
+        with unittest.mock.patch.object(app_writer.time, "monotonic", side_effect=lambda: clock[0]):
+            for now in (10.0, 10.1):
+                clock[0] = now
+                self.app._dictate_down()
+                cancel = self.app.toast_.action("×")
+                self.app.toast_.hide()  # native toast adapters hide before invoking an action
+                cancel()
+                self.assertIsNone(self.app._recorder)
+                self.assertFalse(self.app._holding)
+                self.assertFalse(self.app.toast_.visible)
+            self.app._dictate_up()
+        self.assertTrue(self.app.events.empty())
+
+    def test_unconfirmed_paste_finishes_quietly_without_copying_or_retrying(self):
+        ctx = SimpleNamespace(text="", app=1, window=2, editable=True, secure=False, _insertion_attempted=False)
+        self.app.host.edit.ctx = ctx
+        def request(text, context):
+            context._insertion_attempted = True
+            return False
+        self.app.host.edit.type_at_caret = unittest.mock.Mock(side_effect=request)
+        self.hold(2)
+        self.app.drain()
+        self.assertFalse(self.app.toast_.visible)
+        self.app.host.edit.type_at_caret.assert_called_once()
+        self.assertEqual(self.app.copied, [])
+
+    def test_refused_insertion_with_a_shared_context_automatically_copies(self):
+        self.app.host.edit.type_at_caret = unittest.mock.Mock(return_value=False)
+        self.hold(2)
+        self.app.drain()
+        self.assertEqual(self.app.toast_.shown[-1][0], "Copied to clipboard")
+        self.app.host.edit.type_at_caret.assert_called_once()
+        self.assertEqual(self.app.copied, ["Hi there."])
+
+    def test_input_meter_stops_updating_when_recording_ends(self):
+        self.app._dictate_down()
+        recorder, tick = self.app._recorder, self.app.timers[-1]
+        self.assertEqual(self.app.toast_.levels, [0.5])
+        tick()
+        self.assertEqual(self.app.toast_.levels, [0.5, 0.5])
+        self.app._stop_recording()
+        tick()
+        self.assertEqual(self.app.toast_.levels, [0.5, 0.5])
+        self.app._dictate_down()
+        self.app._show_input_level(recorder)
+        self.assertEqual(len(self.app.toast_.levels), 3)
+        self.app._stop_recording()
+
+    def test_recording_uses_the_saved_microphone(self):
+        self.app.cfg["dictate_microphone"] = "HyperX, MME"
+        self.app._dictate_down()
+        self.assertEqual(self.app._recorder.device, "HyperX, MME")
+        self.app._stop_recording()
+
+    def test_local_speech_download_uses_its_own_model_and_refreshes_completion(self):
+        app = _App()
+        notices = []
+        app.host.notify, app.settings_win = notices.append, None
+        app.refresh_writer, app.summarize_action = unittest.mock.Mock(), unittest.mock.Mock()
+        with unittest.mock.patch.object(app_writer.local_stt, "download") as download, unittest.mock.patch.object(
+                app_writer.threading, "Thread", lambda target, daemon: SimpleNamespace(start=target)):
+            app.fix_writer("Local", True)
+            app.stt_statuses["Local"] = "missing"  # an older settings refresh finishes during this download
+            app.fix_writer("Local", True)  # a second click while downloading must not start another worker
+        download.assert_called_once_with()
+        self.assertTrue(app._local_stt_downloading)
+        kind, error = app.events.get_nowait()
+        self.assertEqual((kind, error), ("local_stt_downloaded", None))
+        with unittest.mock.patch.object(app_writer.local_stt, "downloaded", return_value=True):
+            app._local_stt_downloaded(error)
+        self.assertEqual(app.stt_statuses["Local"], "ready")
+        self.assertEqual(notices, [])
+        app.summarize_action.assert_not_called()
+
+    def test_local_speech_download_notifies_only_on_failure(self):
+        app = _App()
+        notices = []
+        app.host.notify, app.settings_win = notices.append, None
+        app.refresh_writer = unittest.mock.Mock()
+        with unittest.mock.patch.object(app_writer.local_stt, "download", side_effect=OSError("private details")), \
+                unittest.mock.patch.object(app_writer.threading, "Thread",
+                                          lambda target, daemon: SimpleNamespace(start=target)):
+            app.fix_writer("Local", True)
+        self.assertEqual(notices, [])
+        kind, error = app.events.get_nowait()
+        self.assertEqual((kind, error), ("local_stt_downloaded", True))
+        with unittest.mock.patch.object(app_writer.local_stt, "downloaded", return_value=False):
+            app._local_stt_downloaded(error)
+        self.assertFalse(app._local_stt_downloading)
+        self.assertEqual(app.stt_statuses["Local"], "missing")
+        self.assertEqual(notices, ["Could not download the local dictation model. Try again in Settings → Dictation."])
+
+    def test_tidy_off_never_checks_writing_sources_and_still_inserts(self):
+        local = Source("Local")
+        local.status = unittest.mock.Mock(side_effect=OSError("private details"))
+        self.app.writer_sources = [local]
+        self.app.cfg["dictate_polish"] = False
+        self.hold(2)
+        self.app.drain()
+        local.status.assert_not_called()
+        self.assertEqual(self.app.host.edit.pasted, ["i thinks so"])
+        self.assertFalse(self.app.rewriting)
+
+    def test_local_status_failure_does_not_abort_recording_or_source_selection(self):
+        app = _App([Source("Cursor"), Source("Local")])
+        app.writer_sources[1].status = unittest.mock.Mock(side_effect=RuntimeError("private details"))
+        app._dictate_down()
+        self.assertIsNotNone(app._recorder)
+        self.assertEqual([s.name for s in app._dictation_writers()], ["Cursor", "Local"])
+
+    def test_taps_and_escape_rearm_idle_cleanup_and_invalidate_older_timer(self):
+        for end in ("_dictate_up", "_escape"):
+            with self.subTest(end=end):
+                app = _App()
+                app.summary_server.stop = unittest.mock.Mock()
+                app._arm_summary_stop()
+                old = app.timers[-1]
+                app._dictate_down()
+                old()
+                app.summary_server.stop.assert_not_called()
+                getattr(app, end)()
+                with unittest.mock.patch.object(app_writer.threading, "Thread",
+                        lambda target, daemon: SimpleNamespace(start=target)):
+                    app.timers[-1]()
+                app.summary_server.stop.assert_called_once_with()
+
+    def test_local_tidy_is_preferred_without_changing_writing_order(self):
+        app = _App([Source("Cursor"), Source("Local")])
+        self.assertEqual([s.name for s in app._dictation_writers()], ["Local", "Cursor"])
+        self.assertEqual([s.name for s in app.writer_sources], ["Cursor", "Local"])
+        app.cfg["dictate_local_tidy"] = False
+        self.assertEqual([s.name for s in app._dictation_writers()], ["Cursor", "Local"])
+        app.cfg["dictate_local_tidy"] = True
+        app.cfg["writer_sources"] = [["Local", False], ["Cursor", True]]
+        self.assertEqual([s.name for s in app._dictation_writers()], ["Cursor"])
+
+    def test_local_transcriber_warms_on_hold(self):
+        app = _App()
+        warmed = []
+        app.cfg["dictate_polish"] = False
+        app.cfg["stt_sources"] = [["Local", True]]
+        app.stt_sources = [SimpleNamespace(name="Local", prewarm=lambda: warmed.append(True))]
+        with unittest.mock.patch.object(app_writer.threading, "Thread",
+                lambda target, args, daemon: SimpleNamespace(start=lambda: target(*args))):
+            app._dictate_down()
+        self.assertEqual(warmed, [True])
+
     def setUp(self):
         self.app = _App()
         self.app.host.edit.type_at_caret = lambda text, ctx: self.app.host.edit.pasted.append(text) or self.app.host.edit.ctxs.append(ctx) or True
@@ -126,7 +336,7 @@ class DictationTest(unittest.TestCase):
 
     def hold(self, seconds):
         self.app._dictate_down()
-        self.assertEqual(self.app.toast_.shown[-1][0], "Listening · Codex")
+        self.assertEqual(self.app.toast_.shown[-1][0], "Listening")
         self.app._recorded_at -= seconds
         self.app._dictate_up()
 
@@ -178,7 +388,8 @@ class DictationTest(unittest.TestCase):
         self.assertEqual(self.app.host.edit.pasted, ["Hi there."])
         self.assertEqual(self.app.host.edit.ctxs, [CTX])  # typed only into the field captured at key down
         self.assertEqual(self.app.writer_sources[0].texts, [writer.wrap("i thinks so")])
-        self.assertEqual(self.app.toast_.shown[-1][0], "Dictated · Clean dictation · Cursor")
+        self.assertFalse(self.app.toast_.visible)
+        self.assertEqual(self.app.copied, [])
 
     def test_dictation_uses_its_custom_prompt_independently_of_the_writing_default(self):
         self.app.cfg.update(default_mode="Email", dictate_mode="My dictation",
@@ -187,14 +398,14 @@ class DictationTest(unittest.TestCase):
         self.app.drain()
         mode = writer.find_mode("My dictation", writer.all_modes(self.app.cfg["modes"]))
         self.assertEqual(self.app.writer_sources[0].prompts, [writer.system_prompt(mode)])
-        self.assertEqual(self.app.toast_.shown[-1][0], "Dictated · My dictation · Cursor")
+        self.assertFalse(self.app.toast_.visible)
         self.assertEqual(self.app.cfg["default_mode"], "Email")
 
     def test_missing_dictation_mode_uses_clean_dictation_instead_of_the_writing_default(self):
         self.app.cfg.update(default_mode="Email", dictate_mode="Deleted")
         self.hold(2)
         self.app.drain()
-        self.assertEqual(self.app.toast_.shown[-1][0], "Dictated · Clean dictation · Cursor")
+        self.assertFalse(self.app.toast_.visible)
 
     def test_spoken_steps_are_passed_to_cleanup_and_the_numbered_reply_is_typed_intact(self):
         transcript = "Um, first check the logs, second restart the app, fourth, no, third notify the team."
@@ -217,11 +428,12 @@ class DictationTest(unittest.TestCase):
 
     def test_cancel_on_the_transcribing_toast_types_nothing(self):
         self.hold(2)
-        self.assertEqual(self.app.toast_.shown[-1][0], "Transcribing · Clean dictation")
-        self.app.toast_.action("Cancel")()
+        self.assertEqual(self.app.toast_.shown[-1][0], "Transcribing")
+        self.app.toast_.action("×")()
         self.assertFalse(self.app.rewriting)
         self.app.drain()
         self.assertEqual(self.app.host.edit.pasted, [])
+        self.assertEqual(self.app.copied, [])
         self.assertFalse(self.app.toast_.visible)
 
     def test_each_dictation_logs_its_timings_but_never_its_text(self):
@@ -241,7 +453,8 @@ class DictationTest(unittest.TestCase):
             self.app.drain()
         self.assertEqual(self.app.host.edit.pasted, ["i thinks so"])
         self.assertEqual(self.app.writer_sources[0].texts, [])
-        self.assertEqual(self.app.toast_.shown[-1][0], "Dictated · Codex")
+        self.assertFalse(self.app.toast_.visible)
+        self.assertEqual(self.app.copied, [])
         self.assertIn("rewrite -)", "\n".join(logs.output))
 
     def test_a_failed_rewrite_logs_both_timings_and_the_transcript_source(self):
@@ -283,14 +496,15 @@ class DictationTest(unittest.TestCase):
         self.assertEqual(sorted(self.app.toast_.shown[-1][1]), ["Open Settings"])
         self.assertIsNone(self.app._recorder)
 
-    def test_a_window_change_offers_copy_instead_of_typing(self):
+    def test_a_window_change_automatically_copies_instead_of_typing(self):
         self.app._dictate_down()
         self.app._recorded_at -= 2
         self.app.host.edit.ctx = Context("", 9, 9, True, False)
         self.app._dictate_up()
         self.app.drain()
         self.assertEqual(self.app.host.edit.pasted, [])
-        self.assertEqual(self.app.toast_.shown[-1][0], "The window changed. Copy the text?")
+        self.assertEqual(self.app.copied, ["Hi there."])
+        self.assertEqual(self.app.toast_.shown[-1][0], "Copied to clipboard")
 
 
 class FlowTest(unittest.TestCase):
