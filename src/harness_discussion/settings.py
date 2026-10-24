@@ -34,7 +34,9 @@ DEFAULTS = {"sources": [[n, True] for n in DEFAULT_SOURCES], "voices": {}, "spee
             "writer_models": {}, "modes": [], "default_mode": "Fix errors",
             "rewrite_hotkey": hotkeys.REWRITE, "dictate_hotkey": hotkeys.DICTATE,
             "stt_sources": [["Cursor", True], ["Codex", True]], "dictate_polish": True,
-            "dictate_mode": "Clean dictation"}
+            "dictate_mode": "Clean dictation",
+            # Check as you type: off until the user opts in; apps listed by name are never checked.
+            "live_check": False, "live_off_apps": []}
 WRITER_SOURCES, STT_SOURCES = ("Cursor", "Codex", "Local"), ("Cursor", "Codex")
 SPEEDS = (0.5, 2.0)
 SPEED_PRESETS = (0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)  # the popup's speed menu
@@ -95,7 +97,8 @@ def load(path=PATH) -> dict:
         ok = False
     s["caption_background_opacity"] = (min(max(float(opacity), 0.0), 1.0)
                                         if ok else DEFAULTS["caption_background_opacity"])
-    for key in ("clipboard_fallback", "stt_server", "prefetch", "caption_background", "auto_update", "dictate_polish"):
+    for key in ("clipboard_fallback", "stt_server", "prefetch", "caption_background", "auto_update", "dictate_polish",
+                "live_check"):
         if not isinstance(s[key], bool):
             s[key] = DEFAULTS[key]
     if not isinstance(s["ax_granted_build"], (str, type(None))):
@@ -115,6 +118,8 @@ def load(path=PATH) -> dict:
                           for name, choice in models.items() if name in WRITER_SOURCES and isinstance(choice, dict)}
     if not isinstance(s["modes"], list):
         s["modes"] = []
+    off = s["live_off_apps"] if isinstance(s["live_off_apps"], list) else []
+    s["live_off_apps"] = [a for a in dict.fromkeys(off) if isinstance(a, str) and a]
     for key in ("default_mode", "dictate_mode"):
         if not isinstance(s[key], str) or not s[key].strip():
             s[key] = DEFAULTS[key]
