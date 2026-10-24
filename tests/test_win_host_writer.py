@@ -38,6 +38,18 @@ def clipboard_api(previous_format=14):
 
 
 class HostWriter(unittest.TestCase):
+    def test_dictation_target_is_native_identity_only_and_fails_closed(self):
+        with patch.object(host.edit, "_foreground", return_value=(123, 456)) as foreground, \
+                patch.object(host.edit, "capture") as capture, patch.object(host.os, "getpid", return_value=999):
+            self.assertEqual(self.host.dictation_target(), (123, 456))
+            foreground.assert_called_once_with()
+            capture.assert_not_called()
+            for identity in (None, (0, 456), (123, 0), (999, 456)):
+                foreground.return_value = identity
+                self.assertIsNone(self.host.dictation_target())
+            foreground.side_effect = OSError("unavailable")
+            self.assertIsNone(self.host.dictation_target())
+
     def test_production_host_exposes_the_guarded_editor_and_microphone_actions(self):
         self.assertIs(host.TkHost.edit, edit)
         self.assertEqual(edit.NEWLINE, "\r\n")
@@ -116,6 +128,14 @@ class HostWriter(unittest.TestCase):
             self.host.set_shortcut("dictate", "", None)
             hook.return_value.stop.assert_called_once_with()
             self.assertEqual(hook.call_count, 1)
+
+    def test_shortcut_activity_is_forwarded_only_when_provided(self):
+        down, up, activity = Mock(), Mock(), Mock()
+        with patch.object(host, "HotKey") as hook:
+            self.host.set_shortcut("dictate", "<ctrl>+r", down, up, on_activity=activity)
+            hook.assert_called_once_with("<ctrl>+r", down, up, on_activity=activity)
+            self.host.set_shortcut("rewrite", "<ctrl>+e", down)
+            self.assertEqual(hook.call_args, call("<ctrl>+e", down, None))
 
     def test_popup_escape_is_enqueued_before_the_main_thread_callback_runs(self):
         escaped = []

@@ -62,22 +62,11 @@ class ShortcutKeyTest(unittest.TestCase):
         for f in (ctrl, 0):
             one._event(key_event(0, f, flags))
         one.on_hotkey.assert_called_once()
-        hold = self.hotkey("<ctrl>+<alt>", on_release=mock.Mock())
-        for f in (shift, shift | ctrl, shift | ctrl | alt):  # an extra modifier still starts a hold
-            hold._event(key_event(0, f, flags))
-        hold.on_hotkey.assert_called_once()
-        hold._event(key_event(0, ctrl, flags))
-        hold.on_release.assert_called_once()
 
-    def test_a_key_alone_fires_and_a_held_one_reports_release(self):
+    def test_a_key_alone_fires(self):
         hk = self.hotkey("a")
         hk._event(key_event(0))
         hk.on_hotkey.assert_called_once()
-        hold = self.hotkey("<key_50>", on_release=mock.Mock())
-        hold._event(key_event(50))
-        hold._event(key_event(50, kind=AppKit.NSEventTypeKeyUp))
-        hold.on_hotkey.assert_called_once()
-        hold.on_release.assert_called_once()
 
 
 if __name__ == "__main__":

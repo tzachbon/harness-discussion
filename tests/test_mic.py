@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import Mock
 
-from harness_discussion import dictation, mic, stt
+from harness_discussion import dictation, mic, stt, writer
 
 
 class FakeStream:
@@ -68,6 +68,15 @@ class MicTest(unittest.TestCase):
         rec.start()
         self.assertEqual(rec.stop(), b"")
 
+    def test_duration_is_captured_audio_and_survives_stop(self):
+        rec = mic.Recorder(FakeStream)
+        rec.start()
+        self.assertEqual(rec.duration, 0)
+        rec._stream.cb(b"\x01\x00" * (mic.RATE // 2), mic.RATE // 2, None, None)
+        self.assertEqual(rec.duration, 0.5)
+        rec.stop()
+        self.assertEqual(rec.duration, 0.5)
+
 
 class Stt:
     def __init__(self, name, reply="hello", status="ready"):
@@ -84,6 +93,50 @@ class Stt:
 
 
 class ChainTest(unittest.TestCase):
+    def test_cancel_before_status_does_not_touch_any_provider(self):
+        source = Mock(name="source")
+        source.name = "Codex"
+        with self.assertRaises(writer.Cancelled):
+            dictation.transcribe(b"x", [source], [["Codex", True]], cancelled=lambda: True)
+        source.status.assert_not_called()
+        source.transcribe.assert_not_called()
+
+    def test_cancel_during_status_prevents_submission(self):
+        cancelled = []
+        source = Stt("Codex")
+        source.status = lambda: cancelled.append(True) or "ready"
+        with self.assertRaises(writer.Cancelled):
+            dictation.transcribe(b"x", [source], [["Codex", True]], cancelled=lambda: bool(cancelled))
+        self.assertEqual(source.calls, 0)
+
+    def test_cancellation_on_error_empty_or_success_prevents_fallback(self):
+        for result in (RuntimeError("private"), "", "words"):
+            with self.subTest(result=type(result).__name__):
+                cancelled = []
+                source, fallback = Stt("Codex"), Stt("Cursor")
+                def transcribe(audio, language=""):
+                    cancelled.append(True)
+                    if isinstance(result, Exception):
+                        raise result
+                    return result
+                source.transcribe = transcribe
+                with self.assertRaises(writer.Cancelled):
+                    dictation.transcribe(b"x", [source, fallback], [["Codex", True], ["Cursor", True]],
+                                         cancelled=lambda: bool(cancelled))
+                self.assertEqual(fallback.calls, 0)
+
+    def test_cancelled_exception_is_never_a_fallback(self):
+        source, fallback = Stt("Codex", writer.Cancelled()), Stt("Cursor")
+        with self.assertRaises(writer.Cancelled):
+            dictation.transcribe(b"x", [source, fallback], [["Codex", True], ["Cursor", True]])
+        self.assertEqual(fallback.calls, 0)
+
+    def test_status_failure_uses_next_source_without_exposing_exception(self):
+        source, fallback = Stt("Codex"), Stt("Cursor", "ok")
+        source.status = Mock(side_effect=RuntimeError("private"))
+        self.assertEqual(dictation.transcribe(b"x", [source, fallback], [["Codex", True], ["Cursor", True]]),
+                         ("ok", "Cursor"))
+
     def test_codex_then_cursor_in_order(self):
         codex, cursor = Stt("Codex", RuntimeError("down")), Stt("Cursor", " hi there ")
         self.assertEqual(dictation.transcribe(b"x", [codex, cursor], [["Codex", True], ["Cursor", True]]),

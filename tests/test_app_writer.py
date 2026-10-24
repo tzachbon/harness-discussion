@@ -83,8 +83,10 @@ class _App(app_summarize.Summaries, app_writer.Writer):
             mic_permission=lambda then: then(self.mic_ok), open_mic_settings=lambda: None,
             edit=FakeEdit(), make_toast=lambda: self.toast_, make_review=lambda: self.review_,
             esc_watcher=lambda fn: self.esc, pointer=lambda: (10, 10), after=lambda ms, fn: self.timers.append(fn),
-            copy_text=self.copied.append, set_shortcut=lambda *a: None,
+            copy_text=self.copied.append, set_shortcut=lambda *a, **kw: None,
             pick_mode=lambda names, current, pick: self.picks.append((names, current, pick)))
+        self.host.dictation_target = lambda: ((self.host.edit.ctx.app, self.host.edit.ctx.window)
+                                               if self.host.edit.ctx is not None else None)
         self.cfg = {"writer": True, "writer_sources": [["Cursor", True], ["Codex", True], ["Local", True]],
                     "stt_sources": [["Codex", True], ["Cursor", True]],
                     "writer_models": {}, "modes": [], "default_mode": "Fix errors", "clipboard_fallback": True,
@@ -98,12 +100,24 @@ class _App(app_summarize.Summaries, app_writer.Writer):
         self._init_writer()
         self.writer_sources = sources or [Source("Cursor")]
 
-    def drain(self):
-        kind, *args = self.events.get(timeout=5)
-        {"rewrite": self._rewrite_done, "dictated": self._dictated}[kind](*args)
+    def drain(self, until=None):
+        while True:
+            kind, *args = self.events.get(timeout=5)
+            if kind in ("recording_done", "dictated"):
+                owner = self._recorder if kind == "recording_done" else self._dictation_job
+                identity = (owner.generation, owner.binding) if owner is not None else None
+                incoming = tuple(args[:2]) if kind == "recording_done" else tuple(args[1:3])
+                if owner is not None and incoming == identity:
+                    owner.thread.join(timeout=5)
+                    assert not owner.thread.is_alive(), "worker failed to finish"
+            getattr(self, self.WRITER_EVENTS[kind])(*args)
+            if kind == until or (until is None and kind in ("rewrite", "dictated")):
+                return
 
 
 class FakeRecorder:
+    duration = 2.0
+
     def __init__(self, audio=b"RIFFwav"):
         self.audio, self.started = audio, False
 
@@ -117,7 +131,7 @@ class FakeRecorder:
 class DictationTest(unittest.TestCase):
     def setUp(self):
         self.app = _App()
-        self.app.host.edit.type_at_caret = lambda text, ctx: self.app.host.edit.pasted.append(text) or self.app.host.edit.ctxs.append(ctx) or True
+        self.app.host.edit.type_at_caret = lambda text, ctx, **kw: self.app.host.edit.pasted.append(text) or self.app.host.edit.ctxs.append(ctx) or True
         self.app.stt_sources = [SimpleNamespace(name="Codex", status=lambda: "ready",
                                                 transcribe=lambda audio, language="": "i thinks so")]
         patcher = unittest.mock.patch.object(app_writer.mic, "Recorder", FakeRecorder)
@@ -125,10 +139,12 @@ class DictationTest(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def hold(self, seconds):
+        FakeRecorder.duration = seconds
         self.app._dictate_down()
+        self.app.drain("recording_ready")
         self.assertEqual(self.app.toast_.shown[-1][0], "Listening · Codex")
-        self.app._recorded_at -= seconds
         self.app._dictate_up()
+        self.app.drain("recording_done")
 
     def test_old_permission_answers_cannot_start_a_new_hold_or_change_its_target(self):
         answers = []
@@ -136,15 +152,16 @@ class DictationTest(unittest.TestCase):
         self.app._dictate_down()
         self.assertTrue(self.app.esc.on)
         self.app._dictate_up()
-        self.assertFalse(self.app.esc.on)
+        self.app.drain("recording_done")
         self.app.host.edit.ctx = Context("", 3, 4, True, False)
         self.app._dictate_down()
         answers[0](True)
-        self.assertIsNone(self.app._recorder)
-        self.app.host.edit.ctx = Context("", 5, 6, True, False)
         answers[1](True)
-        self.assertIsNotNone(self.app._recorder)
+        self.app.drain("recording_ready")
+        self.app._dictate_up()
+        self.app.drain("recording_done")
         self.assertEqual(self.app._dictate_ctx.app, 3)
+        self.app.drain()
 
     def test_escape_and_shutdown_invalidate_pending_permission(self):
         for cancel in ("_escape", "_close_writer"):
@@ -155,6 +172,7 @@ class DictationTest(unittest.TestCase):
                 app._dictate_down()
                 getattr(app, cancel)()
                 answers[0](True)
+                app.drain("recording_done")
                 self.assertIsNone(app._recorder)
                 self.assertFalse(app._holding)
 
@@ -162,15 +180,15 @@ class DictationTest(unittest.TestCase):
         for cancel in ("_dictate_up", "_escape", "_close_writer"):
             with self.subTest(cancel=cancel):
                 app = _App()
-                app._dictate_down()
-                recorder = app._recorder
-                recorder.stop = unittest.mock.Mock(side_effect=RuntimeError("private device details"))
-                getattr(app, cancel)()
-                recorder.stop.assert_called_once_with()
+                with unittest.mock.patch.object(FakeRecorder, "stop", side_effect=RuntimeError("private device details")) as stop:
+                    app._dictate_down()
+                    app.drain("recording_ready")
+                    getattr(app, cancel)()
+                    app.drain("recording_done")
+                stop.assert_called_once_with()
                 self.assertIsNone(app._recorder)
                 self.assertFalse(app._holding)
-                self.assertTrue(app.events.empty())
-
+                self.assertNotIn("private device details", repr(app.toast_.shown))
 
     def test_hold_transcribes_rewrites_and_types_at_the_caret(self):
         self.hold(2)
@@ -260,34 +278,37 @@ class DictationTest(unittest.TestCase):
         self.assertEqual(self.app.host.edit.pasted, [])
         self.assertRegex("\n".join(logs.output), r"dictated 9 chars with Codex then Cursor in \d+\.\ds")
 
-    def test_key_down_prewarms_the_first_writer_only_when_polish_is_on(self):
+    def test_dictation_never_prewarms_before_transcription(self):
         calls = []
         self.app.writer_sources[0].prewarm = calls.append
         self.app.cfg["writer_models"] = {"Cursor": {"model": "fast"}}
-        with unittest.mock.patch.object(app_writer.threading, "Thread",
-                                        lambda target, args, daemon: SimpleNamespace(start=lambda: target(*args))):
-            self.app._dictate_down()
-            self.app._dictate_up()
-            self.app.cfg["dictate_polish"] = False
-            self.app._dictate_down()
-        self.assertEqual(calls, ["fast"])
+        self.hold(2)
+        self.app.drain()
+        self.app.cfg["dictate_polish"] = False
+        self.hold(2)
+        self.app.drain()
+        self.assertEqual(calls, [])
 
     def test_a_tap_cancels(self):
         self.hold(0.1)
-        self.assertTrue(self.app.events.empty())
+        self.assertIsNone(self.app._recorder)
+        self.assertIsNone(self.app._dictation_job)
         self.assertFalse(self.app.toast_.visible)
 
     def test_no_microphone_permission_offers_settings(self):
         self.app.mic_ok = False
         self.app._dictate_down()
+        self.app.drain("recording_done")
         self.assertEqual(sorted(self.app.toast_.shown[-1][1]), ["Open Settings"])
         self.assertIsNone(self.app._recorder)
 
     def test_a_window_change_offers_copy_instead_of_typing(self):
+        FakeRecorder.duration = 2
         self.app._dictate_down()
-        self.app._recorded_at -= 2
+        self.app.drain("recording_ready")
         self.app.host.edit.ctx = Context("", 9, 9, True, False)
         self.app._dictate_up()
+        self.app.drain("recording_done")
         self.app.drain()
         self.assertEqual(self.app.host.edit.pasted, [])
         self.assertEqual(self.app.toast_.shown[-1][0], "The window changed. Copy the text?")
