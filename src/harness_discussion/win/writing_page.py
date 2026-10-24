@@ -9,8 +9,7 @@ from .sources_ui import CARD
 
 PLAN_DEFAULTS = {k: settings.DEFAULTS[k] for k in ("writer", "writer_sources", "writer_models", "modes",
                                                    "default_mode", "rewrite_hotkey", "dictate_hotkey", "stt_sources",
-                                                   "dictate_polish", "dictate_mode", "live_check",
-                                                   "live_off_apps")}
+                                                   "dictate_polish", "dictate_mode")}
 LOCAL_MODEL = "Qwen3-4B"  # fixed: Local has no model or effort choice
 FIXES = {"missing": "Install…", "signed_out": "Sign in…", "expired": "Sign in…", "not_downloaded": "Download…"}
 
@@ -26,6 +25,8 @@ class WritingPage:
     def _writing_page(self, page, font):
         for key, value in PLAN_DEFAULTS.items():
             self.cfg.setdefault(key, value)
+        for key in ("live_check", "live_off_apps"):
+            self.cfg.setdefault(key, settings.DEFAULTS[key])
         card = self._card(page, "Rewrite")
         self.writer_on = tk.BooleanVar(self.win, self.cfg["writer"])
         self.writer_check = ttk.Checkbutton(card, text="Rewrite selected text", style="Card.TCheckbutton",

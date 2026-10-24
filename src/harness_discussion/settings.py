@@ -32,11 +32,11 @@ DEFAULTS = {"sources": [[n, True] for n in DEFAULT_SOURCES], "voices": {}, "spee
             # Writer: rewrite in place. Sources follow the voice order; models and modes are chosen in Settings.
             "writer": False, "writer_sources": [["Cursor", True], ["Codex", True], ["Local", True]],
             "writer_models": {}, "modes": [], "default_mode": "Fix errors",
+            # Check as you type: off until the user opts in; apps listed by name are never checked.
+            "live_check": False, "live_off_apps": [],
             "rewrite_hotkey": hotkeys.REWRITE, "dictate_hotkey": hotkeys.DICTATE,
             "stt_sources": [["Cursor", True], ["Codex", True]], "dictate_polish": True,
-            "dictate_mode": "Clean dictation",
-            # Check as you type: off until the user opts in; apps listed by name are never checked.
-            "live_check": False, "live_off_apps": []}
+            "dictate_mode": "Clean dictation"}
 WRITER_SOURCES, STT_SOURCES = ("Cursor", "Codex", "Local"), ("Cursor", "Codex")
 SPEEDS = (0.5, 2.0)
 SPEED_PRESETS = (0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)  # the popup's speed menu
@@ -97,8 +97,7 @@ def load(path=PATH) -> dict:
         ok = False
     s["caption_background_opacity"] = (min(max(float(opacity), 0.0), 1.0)
                                         if ok else DEFAULTS["caption_background_opacity"])
-    for key in ("clipboard_fallback", "stt_server", "prefetch", "caption_background", "auto_update", "dictate_polish",
-                "live_check"):
+    for key in ("clipboard_fallback", "stt_server", "prefetch", "caption_background", "auto_update", "dictate_polish"):
         if not isinstance(s[key], bool):
             s[key] = DEFAULTS[key]
     if not isinstance(s["ax_granted_build"], (str, type(None))):
@@ -106,8 +105,9 @@ def load(path=PATH) -> dict:
     for key in ("hotkey", "rewrite_hotkey", "dictate_hotkey"):
         if s[key] != "" and not hotkeys.parse(s[key]):
             s[key] = DEFAULTS[key]
-    if not isinstance(s["writer"], bool):
-        s["writer"] = DEFAULTS["writer"]
+    for key in ("writer", "live_check"):
+        if not isinstance(s[key], bool):
+            s[key] = DEFAULTS[key]
     if isinstance(saved, dict) and "writer_sources" not in saved:  # first run of the Writer: follow the voice order
         voice_order = [n for n, _ in s["sources"] if n in WRITER_SOURCES]
         s["writer_sources"] = [[n, True] for n in voice_order + [n for n in WRITER_SOURCES if n not in voice_order]]
