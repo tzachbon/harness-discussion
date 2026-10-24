@@ -9,7 +9,6 @@ from ..cursor_tts import CursorEngine
 from ..kokoro_tts import KokoroEngine
 from . import edit, selection, ui
 from .esc import EscWatcher
-from .marks import Marks
 from .popup import Popup, build_menu
 from .review import Review
 from .settings_ui import SettingsWindow
@@ -205,6 +204,7 @@ class MacHost:
         return Review()
 
     def make_marks(self):
+        from .marks import Marks  # only when Check as you type is available
         return Marks()
 
     def esc_watcher(self, fn):
