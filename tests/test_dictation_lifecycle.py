@@ -543,6 +543,94 @@ class LifecycleTest(unittest.TestCase):
         self.assertEqual(app.copied, [])
         app.drain("call")
 
+    def test_escape_during_recording_to_transcription_handoff_cancels_the_session(self):
+        app, devices = self.make_app()
+        self.start(app)
+        session = app._recorder
+        arm = app._arm_summary_stop
+
+        def handoff():
+            app._arm_summary_stop = arm
+            arm()
+            self.assertIsNone(app._recorder)
+            self.assertIsNone(app._dictation_job)
+            app._native_escape()
+
+        app._arm_summary_stop = handoff
+        app._dictate_up()
+        app.drain("recording_done")
+        if app._dictation_job is not None:
+            app.drain("dictated")
+        self.assertTrue(session.cancel.is_set())
+        self.assertIsNone(app._dictation_job)
+        app.stt_sources[0].transcribe.assert_not_called()
+        app.edit.type_at_caret.assert_not_called()
+        self.assertEqual(app.copied, [])
+        self.assertFalse(app.toast_.visible)
+        self.assertIsNone(app._dictation_delivery)
+        self.start(app)
+        self.assertTrue(app._holding)
+
+    def test_escape_at_transcription_publication_preserves_cancellation_and_cleans_handoff(self):
+        for phase in ("before", "after"):
+            with self.subTest(phase=phase):
+                app, devices = self.make_app()
+                self.start(app)
+                session = app._recorder
+                transcribe = app._transcribe
+
+                def publish(owner, audio):
+                    self.assertIs(app._dictation_delivery, session)
+                    if phase == "before":
+                        app._native_escape()
+                    transcribe(owner, audio)
+                    if phase == "after":
+                        app._native_escape()
+
+                app._transcribe = publish
+                app._dictate_up()
+                app.drain("recording_done")
+                app.drain("dictated")
+                self.assertTrue(session.cancel.is_set())
+                self.assertIsNone(app._dictation_delivery)
+                self.assertIsNone(app._dictation_job)
+                app.edit.type_at_caret.assert_not_called()
+                self.assertEqual(app.copied, [])
+                self.assertFalse(app.toast_.visible)
+
+    def test_escape_during_terminal_microphone_error_hides_only_that_sessions_hud(self):
+        app, devices = self.make_app()
+        app.mic_ok = False
+        show = app.toast_.show
+
+        def show_with_escape(message, *args, **kwargs):
+            show(message, *args, **kwargs)
+            if message == "The microphone could not finish the recording.":
+                observer = threading.Thread(target=app._native_escape)
+                observer.start()
+                observer.join(5)
+                self.assertFalse(observer.is_alive())
+
+        app.toast_.show = show_with_escape
+        app._dictate_down()
+        session = app._recorder
+        app.drain("recording_done")
+        self.assertTrue(session.cancel.is_set())
+        self.assertFalse(app.toast_.visible)
+        self.assertIsNone(app._dictation_delivery)
+        self.assertEqual(app.copied, [])
+        app.stt_sources[0].transcribe.assert_not_called()
+        app.edit.type_at_caret.assert_not_called()
+        kind, cleanup = app.events.get(timeout=5)
+        self.assertEqual(kind, "call")
+        app.mic_ok = True
+        self.start(app)
+        current = app._recorder
+        cleanup()
+        self.assertTrue(app.toast_.visible)
+        self.assertIs(app._recorder, current)
+        self.assertFalse(current.cancel.is_set())
+
     def test_stale_native_binding_and_queued_escape_cleanup_preserve_a_new_session(self):
         app, devices = self.make_app()
         installed = []

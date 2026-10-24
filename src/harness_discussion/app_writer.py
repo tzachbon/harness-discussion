@@ -545,18 +545,26 @@ class Writer:
         event = ("recording_done", generation, binding, audio, duration, ctx, error)
         if not self._worker_exited(session, event):
             return
-        self._recorder, self._holding = None, False
-        self._arm_summary_stop()
-        self._watch_escape()
-        if not self._dictation_current(session):
-            return
-        if error:
-            self._toast(error, [("Open Settings", self.host.open_mic_settings)])
-        elif mic.is_tap(duration) or not audio:
-            self.toast.hide()
-        else:
-            self._dictate_ctx = None if session.activity.is_set() else ctx
-            self._transcribe(session, audio)
+        self._dictation_delivery = session
+        try:
+            self._recorder, self._holding = None, False
+            self._arm_summary_stop()
+            self._watch_escape()
+            if not self._dictation_current(session):
+                self.toast.hide()
+                return
+            if error:
+                self._toast(error, [("Open Settings", self.host.open_mic_settings)])
+            elif mic.is_tap(duration) or not audio:
+                self.toast.hide()
+            else:
+                self._dictate_ctx = None if session.activity.is_set() else ctx
+                self._transcribe(session, audio)
+        finally:
+            if self._dictation_delivery is session:
+                self._dictation_delivery = None
+                if session.cancel.is_set() and self._recorder is None and self._dictation_job is None:
+                    self.toast.hide()
 
     def _transcribe(self, session, audio):
         released = time.monotonic()
@@ -672,6 +680,8 @@ class Writer:
         finally:
             if self._dictation_delivery is session:
                 self._dictation_delivery = None
+                if session.cancel.is_set() and self._recorder is None and self._dictation_job is None:
+                    self.toast.hide()
 
     def _native_escape(self):
         """Latch the observed session before queueing any UI cleanup."""

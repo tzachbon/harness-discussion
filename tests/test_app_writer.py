@@ -389,6 +389,36 @@ class DictationTest(unittest.TestCase):
         self.assertEqual(app.toast_.shown, [])
         app.host.copy_text.assert_called_once()
 
+    def test_escape_during_terminal_dictation_feedback_hides_only_that_sessions_hud(self):
+        for outcome in ("provider_error", "copied", "copy_failed"):
+            with self.subTest(outcome=outcome):
+                app = _App()
+                app._dictate_ctx = None
+                app.host.copy_text = unittest.mock.Mock(return_value=outcome == "copied")
+                show = app.toast_.show
+
+                def show_with_escape(message, *args, **kwargs):
+                    show(message, *args, **kwargs)
+                    observer = app_writer.threading.Thread(target=app._native_escape)
+                    observer.start()
+                    observer.join(5)
+                    self.assertFalse(observer.is_alive())
+
+                app.toast_.show = show_with_escape
+                result = writer.Error("Could not transcribe.") if outcome == "provider_error" else ("hello", "Local", None)
+                app.deliver(app._rewrite_id, None, result, (10, 10, None), (0, .1, None, "Local"))
+                self.assertFalse(app.toast_.visible)
+                self.assertIsNone(app._dictation_delivery)
+                self.assertEqual(app.host.copy_text.call_count, int(outcome != "provider_error"))
+                kind, cleanup = app.events.get(timeout=5)
+                self.assertEqual(kind, "call")
+                current = app_writer._Recording(app._dictate_generation + 1, app._dictate_binding, None)
+                app._recorder = current
+                show("Listening", 10, 10)
+                cleanup()
+                self.assertTrue(app.toast_.visible)
+                self.assertFalse(current.cancel.is_set())
+
     def test_copy_exception_offers_an_explicit_retry_without_automatic_retry(self):
         app = self.app
         app._dictate_ctx = None
