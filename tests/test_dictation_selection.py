@@ -69,6 +69,39 @@ class DictationSelectionTest(unittest.TestCase):
         app._handle("show", "Selected.", 10, 20, False)
         self.assertFalse(app.popup.visible)
 
+    def test_read_shortcut_stops_active_or_paused_playback_while_writing_busy(self):
+        for phase in ("_holding", "_recorder", "rewriting"):
+            for paused in (False, True):
+                with self.subTest(phase=phase, paused=paused):
+                    app = self.make()
+                    app.play("Already reading.", None)
+                    app.popup.set_playing(True, paused=paused)
+                    setattr(app, phase, object() if phase == "_recorder" else True)
+                    app.host.read_selection = Mock()
+                    app._handle("hotkey")
+                    self.assertFalse(app.popup.playing)
+                    self.assertIsNone(app._read_options)
+                    self.assertTrue(app._selection_busy())
+                    app.host.read_selection.assert_not_called()
+
+    def test_read_shortcut_cancels_pending_selection_while_writing_busy(self):
+        app = self.make()
+        app.rewriting = True
+        app._hotkey_wait = object()
+        with patch.object(core.threading, "Thread") as thread:
+            app._handle("hotkey")
+        self.assertIsNone(app._hotkey_wait)
+        thread.assert_not_called()
+
+    def test_read_shortcut_does_not_start_selection_work_in_any_busy_phase(self):
+        for phase in ("_holding", "_recorder", "rewriting"):
+            with self.subTest(phase=phase):
+                app = self.make()
+                setattr(app, phase, object() if phase == "_recorder" else True)
+                with patch.object(core.threading, "Thread") as thread:
+                    app._handle("hotkey")
+                thread.assert_not_called()
+
     def test_late_read_shortcut_result_cannot_start_playback(self):
         app = self.make()
         old_wait = app._hotkey_wait = object()

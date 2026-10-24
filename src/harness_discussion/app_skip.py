@@ -55,13 +55,11 @@ class Skips:
 
     def _hotkey(self):
         """A press stops a read, cancels a selection read still in flight, or starts one."""
-        if self._selection_busy():
-            return
         if self.popup.playing:
             self.popup.close()
         elif self._hotkey_wait:
             self._hotkey_wait = None
-        else:
+        elif not self._selection_busy():
             wait = self._hotkey_wait = object()
             threading.Thread(target=self._hotkey_read, args=(wait, *self.host.pointer()), daemon=True).start()
 
