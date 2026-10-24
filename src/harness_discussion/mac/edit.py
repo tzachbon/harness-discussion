@@ -9,10 +9,10 @@ import time
 
 import AppKit
 import Quartz
-from ApplicationServices import (AXUIElementCopyAttributeValue, AXUIElementCopyParameterizedAttributeValue,
-                                 AXUIElementCreateApplication, AXUIElementIsAttributeSettable,
-                                 AXUIElementSetAttributeValue, AXValueCreate, AXValueGetValue, kAXErrorSuccess,
-                                 kAXValueCFRangeType, kAXValueCGPointType, kAXValueCGRectType, kAXValueCGSizeType)
+import ApplicationServices as AS  # Check as you type reads its names when used
+from ApplicationServices import (AXUIElementCopyAttributeValue, AXUIElementCreateApplication,
+                                 AXUIElementIsAttributeSettable, AXUIElementSetAttributeValue, AXValueCreate,
+                                 AXValueGetValue, kAXErrorSuccess, kAXValueCFRangeType)
 from CoreFoundation import CFEqual, CFRangeMake
 
 from .. import edit_logic, live
@@ -206,7 +206,7 @@ def _digest(text):
     return hashlib.sha256(text.encode("utf-16-le", "surrogatepass")).digest()
 
 def _param(element, name, value):
-    err, result = AXUIElementCopyParameterizedAttributeValue(element, name, value, None)
+    err, result = AS.AXUIElementCopyParameterizedAttributeValue(element, name, value, None)
     return result if err == kAXErrorSuccess else None
 
 def _cf_range(start, length):
@@ -214,8 +214,8 @@ def _cf_range(start, length):
 
 def _rect_of(element):
     position, size = _attr(element, "AXPosition"), _attr(element, "AXSize")
-    ok_p, p = AXValueGetValue(position, kAXValueCGPointType, None) if position is not None else (False, None)
-    ok_s, s = AXValueGetValue(size, kAXValueCGSizeType, None) if size is not None else (False, None)
+    ok_p, p = AXValueGetValue(position, AS.kAXValueCGPointType, None) if position is not None else (False, None)
+    ok_s, s = AXValueGetValue(size, AS.kAXValueCGSizeType, None) if size is not None else (False, None)
     if not (ok_p and ok_s):
         return None
     return int(p.x), int(p.y), int(p.x + s.width), int(p.y + s.height)
@@ -272,7 +272,7 @@ def _place(element, text, start, end, expected):
         if str(_param(element, "AXStringForRange", piece) or "") != live.text_at(text, at, stop):
             return None
         bounds = _param(element, "AXBoundsForRange", piece)
-        ok, r = AXValueGetValue(bounds, kAXValueCGRectType, None) if bounds is not None else (False, None)
+        ok, r = AXValueGetValue(bounds, AS.kAXValueCGRectType, None) if bounds is not None else (False, None)
         if not ok:
             return None
         if r.size.width > 0 and r.size.height > 0:
