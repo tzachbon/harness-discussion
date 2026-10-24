@@ -9,6 +9,7 @@ from .trigger import MOD_VKS, VK
 
 MOD_NAMES = {vk: name for name, codes in {"shift": (0x10, 0xA0, 0xA1), "ctrl": (0x11, 0xA2, 0xA3),
                                          "alt": (0x12, 0xA4, 0xA5), "cmd": (0x5B, 0x5C)}.items() for vk in codes}
+MOD_SIDES = {0x10: (0xA0, 0xA1), 0x11: (0xA2, 0xA3), 0x12: (0xA4, 0xA5)}
 TK_MODS = {"shift": 0x1, "ctrl": 0x4, "alt": 0x20000}  # Tk's event.state bits on Windows
 KEYS = {vk: name for name, vk in VK.items()}  # Tk's keycode is the virtual key, the same under any layout
 TITLES = {"hotkey": "Read shortcut", "rewrite_hotkey": "Rewrite shortcut", "dictate_hotkey": "Hold to dictate"}
@@ -59,7 +60,7 @@ class ShortcutRow:
         elif event.keycode in MOD_NAMES:
             self._held_mods[event.keycode] = MOD_NAMES[event.keycode]
             mods = set(self._held_mods.values())
-            if len(mods) > len(self._peak_mods):
+            if len(mods) >= len(self._peak_mods):
                 self._peak_mods = mods
             self.shortcuts[self._recording]["label"]["text"] = hotkeys.label(hotkeys.spec(mods)) + "…"
         elif event.keycode not in MOD_VKS:  # a held modifier waits for the key
@@ -71,7 +72,9 @@ class ShortcutRow:
         return "break"
 
     def _hotkey_release(self, event):
-        self._held_mods.pop(event.keycode, None)
+        # Tk uses one keycode for both physical sides of Ctrl, Shift and Alt.
+        if not any(ctypes.windll.user32.GetKeyState(vk) & 0x8000 for vk in MOD_SIDES.get(event.keycode, ())):
+            self._held_mods.pop(event.keycode, None)
         if event.keycode in MOD_NAMES and not self._held_mods and self._peak_mods:
             self._set_hotkey(hotkeys.spec(self._peak_mods), self._recording)
         return "break"

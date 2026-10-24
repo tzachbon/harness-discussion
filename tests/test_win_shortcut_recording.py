@@ -28,6 +28,9 @@ class ShortcutRecording(unittest.TestCase):
         self.win_down = patch("harness_discussion.win.shortcut_row.win_down", return_value=False)
         self.win_down.start()
         self.addCleanup(self.win_down.stop)
+        key_state = patch("harness_discussion.win.shortcut_row.ctypes.windll.user32.GetKeyState", return_value=0)
+        key_state.start()
+        self.addCleanup(key_state.stop)
 
     def press(self, code, state=0):
         self.row._hotkey_key(SimpleNamespace(keycode=code, state=state, keysym="Escape" if code == 27 else ""))
@@ -64,6 +67,33 @@ class ShortcutRecording(unittest.TestCase):
         self.assertEqual(self.row._recording, "hotkey")
         self.release(0xA3)
         self.assertEqual(self.row.cfg["hotkey"], "<ctrl>+<cmd>")
+
+    def test_generic_modifier_keycodes_wait_until_both_sides_are_up(self):
+        for code, left, right, expected in ((0x11, 0xA2, 0xA3, "<ctrl>"),
+                                            (0x10, 0xA0, 0xA1, "<shift>"),
+                                            (0x12, 0xA4, 0xA5, "<alt>")):
+            with self.subTest(code=code):
+                self.row._record_hotkey()
+                self.press(code)
+                self.press(code)  # Tk reports the same code for either side.
+                with patch("harness_discussion.win.shortcut_row.ctypes.windll.user32.GetKeyState",
+                           side_effect=lambda vk: 0x8000 if vk == right else 0):
+                    self.release(code)
+                self.assertEqual(self.row._recording, "hotkey")
+                self.release(code)
+                self.assertIsNone(self.row._recording)
+                self.assertEqual(self.row.cfg["hotkey"], expected)
+
+    def test_latest_equal_size_modifier_chord_is_saved(self):
+        self.row._record_hotkey()
+        self.press(0x11)
+        self.press(0x10)
+        self.release(0x10)
+        self.press(0x12)
+        self.assertEqual(self.row.shortcuts["hotkey"]["label"]["text"], "Ctrl+Alt…")
+        self.release(0x12)
+        self.release(0x11)
+        self.assertEqual(self.row.cfg["hotkey"], "<ctrl>+<alt>")
 
     def test_escape_and_another_row_discard_partial_chords(self):
         old = dict(self.row.cfg)
