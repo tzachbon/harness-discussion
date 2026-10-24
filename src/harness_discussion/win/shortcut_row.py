@@ -7,6 +7,8 @@ from .. import hotkeys
 from .sources_ui import CARD
 from .trigger import MOD_VKS, VK
 
+MOD_NAMES = {vk: name for name, codes in {"shift": (0x10, 0xA0, 0xA1), "ctrl": (0x11, 0xA2, 0xA3),
+                                         "alt": (0x12, 0xA4, 0xA5), "cmd": (0x5B, 0x5C)}.items() for vk in codes}
 TK_MODS = {"shift": 0x1, "ctrl": 0x4, "alt": 0x20000}  # Tk's event.state bits on Windows
 KEYS = {vk: name for name, vk in VK.items()}  # Tk's keycode is the virtual key, the same under any layout
 TITLES = {"hotkey": "Read shortcut", "rewrite_hotkey": "Rewrite shortcut", "dictate_hotkey": "Hold to dictate"}
@@ -41,27 +43,49 @@ class ShortcutRow:
 
     def _record_hotkey(self, key="hotkey"):
         """Change…: the next key, alone or with modifiers, becomes the shortcut; Esc keeps the old one."""
+        self._stop_recording()
         self._recording = key
+        self._held_mods, self._peak_mods = {}, set()
         self.shortcuts[key]["label"]["text"] = "Press keys…"
         self.shortcuts[key]["error"]["text"] = ""
         self.on_record(True)  # so pressing a current shortcut records it instead of acting on it
         self.win.focus_force()
         self.win.bind("<KeyPress>", self._hotkey_key)
+        self.win.bind("<KeyRelease>", self._hotkey_release)
 
     def _hotkey_key(self, event):
         if event.keysym == "Escape":
             self._set_hotkey(self.cfg[self._recording], self._recording)
+        elif event.keycode in MOD_NAMES:
+            self._held_mods[event.keycode] = MOD_NAMES[event.keycode]
+            mods = set(self._held_mods.values())
+            if len(mods) > len(self._peak_mods):
+                self._peak_mods = mods
+            self.shortcuts[self._recording]["label"]["text"] = hotkeys.label(hotkeys.spec(mods)) + "…"
         elif event.keycode not in MOD_VKS:  # a held modifier waits for the key
             key = KEYS.get(event.keycode) or f"key_{event.keycode}"
-            mods = {m for m, bit in TK_MODS.items() if event.state & bit} | ({"cmd"} if win_down() else set())
+            mods = set(self._held_mods.values()) | {m for m, bit in TK_MODS.items() if event.state & bit}
+            if win_down():
+                mods.add("cmd")
             self._set_hotkey(hotkeys.spec(mods, key), self._recording)
         return "break"
 
-    def _set_hotkey(self, spec, key="hotkey"):
+    def _hotkey_release(self, event):
+        self._held_mods.pop(event.keycode, None)
+        if event.keycode in MOD_NAMES and not self._held_mods and self._peak_mods:
+            self._set_hotkey(hotkeys.spec(self._peak_mods), self._recording)
+        return "break"
+
+    def _stop_recording(self):
         self._recording = None
         self.win.unbind("<KeyPress>")
-        used = next((k for k in self.shortcuts if k != key and spec and hotkeys.parse(self.cfg.get(k))
-                     == hotkeys.parse(spec)), None)
+        self.win.unbind("<KeyRelease>")
+        for key, widgets in self.shortcuts.items():
+            widgets["label"]["text"] = hotkeys.label(self.cfg[key])
+
+    def _set_hotkey(self, spec, key="hotkey"):
+        self._stop_recording()
+        used = hotkeys.conflict(self.cfg, key, spec)
         if used:  # two shortcuts on one chord would both fire
             self.shortcuts[key]["error"]["text"] = f"{TITLES[used]} already uses {hotkeys.label(spec)}."
             spec = self.cfg[key]

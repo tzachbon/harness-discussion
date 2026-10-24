@@ -57,9 +57,22 @@ class WritingSettingsUi(unittest.TestCase):
                 lambda _text: None, **kw)
         return self.window
 
-    def test_writing_page_sits_before_general_and_toggles_and_orders_sources(self):
+    def test_writing_and_dictation_are_separate_pages_before_speech_to_text(self):
         w = self.make_window()
-        self.assertEqual(settings_ui.PAGES[-2:], ("Writing", "General"))
+        self.assertEqual(settings_ui.PAGES[4:7], ("Writing", "Dictation", "Speech to Text"))
+        owner = lambda widget: next(i for i, p in enumerate(w.pages) if str(widget).startswith(str(p) + "."))
+        writing, dictation = settings_ui.PAGES.index("Writing"), settings_ui.PAGES.index("Dictation")
+        for widget in (w.writer_check, w.default_mode, w.mode_pick, w.mode_save, w.writer_rows["Codex"]["model"],
+                       w.shortcuts["rewrite_hotkey"]["change"]):
+            self.assertEqual(owner(widget), writing)
+        for widget in (w.polish_check, w.dictate_mode, w.mic_status, w.dictation_rows["Codex"]["up"],
+                       w.shortcuts["dictate_hotkey"]["change"]):
+            self.assertEqual(owner(widget), dictation)
+        w.nav[dictation].invoke()
+        self.assertEqual(w.title["text"], "Dictation")
+
+    def test_writing_page_toggles_and_orders_sources(self):
+        w = self.make_window()
         w.nav[settings_ui.PAGES.index("Writing")].invoke()
         self.assertEqual(w.title["text"], "Writing")
         w.writer_check.invoke()
@@ -166,21 +179,22 @@ class WritingSettingsUi(unittest.TestCase):
         self.pick(w.default_mode, "Email")
         self.assertEqual(self.changes[-1], ("default_mode", "Email"))
         self.pick(w.mode_pick, "Fix errors")
-        self.assertTrue(w.mode_delete.instate(["disabled"]))  # built-ins can't be deleted
+        self.assertTrue(w.mode_delete.instate(["disabled"]))  # nothing to reset on a built-in
+        self.assertTrue(w.mode_name.instate(["disabled"]))  # built-ins keep their name
         self.assertIn("spelling", w.mode_text.get("1.0", "end"))
 
         w.mode_new.invoke()
         self.edit_mode(w, "  ", "Anything")
-        self.assertEqual(w.mode_error["text"], "Give the mode a name.")
+        self.assertEqual(w.mode_status["text"], "A mode needs a name and instructions.")
         self.edit_mode(w, "Tweet", "Under 280 characters.")
         self.assertEqual(self.changes[-1], ("modes", [{"name": "Tweet", "instructions": "Under 280 characters."}]))
-        self.assertEqual(w.mode_error["text"], "")
+        self.assertEqual(w.mode_status["text"], "Saved.")
         self.assertIn("Tweet", w.default_mode["values"])
         self.pick(w.default_mode, "Tweet")
 
         self.edit_mode(w, "Post", "Under 280 characters.")  # rename keeps the default pointing at it
-        self.assertEqual(self.changes[-2], ("modes", [{"name": "Post", "instructions": "Under 280 characters."}]))
-        self.assertEqual(self.changes[-1], ("default_mode", "Post"))
+        self.assertEqual(self.changes[-2], ("default_mode", "Post"))
+        self.assertEqual(self.changes[-1], ("modes", [{"name": "Post", "instructions": "Under 280 characters."}]))
 
         self.pick(w.mode_pick, "Email")
         self.edit_mode(w, "Email", "A formal email.")  # a custom mode with a built-in's name overrides it
@@ -190,16 +204,33 @@ class WritingSettingsUi(unittest.TestCase):
 
         w.mode_new.invoke()
         self.edit_mode(w, "Post", "Again")
-        self.assertEqual(w.mode_error["text"], "A mode named Post already exists.")
+        self.assertEqual(w.mode_status["text"], "There is already a mode called Post.")
 
+        new = {"name": "New mode", "instructions": "Describe how to rewrite the text."}  # Add saves it at once
         self.pick(w.mode_pick, "Post")
         w.mode_delete.invoke()
-        self.assertEqual(self.changes[-2], ("modes", [{"name": "Email", "instructions": "A formal email."}]))
+        self.assertEqual(self.changes[-2], ("modes", [{"name": "Email", "instructions": "A formal email."}, new]))
         self.assertEqual(self.changes[-1], ("default_mode", "Fix errors"))
         self.pick(w.mode_pick, "Email")
+        self.assertEqual(w.mode_delete["text"], "Reset")  # a built-in's override resets
         w.mode_delete.invoke()  # the built-in comes back
-        self.assertEqual(self.changes[-1], ("modes", []))
+        self.assertEqual(self.changes[-1], ("modes", [new]))
         self.assertIn("greeting", w.mode_text.get("1.0", "end"))
+
+    def test_invalid_saved_modes_do_not_break_save_add_or_delete(self):
+        custom = {"name": "Custom", "instructions": "Existing instructions."}
+        cfg = {**settings.DEFAULTS, "modes": ["nope", None, {"name": "Broken", "instructions": 12}, custom]}
+        w = self.make_window(cfg)
+        self.pick(w.mode_pick, "Custom")
+        self.edit_mode(w, "Custom", "Updated instructions.")
+        self.assertEqual(w.cfg["modes"], [{"name": "Custom", "instructions": "Updated instructions."}])
+        w.cfg["modes"].append("nope")
+        w.mode_new.invoke()
+        self.assertEqual(w.mode_name.get(), "New mode")
+        w.cfg["modes"].append(None)
+        self.pick(w.mode_pick, "Custom")
+        w.mode_delete.invoke()
+        self.assertEqual([m["name"] for m in w.cfg["modes"]], ["New mode"])
 
     def press(self, w, keycode, state):
         w.win.event_generate("<KeyPress>", keycode=keycode, state=state, when="now")
@@ -221,7 +252,7 @@ class WritingSettingsUi(unittest.TestCase):
         w = self.make_window(on_record=recording.append)
         w._record_hotkey()
         self.press(w, 0x11, 0)  # Ctrl alone waits for the key
-        self.assertEqual(w.hotkey_lbl["text"], "Press keys…")
+        self.assertEqual(w.hotkey_lbl["text"], "Ctrl…")
         self.press(w, 0xC0, 0x4)  # Ctrl+`
         self.assertEqual(self.changes[-1], ("hotkey", "<ctrl>+<key_192>"))
         self.assertEqual(w.hotkey_lbl["text"], "Ctrl+" + key_name(0xC0))

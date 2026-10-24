@@ -17,7 +17,7 @@ from .writing_page import WritingPage
 from .stt_page import build_page as stt_page
 
 PAGE, BORDER, SUBTLE, SELECTED = "#f3f3f3", "#e5e5e5", "#5f5f5f", "#e6e6e6"
-PAGES = ("Voices", "Captions", "Reading", "Summarize", "Speech to Text", "Writing", "General")
+PAGES = ("Voices", "Captions", "Reading", "Summarize", "Writing", "Dictation", "Speech to Text", "General")
 
 
 class SettingsWindow(SourcesSection, SummarizePage, ShortcutRow, WritingPage):
@@ -86,7 +86,7 @@ class SettingsWindow(SourcesSection, SummarizePage, ShortcutRow, WritingPage):
         self.title = tk.Label(self.content, bg=PAGE, font=(text.replace("Text", "Display"), 20, "bold"), anchor="w")
         self.title.pack(fill="x", pady=(0, 8))
         self.pages = [tk.Frame(self.content, bg=PAGE) for _ in PAGES]
-        voices, captions, reading, summary, stt, writing, general = self.pages
+        voices, captions, reading, summary, writing, dictation, stt, general = self.pages
 
         card = self._card(voices, "Sources")
         self._sources_section(card, text, welcome)
@@ -176,6 +176,7 @@ class SettingsWindow(SourcesSection, SummarizePage, ShortcutRow, WritingPage):
 
         self._summarize_page(summary, text, summarizer)
         self._writing_page(writing, text)
+        self._dictation_page(dictation)
 
         stt_page(self, stt)
 
@@ -283,6 +284,7 @@ class SettingsWindow(SourcesSection, SummarizePage, ShortcutRow, WritingPage):
 
     def close(self):
         self._flush_pending()
+        self._stop_recording()
         self.on_record(False)
         self.win.destroy()
 
