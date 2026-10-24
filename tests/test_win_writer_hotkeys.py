@@ -12,13 +12,15 @@ from pynput.keyboard import Key, KeyCode
 from harness_discussion.win.trigger import HotKey
 
 
-def make(spec, hold, on_activity=None):
+def make(spec, hold, on_activity=None, on_cancel=None):
     """A HotKey over an inert mocked keyboard.Listener, with its captured callbacks."""
     downs, ups = [], []
     with mock.patch("harness_discussion.win.trigger.keyboard.Listener") as listener, \
             mock.patch("threading.Thread"), \
             mock.patch("harness_discussion.win.trigger.ctypes.windll.user32.GetAsyncKeyState", return_value=0):
         options = {"on_activity": on_activity} if on_activity is not None else {}
+        if on_cancel is not None:
+            options["on_cancel"] = on_cancel
         hotkey = HotKey(spec, lambda: downs.append(1), on_release=(lambda: ups.append(1)) if hold else None, **options)
         press, release = listener.call_args.kwargs["on_press"], listener.call_args.kwargs["on_release"]
         inert = listener.return_value
@@ -55,6 +57,32 @@ class ReadShortcut(unittest.TestCase):
 class HoldToDictate(unittest.TestCase):
     """Holds end on primary up or loss of a required modifier, then wait for a full reset."""
 
+    def test_escape_cancels_before_activity_during_and_after_hold_and_ignores_stop(self):
+        events = []
+        hotkey, downs, ups, press, release, _ = make(
+            "<ctrl>+r", hold=True, on_activity=lambda: events.append("activity"),
+            on_cancel=lambda: events.append("cancel"))
+        self.addCleanup(hotkey.stop)
+        press(Key.ctrl_l)
+        press(KeyCode(vk=0x52))
+        press(Key.esc)
+        self.assertEqual(events, ["cancel", "activity"])
+        release(Key.esc)
+        release(KeyCode(vk=0x52))
+        release(Key.ctrl_l)
+        self.assertEqual((downs, ups), ([1], [1]))
+        press(KeyCode(vk=27, char="x"))  # physical Escape, independent of layout text
+        self.assertEqual(events, ["cancel", "activity", "cancel", "activity"])
+        release(KeyCode(vk=27))
+        press(KeyCode(vk=0x58))
+        self.assertEqual(events[-2:], ["activity", "activity"])
+        self.assertEqual(events.count("cancel"), 2)
+        hotkey.stop()
+        before = list(events)
+        press(Key.esc)
+        release(Key.esc)
+        self.assertEqual(events, before)
+
     def test_activity_excludes_normal_chord_and_includes_repeats_after_hold_up(self):
         activity = mock.Mock()
         hotkey, downs, ups, press, release, _ = make("<ctrl>+r", hold=True, on_activity=activity)
@@ -76,13 +104,25 @@ class HoldToDictate(unittest.TestCase):
         release(Key.shift)
         self.assertEqual(activity.call_count, 4)
 
-    def test_activity_callback_is_ignored_for_tap_bindings(self):
-        activity = mock.Mock()
-        hotkey, downs, ups, press, release, _ = make("r", hold=False, on_activity=activity)
+    def test_observer_callbacks_are_ignored_for_tap_bindings(self):
+        activity, cancel = mock.Mock(), mock.Mock()
+        hotkey, downs, ups, press, release, _ = make("r", hold=False, on_activity=activity, on_cancel=cancel)
         press(KeyCode(vk=0x58))
         release(KeyCode(vk=0x58))
+        press(Key.esc)
+        release(Key.esc)
         activity.assert_not_called()
+        cancel.assert_not_called()
         hotkey.stop()
+
+    def test_escape_cancel_does_not_require_an_activity_callback(self):
+        cancel = mock.Mock()
+        hotkey, _, _, press, release, _ = make("r", hold=True, on_cancel=cancel)
+        self.addCleanup(hotkey.stop)
+        press(Key.esc)
+        cancel.assert_called_once_with()
+        release(Key.esc)
+        cancel.assert_called_once_with()
 
     def test_unrelated_repeat_notifies_before_tracker_early_returns(self):
         activity = mock.Mock()

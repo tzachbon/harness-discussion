@@ -215,3 +215,35 @@ class MacInsertionGuard(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.edit.type_at_caret("new", self.ctx, cancelled=self.activity.is_set)
         self.edit.pasteboard.restore.assert_not_called()
+
+    def test_mac_native_exception_through_application_never_copies_or_retries(self):
+        from tests.test_app_writer import _App
+        for failure in ("partial_post", "acknowledgement"):
+            with self.subTest(failure=failure):
+                app = _App()
+                app.edit, app._dictate_ctx = self.edit, self.ctx
+                self.edit._key.reset_mock(side_effect=True)
+                self.edit._field_state.side_effect = None
+                self.edit.PASTE_ACK_S = .1
+                if failure == "partial_post":
+                    self.edit._key.side_effect = RuntimeError("private native details")
+                    self.edit._field_state.return_value = ((5, 0), 14)
+                else:
+                    self.edit._field_state.side_effect = [((5, 0), 14), RuntimeError("private acknowledgement")]
+                app.deliver(app._rewrite_id, None, ("words", "Local", None), (0, 0, None),
+                            (0, .1, None, "Local"))
+                self.edit._key.assert_called_once()
+                self.assertEqual(app.copied, [])
+                self.assertFalse(app.toast_.visible)
+                self.assertNotIn("private", repr(app.toast_.shown))
+
+    def test_mac_explicit_refusal_through_application_automatically_copies_once(self):
+        from tests.test_app_writer import _App
+        app = _App()
+        app.edit, app._dictate_ctx = self.edit, self.ctx
+        self.edit._focused.return_value = "other"
+        app.deliver(app._rewrite_id, None, ("words", "Local", None), (0, 0, None),
+                    (0, .1, None, "Local"))
+        self.edit._key.assert_not_called()
+        self.assertEqual(app.copied, ["words"])
+        self.assertEqual(app.toast_.shown[-1][0], "Copied to clipboard")

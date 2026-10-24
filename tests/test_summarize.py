@@ -47,6 +47,40 @@ def _pin(data):
 
 
 class DownloadTest(unittest.TestCase):
+    def vulkan_runtime(self):
+        data = io.BytesIO()
+        with zipfile.ZipFile(data, "w") as archive:
+            archive.writestr(summarize.SERVER, b"vulkan runtime")
+        body = data.getvalue()
+        name = f"llama-{summarize.BUILD}-bin-win-vulkan-x64.zip"
+        self.bodies[name] = body
+        return name, *_pin(body)
+
+    def test_runtime_upgrade_reuses_the_verified_model_and_preserves_old_runtime(self):
+        summarize.download()
+        old_model = summarize.model_path().read_bytes()
+        seen = []
+        with mock.patch.object(summarize, "runtime", return_value=self.vulkan_runtime()), mock.patch.object(
+                summarize, "_download_open", wraps=self.serve) as opened:
+            summarize.download(lambda done, total: seen.append((done, total)))
+            self.assertEqual(summarize.status(), "ready")
+        self.assertEqual(opened.call_count, 1)  # only the runtime archive, never the 2.5 GB model again
+        self.assertEqual(summarize.model_path().read_bytes(), old_model)
+        self.assertTrue((self.dir / "runtime").is_dir())
+        self.assertTrue((self.dir / "runtime-vulkan").is_dir())
+        self.assertEqual(seen[-1][0], seen[-1][1])
+
+    def test_failed_runtime_upgrade_keeps_model_provenance_and_old_runtime(self):
+        summarize.download()
+        marker = summarize._marker().read_bytes()
+        name, size, _ = self.vulkan_runtime()
+        with mock.patch.object(summarize, "runtime", return_value=(name, size, "0" * 64)):
+            with self.assertRaises(summarize.Error):
+                summarize.download()
+        self.assertEqual(summarize._marker().read_bytes(), marker)
+        self.assertEqual(summarize.model_path().read_bytes(), self.model)
+        self.assertTrue((self.dir / "runtime").is_dir())
+
     def setUp(self):
         self.dir = Path(self.enterContext(tempfile.TemporaryDirectory())) / "summarize"
         self.archive = _tar({f"llama-{summarize.BUILD}/{summarize.SERVER}": b"#!/bin/sh\n"})
@@ -171,6 +205,14 @@ class ServerTest(unittest.TestCase):
             self.assertEqual(server.summarize("text", "English"), "你好")  # summaries may still end early
         self.assertEqual(sent[0]["max_tokens"], 3000)
 
+
+    def test_closed_server_cannot_restart_from_a_late_prewarm(self):
+        server = summarize.Server()
+        server.close()
+        with mock.patch.object(summarize.subprocess, "Popen") as spawn:
+            with self.assertRaises(summarize.Error):
+                server.prewarm()
+            spawn.assert_not_called()
 
     def test_stop_does_not_wait_for_the_model_to_load(self):
         proc = mock.Mock()

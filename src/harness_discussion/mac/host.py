@@ -185,13 +185,15 @@ class MacHost:
             self.hotkey.stop()
         self.hotkey = HotKey(spec, on_hotkey) if spec else None
 
-    def set_shortcut(self, name, spec, fn, on_release=None, *, on_activity=None):
+    def set_shortcut(self, name, spec, fn, on_release=None, *, on_activity=None, on_cancel=None):
         """Replaces one of the writer's shortcuts; "" turns it off. on_release makes it a hold shortcut."""
         old = self.shortcuts.pop(name, None)
         if old:
             old.stop()
         if spec:
             options = {"on_activity": on_activity} if on_activity is not None else {}
+            if on_cancel is not None:
+                options["on_cancel"] = on_cancel
             self.shortcuts[name] = HotKey(spec, fn, on_release, **options)
 
     def mic_permission(self, then):
@@ -224,10 +226,14 @@ class MacHost:
     def esc_watcher(self, fn):
         return EscWatcher(fn)
 
-    def copy_text(self, text):
+    def copy_text(self, text, *, cancelled=lambda: False):
+        if cancelled():
+            return False
         board = AppKit.NSPasteboard.generalPasteboard()
+        if cancelled():
+            return False
         board.clearContents()
-        board.setString_forType_(text, AppKit.NSPasteboardTypeString)
+        return bool(board.setString_forType_(text, AppKit.NSPasteboardTypeString))
 
     def pick_mode(self, names, current, pick):
         """The mode menu at the pointer, for a double press of the rewrite shortcut."""

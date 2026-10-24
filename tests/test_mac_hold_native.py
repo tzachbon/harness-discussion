@@ -85,8 +85,10 @@ class NativeMacHold(unittest.TestCase):
         self.worker(lambda: None)
         self.worker(lambda: None)  # previous iteration's health check has completed
 
-    def make(self, spec="<ctrl>+r", on_activity=None):
+    def make(self, spec="<ctrl>+r", on_activity=None, on_cancel=None):
         options = {"on_activity": on_activity} if on_activity is not None else {}
+        if on_cancel is not None:
+            options["on_cancel"] = on_cancel
         self.hk = self.trigger.HotKey(spec, lambda: self.actions.append("down"), lambda: self.actions.append("up"), **options)
         hold = self.hk._hold
         def cleanup():
@@ -122,6 +124,67 @@ class NativeMacHold(unittest.TestCase):
     def chord(self):
         self.event(12, 59, (1 << 18) | 1)
         self.event(10, 15, (1 << 18) | 1)
+
+    def test_escape_cancels_on_owner_before_activity_during_and_after_hold_and_ignores_stop(self):
+        callbacks = []
+        hold = self.make(
+            on_activity=lambda: callbacks.append(("activity", threading.current_thread())),
+            on_cancel=lambda: callbacks.append(("cancel", threading.current_thread())))
+        self.chord()
+        self.event(10, 53, (1 << 18) | 1)
+        self.assertEqual(callbacks, [("cancel", hold._thread), ("activity", hold._thread)])
+        self.event(11, 53, (1 << 18) | 1)
+        self.event(11, 15, (1 << 18) | 1)
+        self.event(12, 59)
+        self.assertEqual(self.actions, ["down", "up"])
+        self.event(10, 53, repeat=1)
+        self.assertEqual(callbacks, [("cancel", hold._thread), ("activity", hold._thread)] * 2)
+        self.event(11, 53)
+        self.event(10, 7)
+        self.assertEqual(callbacks[-1], ("activity", hold._thread))
+        self.hk.stop()
+        before = list(callbacks)
+        self.event(10, 53)
+        self.event(11, 53)
+        self.assertEqual(callbacks, before)
+
+    def test_host_forwards_optional_observer_callbacks_and_stops_replaced_binding(self):
+        boundaries = {f"harness_discussion.mac.{name}": Mock()
+                      for name in ("edit", "selection", "ui", "esc", "popup", "review", "settings_ui", "toast", "voice")}
+        boundaries.update({"Foundation": types.SimpleNamespace(NSObject=object),
+                           "harness_discussion.mac.trigger": self.trigger})
+        spec = importlib.util.spec_from_file_location(
+            "harness_discussion.mac._hold_test_host",
+            Path(__file__).parents[1] / "src/harness_discussion/mac/host.py")
+        native_host = importlib.util.module_from_spec(spec)
+        with patch.dict(sys.modules, boundaries):
+            spec.loader.exec_module(native_host)
+        host = object.__new__(native_host.MacHost)
+        host.shortcuts = {}
+        down, up, activity, cancel = Mock(), Mock(), Mock(), Mock()
+        for options in ({}, {"on_activity": activity}, {"on_cancel": cancel},
+                        {"on_activity": activity, "on_cancel": cancel}):
+            with self.subTest(options=tuple(options)), patch.object(native_host, "HotKey") as hook:
+                old = host.shortcuts.get("dictate")
+                host.set_shortcut("dictate", "<ctrl>+r", down, up, **options)
+                hook.assert_called_once_with("<ctrl>+r", down, up, **options)
+                if old is not None:
+                    old.stop.assert_called_once_with()
+                for callback in hook.call_args.kwargs.values():
+                    callback()
+        self.assertEqual((activity.call_count, cancel.call_count), (2, 2))
+        last = host.shortcuts["dictate"]
+        host.set_shortcut("dictate", "", None)
+        last.stop.assert_called_once_with()
+        self.assertEqual(host.shortcuts, {})
+
+    def test_escape_cancel_does_not_require_an_activity_callback(self):
+        cancel = Mock()
+        self.make(on_cancel=cancel)
+        self.event(10, 53)
+        cancel.assert_called_once_with()
+        self.event(11, 53)
+        cancel.assert_called_once_with()
 
     def test_activity_excludes_normal_chord_and_includes_unrelated_repeats_after_up(self):
         activity = Mock()
@@ -442,14 +505,17 @@ class NativeMacHold(unittest.TestCase):
     def test_read_and_rewrite_taps_keep_nsevent_monitors(self):
         for spec, code in (("<ctrl>+r", 15), ("<ctrl>+e", 14)):
             with self.subTest(spec=spec):
-                fired, activity = Mock(), Mock()
-                hk = self.trigger.HotKey(spec, fired, on_activity=activity)
+                fired, activity, cancel = Mock(), Mock(), Mock()
+                hk = self.trigger.HotKey(spec, fired, on_activity=activity, on_cancel=cancel)
                 hk._event(Mock(type=lambda: 10, keyCode=lambda: code,
                                modifierFlags=lambda: 1 << 18, isARepeat=lambda: False))
                 fired.assert_called_once_with()
                 hk._event(Mock(type=lambda: 10, keyCode=lambda: 7,
                                modifierFlags=lambda: 1 << 18, isARepeat=lambda: True))
+                hk._event(Mock(type=lambda: 10, keyCode=lambda: 53,
+                               modifierFlags=lambda: 0, isARepeat=lambda: False))
                 activity.assert_not_called()
+                cancel.assert_not_called()
                 hk.stop()
                 hk._event(Mock(type=lambda: 10, keyCode=lambda: code,
                                modifierFlags=lambda: 1 << 18, isARepeat=lambda: False))

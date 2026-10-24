@@ -107,5 +107,10 @@ def target(document):
         cleanup = stack.enter_context(patch.object(edit.clipboard, "PreparedRestore")).return_value.__enter__.return_value
         cleanup.apply.return_value = 12
         stack.enter_context(patch.object(edit.clipboard, "sequence", return_value=11))
-        key = stack.enter_context(patch.object(edit.keys, "chord", return_value=False))
+        key = Mock(return_value=False)
+        def chord(vk, on_attempt=None):
+            if on_attempt is not None:
+                on_attempt()
+            return key(vk)
+        stack.enter_context(patch.object(edit.keys, "chord", side_effect=chord))
         yield native, key, snap, cleanup.apply

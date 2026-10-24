@@ -10,7 +10,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 
-from . import dictation, edit_logic, hotkeys, mic, sources, writer
+from . import dictation, edit_logic, hotkeys, local_stt, mic, sources, writer
 from . import writer_settings as ws
 from .llm_codex import CodexWriter
 from .llm_cursor import CursorWriter
@@ -27,6 +27,8 @@ class _Recording:
     generation: int
     binding: int
     target: object
+    device: str = ""
+    recorder: object = None
     activity: threading.Event = field(default_factory=threading.Event)
     permission: threading.Event = field(default_factory=threading.Event)
     stop: threading.Event = field(default_factory=threading.Event)
@@ -52,7 +54,7 @@ class Writer:
                      "dictate_up": "_dictate_up", "dictated": "_dictated", "writer_info": "_writer_info",
                      "mic_answer": "_mic_answer", "recording_ready": "_recording_ready",
                      "recording_stopping": "_recording_stopping", "recording_done": "_recording_done",
-                     "dictation_timer": "_dictation_timer"}
+                     "dictation_timer": "_dictation_timer", "local_stt_downloaded": "_local_stt_downloaded"}
 
     def _init_writer(self):
         self.edit = getattr(self.host, "edit", None)
@@ -63,6 +65,7 @@ class Writer:
         self._press_at, self._press_gen, self._escaped_at = 0.0, 0, 0.0
         self.toast = self.review = self._esc = None
         self.stt_sources = dictation.sources()
+        self._local_stt_downloading = False
         self.writer_statuses, self.stt_statuses, self.writer_models = {}, {}, {}
         self._writer_checking = threading.Lock()
         self._recorder, self._recorded_at, self._dictate_ctx, self._holding = None, 0.0, None, False
@@ -70,10 +73,11 @@ class Writer:
         self._dictate_binding, self._writer_closed, self._dictation_job = 0, False, None
         self._dictate_activity = lambda: None
         self._dictation_target_activity = None
+        self._dictation_delivery = None
         if self.writer_ready:
             self.toast, self.review = self.host.make_toast(), self.host.make_review()
             self.toast.on_hide = self._watch_escape
-            self._esc = self.host.esc_watcher(self._escape)
+            self._esc = self.host.esc_watcher(self._native_escape)
 
     def refresh_writer(self):
         """Settings shows cached statuses and model lists. Both can take seconds, so a worker fills them."""
@@ -108,10 +112,38 @@ class Writer:
         if self.settings_win and self.settings_win.alive and hasattr(self.settings_win, "refresh_writing"):
             self.settings_win.refresh_writing()
 
+    def _dictation_writers(self):
+        chain = writer.chain(self.writer_sources, self.cfg["writer_sources"])
+        if self.cfg.get("dictate_local_tidy", True):
+            local = next((s for s in chain if s.name == "Local"), None)
+            try:
+                if local is not None and local.status() == "ready":
+                    chain = [local] + [s for s in chain if s is not local]
+            except Exception as e:
+                log.info("Local writer status failed: %s", type(e).__name__)
+        return chain
+
     def fix_writer(self, name, stt=False):
-        """Sign in or install for Codex and Cursor. Local downloads its model from the Summarize page."""
+        """Sign in, install, or download the distinct local speech/writing model."""
         status = (self.stt_statuses if stt else self.writer_statuses).get(name)
-        if name == "Local":
+        if name == "Local" and stt:
+            if self._local_stt_downloading:
+                return
+            self._local_stt_downloading = True
+            self.stt_statuses["Local"] = "downloading"
+            self._writer_info()
+            def work():
+                error = None
+                try:
+                    local_stt.download()
+                except Exception as e:
+                    log.info("Local dictation download failed: %s", type(e).__name__)
+                    error = True
+                self.events.put(("local_stt_downloaded", error))
+            threading.Thread(target=work, daemon=True).start()
+            self.refresh_writer()
+            return
+        elif name == "Local":
             self.summarize_action()
         elif found := sources.fix(name, status):
             try:
@@ -121,6 +153,14 @@ class Writer:
                 return
         for s in sources.RECHECK_S:
             self.host.after(s * 1000, self.refresh_writer)
+
+    def _local_stt_downloaded(self, error):
+        self._local_stt_downloading = False
+        self.stt_statuses["Local"] = "ready" if local_stt.downloaded() else "missing"
+        self._writer_info()
+        if error:
+            self.host.notify("Could not download the local dictation model. Try again in Settings → Dictation.")
+        self.refresh_writer()
 
     def mode_names(self):
         return [m.name for m in writer.all_modes(self.cfg["modes"])]
@@ -279,14 +319,14 @@ class Writer:
             binding = self._dictate_binding
             self._cancel_dictation()
             taken = hotkeys.conflict(self.cfg, key, value) is not None
-            edge_lock, current = threading.Lock(), [None]
+            edge_lock, current = threading.Lock(), [None, None]
 
             def down():
                 with edge_lock:
                     if current[0] is not None:
                         current[0].set()
-                    current[0] = threading.Event()
-                    put(("dictate_down", binding, current[0]))
+                    current[0], current[1] = threading.Event(), threading.Event()
+                    put(("dictate_down", binding, current[0], current[1]))
 
             def up():
                 with edge_lock:
@@ -297,8 +337,16 @@ class Writer:
                     if current[0] is not None:
                         current[0].set()
 
+            def cancel():
+                with edge_lock:
+                    if binding != self._dictate_binding:
+                        return
+                    if current[1] is not None:
+                        current[1].set()
+                    self._native_escape()
+
             self._dictate_activity = activity
-            self.host.set_shortcut("dictate", "" if taken else value, down, up, on_activity=activity)
+            self.host.set_shortcut("dictate", "" if taken else value, down, up, on_activity=activity, on_cancel=cancel)
         elif hasattr(self, "popup"):
             self.popup.set_last_mode(value)
 
@@ -316,9 +364,10 @@ class Writer:
         event = ("dictation_timer", session.generation, session.binding, phase)
         self.host.after(int(seconds * 1000), lambda: self.events.put(event))
 
-    def _dictate_down(self, binding=None, activity=None):
+    def _dictate_down(self, binding=None, activity=None, cancel=None):
         """Reserve ownership before permission, then let one worker own all device calls."""
         if (binding is not None and binding != self._dictate_binding
+                or cancel is not None and cancel.is_set()
                 or not (self.writer_ready and self.cfg["writer"]) or self.rewriting or self._writer_closed):
             return
         owner = self._recorder or self._dictation_job
@@ -327,6 +376,7 @@ class Writer:
                 self._toast("The previous dictation is still finishing. Please wait.")
             return
         self._dictate_generation += 1
+        self._summary_gen += 1
         self._press_gen += 1
         self._press_at = 0.0
         if hasattr(self, "_seq"):
@@ -338,10 +388,12 @@ class Writer:
         except Exception:
             identity = None
         session = _Recording(self._dictate_generation, self._dictate_binding, identity,
-                             activity=activity if activity is not None else threading.Event())
+                             device=self.cfg.get("dictate_microphone", ""),
+                             activity=activity if activity is not None else threading.Event(),
+                             cancel=cancel if cancel is not None else threading.Event())
         self._dictation_target_activity = session.activity
         self._recorder, self._holding, self._dictate_ctx = session, True, None
-        self._toast("Preparing microphone", [("Cancel", self._cancel_dictation)], busy=True)
+        self._recording_toast(session, "Preparing microphone")
         self._dictation_after(session, START_TIMEOUT_S, "preparing")
         session.thread = threading.Thread(target=self._record, args=(session,), daemon=True)
         session.thread.start()
@@ -360,7 +412,7 @@ class Writer:
         session.permission.set()
 
     def _record(self, session):
-        """No device method, including failure cleanup, may escape this worker."""
+        """Only this worker may start, stop or close the native stream."""
         audio, duration, ctx, error = b"", 0.0, None, None
         generation, binding = session.generation, session.binding
         try:
@@ -377,7 +429,8 @@ class Writer:
                 ctx = None
             if session.stop.is_set():
                 return
-            recorder = mic.Recorder()
+            recorder = mic.Recorder(device=session.device)
+            session.recorder = recorder
             recorder.start()
             ready = not session.stop.is_set()
             try:
@@ -403,9 +456,31 @@ class Writer:
             return
         self._recorded_at = started
         session.phase = "listening"
-        first = next((n for n, on in self.cfg["stt_sources"] if on), "Cursor")
-        self._toast(f"Listening · {first}", [("Cancel", self._cancel_dictation)], busy=True)
+        self._recording_toast(session, "Listening")
+        self._show_input_level(session)
+        first_stt = next(iter(writer.chain(self.stt_sources, self.cfg["stt_sources"])), None)
+        if first_stt is not None and hasattr(first_stt, "prewarm"):
+            threading.Thread(target=first_stt.prewarm, args=(), daemon=True).start()
+        if self.cfg["dictate_polish"]:
+            first_writer = next(iter(self._dictation_writers()), None)
+            if first_writer is not None and hasattr(first_writer, "prewarm"):
+                model = (self.cfg["writer_models"].get(first_writer.name) or {}).get("model")
+                threading.Thread(target=first_writer.prewarm, args=(model,), daemon=True).start()
         self._dictation_after(session, mic.MAX_SECONDS, "limit")
+
+    def _recording_toast(self, session, message):
+        def cancel():
+            if self._recorder is session:
+                self._cancel_dictation()
+                self.toast.hide()
+        self._toast(message, [("×", cancel)], busy=True)
+
+    def _show_input_level(self, session):
+        if (self._recorder is not session or not self._holding or session.phase != "listening"
+                or session.stop.is_set() or not self._dictation_current(session)):
+            return
+        self.toast.set_input_level(session.recorder.level())
+        self.host.after(100, lambda: self._show_input_level(session))
 
     def _recording_stopping(self, generation, binding):
         session = self._recorder
@@ -414,7 +489,7 @@ class Writer:
             return
         self._holding = False
         session.phase = "stopping"
-        self._toast("Stopping microphone", [("Cancel", self._cancel_dictation)], busy=True)
+        self._recording_toast(session, "Stopping microphone")
         self._dictation_after(session, STOP_TIMEOUT_S, "stopping")
 
     def _dictate_up(self, binding=None, activity=None):
@@ -470,17 +545,26 @@ class Writer:
         event = ("recording_done", generation, binding, audio, duration, ctx, error)
         if not self._worker_exited(session, event):
             return
-        self._recorder, self._holding = None, False
-        self._watch_escape()
-        if not self._dictation_current(session):
-            return
-        if error:
-            self._toast(error, [("Open Settings", self.host.open_mic_settings)])
-        elif mic.is_tap(duration) or not audio:
-            self.toast.hide()
-        else:
-            self._dictate_ctx = None if session.activity.is_set() else ctx
-            self._transcribe(session, audio)
+        self._dictation_delivery = session
+        try:
+            self._recorder, self._holding = None, False
+            self._arm_summary_stop()
+            self._watch_escape()
+            if not self._dictation_current(session):
+                self.toast.hide()
+                return
+            if error:
+                self._toast(error, [("Open Settings", self.host.open_mic_settings)])
+            elif mic.is_tap(duration) or not audio:
+                self.toast.hide()
+            else:
+                self._dictate_ctx = None if session.activity.is_set() else ctx
+                self._transcribe(session, audio)
+        finally:
+            if self._dictation_delivery is session:
+                self._dictation_delivery = None
+                if session.cancel.is_set() and self._recorder is None and self._dictation_job is None:
+                    self.toast.hide()
 
     def _transcribe(self, session, audio):
         released = time.monotonic()
@@ -494,9 +578,9 @@ class Writer:
         self._set_rewriting(True)
         self._summary_gen += 1
         at = self._anchor()
-        sources = writer.chain(self.writer_sources, self.cfg["writer_sources"])
+        sources = self._dictation_writers() if mode else []
         models, order, chain = self.cfg["writer_models"], self.cfg["stt_sources"], self.stt_sources
-        self._toast(f"Transcribing · {mode.name}" if mode else "Transcribing", [("Cancel", self.cancel_rewrite)],
+        self._toast("Transcribing", [("×", lambda: self.cancel_rewrite() if rid == self._rewrite_id else None)],
                     busy=True, at=at)
         self._dictation_after(session, TRANSCRIBE_TIMEOUT_S, "transcribing")
 
@@ -531,52 +615,91 @@ class Writer:
         event = ("dictated", rid, generation, binding, mode, result, at, timing)
         if not self._worker_exited(session, event):
             return
-        self._dictation_job = None
-        if rid != self._rewrite_id or not self._dictation_current(session):
-            return
-        released, stt_s, rewrite_s, stt_name = timing
-        secs = lambda s: f"{s:.1f}s" if s is not None else "-"
-        self._set_rewriting(False)
-        self._arm_summary_stop()
-        if isinstance(result, writer.Cancelled):
-            self.toast.hide()
-            return
-        if isinstance(result, Exception):
-            log.info("dictation failed: %s after %.1fs (transcribe %s with %s, rewrite %s)", type(result).__name__,
-                     time.monotonic() - released, secs(stt_s), stt_name or "-", secs(rewrite_s))
-            safe = isinstance(result, (writer.Error, dictation.Error))
-            self._toast(str(result) if safe else "Could not finish the dictation.", at=at)
-            return
-        text, stt_name, source = result
-        log.info("dictated %d chars with %s%s in %.1fs (transcribe %.1fs, rewrite %s)", len(text), stt_name,
-                 f" then {source}" if source else "", time.monotonic() - released, stt_s, secs(rewrite_s))
-        copy = lambda: self.host.copy_text(text)
-        changed = lambda: self._toast("The text field changed. Copy the text?", [("Copy", copy)], at=at)
-        if session.activity.is_set():
-            changed()
-            return
-        ctx = self._dictate_ctx
+        self._dictation_delivery = session
         try:
-            now = self.edit.capture(False) if ctx is not None else None
-        except Exception:
-            self._toast("Could not check the text field. Copy the text?", [("Copy", copy)], at=at)
-            return
-        if session.activity.is_set():
-            changed()
-            return
-        if ctx is None or ctx.secure or now is None or (now.app, now.window) != (ctx.app, ctx.window) or now.secure:
-            self._toast("The window changed. Copy the text?", [("Copy", copy)], at=at)
-            return
-        try:
-            cancelled = lambda: (session.activity.is_set() or not self._dictation_current(session)
-                                 or rid != self._rewrite_id)
-            placed = self.edit.type_at_caret(text, ctx, cancelled=cancelled)
-        except Exception:
-            placed = False
-        if not placed:
-            self._toast("Couldn't type here.", [("Copy", copy)], at=at)
-            return
-        self._toast(f"Dictated · {mode} · {source}" if mode else f"Dictated · {stt_name}", [("Copy", copy)], at=at)
+            self._dictation_job = None
+            if rid != self._rewrite_id:
+                return
+            self._set_rewriting(False)
+            self._arm_summary_stop()
+            if not self._dictation_current(session):
+                self.toast.hide()
+                return
+            released, stt_s, rewrite_s, stt_name = timing
+            secs = lambda s: f"{s:.1f}s" if s is not None else "-"
+            if isinstance(result, writer.Cancelled):
+                self.toast.hide()
+                return
+            if isinstance(result, Exception):
+                log.info("dictation failed: %s after %.1fs (transcribe %s with %s, rewrite %s)", type(result).__name__,
+                         time.monotonic() - released, secs(stt_s), stt_name or "-", secs(rewrite_s))
+                safe = isinstance(result, (writer.Error, dictation.Error))
+                self._toast(str(result) if safe else "Could not finish the dictation.", at=at)
+                return
+            text, stt_name, source = result
+            log.info("dictated %d chars with %s%s in %.1fs (transcribe %.1fs, rewrite %s)", len(text), stt_name,
+                     f" then {source}" if source else "", time.monotonic() - released, stt_s, secs(rewrite_s))
+            current = lambda: self._dictation_current(session) and rid == self._rewrite_id
+            copy = lambda: self.host.copy_text(text)
+            ctx = self._dictate_ctx
+            try:
+                now = self.edit.capture(False) if ctx is not None and not session.activity.is_set() else None
+            except Exception:
+                now = None
+            if not current():
+                self.toast.hide()
+                return
+            can_insert = (not session.activity.is_set() and ctx is not None and not ctx.secure
+                          and now is not None and not now.secure
+                          and (now.app, now.window) == (ctx.app, ctx.window))
+            if can_insert:
+                try:
+                    placed = self.edit.type_at_caret(text, ctx, cancelled=lambda: session.activity.is_set() or not current())
+                    attempted = getattr(ctx, "_insertion_attempted", False)
+                except Exception:
+                    placed = False
+                    # An adapter without attempt metadata cannot prove a native exception sent no input.
+                    attempted = getattr(ctx, "_insertion_attempted", True)
+                if not current() or placed or attempted:
+                    self.toast.hide()
+                    return
+            if not current():
+                self.toast.hide()
+                return
+            try:
+                copied = self.host.copy_text(text, cancelled=lambda: not current())
+            except Exception:
+                copied = False
+            if not current():
+                self.toast.hide()
+                return
+            if copied:
+                self._toast("Copied to clipboard", at=at)
+            else:
+                self._toast("Could not copy the dictation.", [("Copy", copy)], at=at)
+        finally:
+            if self._dictation_delivery is session:
+                self._dictation_delivery = None
+                if session.cancel.is_set() and self._recorder is None and self._dictation_job is None:
+                    self.toast.hide()
+
+    def _native_escape(self):
+        """Latch the observed session before queueing any UI cleanup."""
+        session = self._recorder or self._dictation_job or self._dictation_delivery
+        if session is not None:
+            session.cancel.set()
+            session.stop.set()
+            session.permission.set()
+
+            def cleanup():
+                if any(owner is session for owner in (self._recorder, self._dictation_job, self._dictation_delivery)):
+                    self._cancel_dictation()
+                    self.toast.hide()
+            self.events.put(("call", cleanup))
+        else:
+            generation, rid = self._dictate_generation, self._rewrite_id
+            self.events.put(("call", lambda: self._escape() if (generation, rid) ==
+                             (self._dictate_generation, self._rewrite_id) else None))
 
     def _escape(self):
         """Esc cancels a rewrite, else hides the toast, else dismisses the bar. Both watchers can see one Esc."""
@@ -614,10 +737,13 @@ class Writer:
         self._cancel_dictation()
         self._rewrite_id += 1
         self._rewrite_cancel.set()
-        for source in self.writer_sources:
+        for source in self.writer_sources + self.stt_sources:
             close = getattr(source, "close", None)
             if close:
-                close()
+                if source.name == "Local" and source in self.stt_sources:
+                    threading.Thread(target=close, daemon=True).start()
+                else:
+                    close()
         if self._esc:
             self._esc.stop()
             self.host.set_shortcut("rewrite", "", None)

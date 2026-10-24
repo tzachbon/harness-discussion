@@ -83,12 +83,12 @@ class HotKey:
     With on_release, fires at key-down instead and ends on primary up or required modifier loss,
     for hold-to-act shortcuts like dictation."""
 
-    def __init__(self, spec, on_hotkey, on_release=None, *, on_activity=None):
+    def __init__(self, spec, on_hotkey, on_release=None, *, on_activity=None, on_cancel=None):
         mods, key = hotkeys.parse(spec)
         self.on_hotkey, self.on_release, self._keys, self._held = on_hotkey, on_release, {*mods, *([vk(key)] if key else [])}, {}
         self._pending = False
         self._lock, self._closed, self._hold = threading.RLock(), False, None
-        self.on_activity = on_activity
+        self.on_activity, self.on_cancel = on_activity, on_cancel
         if on_release is not None:
             keymap = {0xA0: "shift", 0xA1: "shift", 0xA2: "ctrl", 0xA3: "ctrl",
                       0xA4: "alt", 0xA5: "alt", 0x5B: "cmd", 0x5C: "cmd"}
@@ -117,6 +117,8 @@ class HotKey:
                 return
             if self._hold:
                 name = _name(key)
+                if _physical(key) == 27 and self.on_cancel is not None:
+                    self.on_cancel()
                 if self.on_activity is not None and not self._hold._required(name):
                     self.on_activity()
                 self._hold.event(_physical(key), name, True)

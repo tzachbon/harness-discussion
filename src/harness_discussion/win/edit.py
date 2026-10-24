@@ -31,6 +31,7 @@ class Context:
     _digest: bytes = b""
     _units: int = 0
     _receipt: tuple | None = field(default=None, repr=False, compare=False)
+    _insertion_attempted: bool = field(default=False, repr=False, compare=False)
 
 
 def _canonical(text):
@@ -158,7 +159,8 @@ def _replace(text, context, cancelled):
             try:
                 check = _inspect()
                 if (check and _matches(context, check[0]) and clipboard.sequence() == ours and not cancelled()
-                        and keys.chord(ord("V"))):
+                        and keys.chord(ord("V"),
+                                       on_attempt=lambda: setattr(context, "_insertion_attempted", True))):
                     deadline = time.monotonic() + 1.0
                     while time.monotonic() < deadline:
                         result = _inspect()
@@ -185,6 +187,8 @@ def _replace(text, context, cancelled):
 
 def replace(text, ctx=None, *, cancelled=lambda: False):
     """True only after exact document/caret verification. False after input must never be retried automatically."""
+    if ctx is not None:
+        ctx._insertion_attempted = False
     if not isinstance(text, str) or "\0" in text or (ctx is not None and ctx.secure):
         return False
     return bool(_run(_replace, text, ctx, cancelled))

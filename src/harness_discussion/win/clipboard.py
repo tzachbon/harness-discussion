@@ -207,16 +207,21 @@ def restore(saved: list[tuple[int, bytes]], expected_sequence=None):
     return _owned_sequence(opened.hwnd)
 
 
-def write_text(text: str) -> None:
+def write_text(text: str, *, cancelled=lambda: False) -> bool:
     """Explicit Copy replaces old contents, including formats we cannot snapshot."""
     if not isinstance(text, str) or "\0" in text:
         raise ValueError("Invalid clipboard text")
+    if cancelled():
+        return False
     incoming = _allocate([(13, (text + "\0").encode("utf-16-le"))])
     try:
         with _Open():
+            if cancelled():
+                return False
             _install_locked(incoming)
     finally:
         _free(incoming)
+    return True
 
 
 def html() -> str:

@@ -106,12 +106,14 @@ class HotKey:
     """Watches key-downs for one shortcut. In another app it can't swallow the key, so that app sees it too.
     With `on_release`, it also reports when the key or one of its modifiers comes up, for hold shortcuts."""
 
-    def __init__(self, spec, on_hotkey, on_release=None, *, on_activity=None):
+    def __init__(self, spec, on_hotkey, on_release=None, *, on_activity=None, on_cancel=None):
         self.keys, self.on_hotkey = hotkeys.parse(spec), on_hotkey  # parsed, so modifier order doesn't matter
         self.on_release, self._tap, self._spoiled = on_release, False, False
         self._hold, self._closed = None, False
         if on_release is not None:
             options = {"on_activity": on_activity} if on_activity is not None else {}
+            if on_cancel is not None:
+                options["on_cancel"] = on_cancel
             self._hold = NativeHold(spec, on_hotkey, on_release, **options)
             return
         mask = AppKit.NSEventMaskKeyDown
@@ -171,7 +173,7 @@ class HotKey:
 class NativeHold:
     """Observe input and binding health independently of the AppKit main loop."""
 
-    def __init__(self, spec, on_down, on_up, *, on_activity=None):
+    def __init__(self, spec, on_down, on_up, *, on_activity=None, on_cancel=None):
         mods, key = hotkeys.parse(spec)
         primary = (next(code for code, name in KEY_CODES.items() if name == key)
                    if key in KEY_CODES.values() else int(key[4:]) if key else None)
@@ -179,7 +181,7 @@ class NativeHold:
         if primary is not None:
             keymap[primary] = primary
         self.tracker = HeldShortcut(mods, primary, keymap, on_down, on_up)
-        self.on_activity = on_activity
+        self.on_activity, self.on_cancel = on_activity, on_cancel
         self._closed = False
         self._tap = self._source = self._loop = None
         self._callback = self._event  # retain the bridged callback until owner cleanup
@@ -312,6 +314,8 @@ class NativeHold:
                 if kind not in (Quartz.kCGEventKeyDown, Quartz.kCGEventKeyUp, Quartz.kCGEventFlagsChanged):
                     return event
                 code = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGKeyboardEventKeycode)
+                if kind == Quartz.kCGEventKeyDown and code == 53 and self.on_cancel is not None:
+                    self.on_cancel()
                 flags = Quartz.CGEventGetFlags(event)
                 name = MOD_CODES[code][0] if kind == Quartz.kCGEventFlagsChanged and code in MOD_CODES else code
                 if (kind in (Quartz.kCGEventKeyDown, Quartz.kCGEventFlagsChanged) and

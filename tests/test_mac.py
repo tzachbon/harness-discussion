@@ -14,6 +14,31 @@ from harness_discussion import codex_rt  # noqa: E402
 from harness_discussion.mac import pasteboard, permission, selection, startup, voice  # noqa: E402
 
 
+class ClipboardHostTest(unittest.TestCase):
+    def test_copy_reports_the_native_pasteboard_result(self):
+        from harness_discussion.mac import host
+        for success in (True, False):
+            with self.subTest(success=success), mock.patch.object(host.AppKit, "NSPasteboard") as pasteboard_api:
+                board = pasteboard_api.generalPasteboard.return_value
+                board.setString_forType_.return_value = success
+                self.assertEqual(host.MacHost.copy_text(None, "dictation"), success)
+                board.clearContents.assert_called_once_with()
+
+    def test_cancelled_copy_never_clears_the_pasteboard_even_during_acquisition(self):
+        from harness_discussion.mac import host
+        for phase in ("before", "acquiring"):
+            with self.subTest(phase=phase), mock.patch.object(host.AppKit, "NSPasteboard") as api:
+                cancelled = threading.Event()
+                board = api.generalPasteboard.return_value
+                if phase == "before":
+                    cancelled.set()
+                else:
+                    api.generalPasteboard.side_effect = lambda: cancelled.set() or board
+                self.assertFalse(host.MacHost.copy_text(None, "dictation", cancelled=cancelled.is_set))
+                board.clearContents.assert_not_called()
+                board.setString_forType_.assert_not_called()
+
+
 class AvRateTest(unittest.TestCase):
     def test_normal_speed_is_default_rate(self):
         self.assertAlmostEqual(voice.av_rate(1.0), voice.AVSpeechUtteranceDefaultSpeechRate)

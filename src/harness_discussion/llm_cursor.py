@@ -46,7 +46,7 @@ def login_status():
     if not exe:
         return "missing"
     try:
-        done = subprocess.run([exe, "status"], capture_output=True, text=True, timeout=10,
+        done = subprocess.run([exe, "status"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
                               stdin=subprocess.DEVNULL, env=_env(), **SPAWN)
     except (OSError, subprocess.SubprocessError):
         return "ready"  # unknown: the rewrite tries it, and the next source runs if it fails

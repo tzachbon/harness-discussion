@@ -1,8 +1,9 @@
-"""The transcript chain for dictation: Cursor then Codex by default, in the saved order, skipping unready sources."""
+"""The transcript chain for dictation: Local, Cursor and Codex, in the saved order, skipping unready sources."""
 import logging
 
 from . import codex_rt, stt, writer
 from .llm_cursor import CursorStt
+from .local_stt import LocalStt
 
 log = logging.getLogger("harness_discussion")
 
@@ -22,7 +23,7 @@ class CodexStt:
 
 
 def sources():
-    return [CodexStt(), CursorStt()]
+    return [LocalStt(), CodexStt(), CursorStt()]
 
 
 def transcribe(audio, chain, order, language="", cancelled=lambda: False):
@@ -43,7 +44,8 @@ def transcribe(audio, chain, order, language="", cancelled=lambda: False):
             if source.status() != "ready":
                 continue
             check()
-            text = source.transcribe(audio, language=language)
+            text = (source.transcribe(audio, language=language, cancelled=cancelled) if name == "Local"
+                    else source.transcribe(audio, language=language))
         except writer.Cancelled:
             raise
         except Exception as e:
