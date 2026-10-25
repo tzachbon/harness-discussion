@@ -8,6 +8,7 @@ from tkinter import messagebox
 
 import pystray
 
+from .. import history
 from ..codex_rt import CodexEngine
 from ..cursor_tts import CursorEngine
 from ..engines import EdgeEngine
@@ -41,9 +42,22 @@ class TkHost:
         return pystray.Menu(
             pystray.MenuItem("Settings", put("settings"), default=True),
             pystray.MenuItem("Take the Tour", put("tour_replay")),
+            pystray.MenuItem("Recent Dictations", pystray.Menu(self._history_items),
+                             visible=lambda _: self.app.cfg["dictation_history"]),
             pystray.MenuItem(lambda _: f"Last voice source: {self.app.chain.last or '-'}", None, enabled=False),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quit", put("quit")))
+
+    def _history_items(self):
+        """Clicking one copies it. Copying runs on the Tk thread, which owns the clipboard."""
+        call = lambda text: lambda: self.app.events.put(("call", lambda: self.copy_text(text)))
+        items = [pystray.MenuItem(label, call(text)) for label, text in history.entries()]
+        if not items:
+            return [pystray.MenuItem("No dictations yet", None, enabled=False)]
+        return [*items, pystray.Menu.SEPARATOR, pystray.MenuItem("Clear", lambda: history.clear() or self.app.events.put(("call", self.app.history_changed)))]
+
+    def history_changed(self):
+        self.icon.update_menu()  # the Windows tray builds its menu ahead of time
 
     def engines(self):
         return [CursorEngine(), CodexEngine(), KokoroEngine(), EdgeEngine(), SapiEngine()]
@@ -100,6 +114,7 @@ class TkHost:
                               on_writer_fix=a.fix_writer,
                               stt_statuses=lambda: a.stt_statuses,
                               dictate_status=self.mic_status, on_mic_settings=self.open_mic_settings,
+                              on_copy=self.copy_text, on_history_changed=a.history_changed,
                               on_record=self._record_shortcuts)
 
     def make_tour(self, app):

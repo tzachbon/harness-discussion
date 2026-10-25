@@ -1,7 +1,7 @@
 """Settings → Writing and Dictation on macOS: sources with models, the default mode, modes, and shortcuts."""
 import AppKit
 
-from .. import mic, settings, writer
+from .. import history, mic, settings, writer
 from .. import writer_settings as ws
 from . import ui
 
@@ -120,16 +120,58 @@ class WritingPage:
         local_tidy, _ = ui.option("Prefer local tidy for faster results",
                 "Uses Writing → Local when downloaded and enabled. Otherwise uses your writing sources.",
                 self.cfg["dictate_local_tidy"], lambda on: self._set("dictate_local_tidy", on), WIDTH)
+        keep, _ = ui.option("Keep recent dictations",
+                            "The last 10, raw and tidied, below and in the menu bar. Off deletes them.",
+                            self.cfg.get("dictation_history", True), self._history_toggled, WIDTH)
         self.dictate_popup = _popup(lambda i: self._set("dictate_mode", self._mode_list()[i].name))
         self.dictate_popup.setAccessibilityLabel_("Dictation mode")
         mode = ui.stack([ui.label("Dictation mode", 13), _spacer(), self.dictate_popup], vertical=False)
         mode.widthAnchor().constraintEqualToConstant_(WIDTH).setActive_(True)
-        return [_card([self.stt_list]), _card([polish, _divider(), local_tidy, _divider(), mode]),
+        return [_card([self.stt_list]), _card([polish, _divider(), local_tidy, _divider(), mode, _divider(), keep]),
                 _note("Create or edit a custom prompt in Writing → Modes, then select it here."),
                 _card([self._shortcut_row("dictate_hotkey"), _divider(), input_row, _divider(), permission]),
                 _note("Hold the shortcut and speak. Release to transcribe and type at the cursor, tidied with the "
                       "dictation mode when that is on. A short tap does nothing. Local keeps audio on this Mac. "
-                      "Enabled Cursor or Codex sources receive audio if earlier sources fail. Audio is not saved.")]
+                      "Enabled Cursor or Codex sources receive audio if earlier sources fail. Audio is not saved."),
+                ui.label("Recent dictations", 13, bold=True), self._history_card()]
+
+    def _history_card(self):
+        from .settings_ui import _card
+        self.history_list = ui.stack([], spacing=8)
+        self.refresh_history()
+        return _card([self.history_list])
+
+    def refresh_history(self):
+        """Each saved dictation with Copy, and Original when tidy changed it."""
+        from .settings_ui import WIDTH, _spacer
+        for view in list(self.history_list.arrangedSubviews()):
+            self.history_list.removeArrangedSubview_(view)
+            view.removeFromSuperview()
+        on = self.cfg.get("dictation_history", True)
+        rows = history.rows() if on else []
+        copy = self.app.host.copy_text
+        for preview, text, original in rows:
+            buttons = [ui.button("Copy", lambda t=text: copy(t))]
+            if original is not None:
+                buttons.append(ui.button("Original", lambda t=original: copy(t)))
+            row = ui.stack([ui.label(preview, 12, width=WIDTH - 170), _spacer(), *buttons], vertical=False)
+            row.widthAnchor().constraintEqualToConstant_(WIDTH).setActive_(True)
+            self.history_list.addArrangedSubview_(row)
+        if rows:
+            self.history_list.addArrangedSubview_(ui.button("Clear", self._clear_history))
+        else:
+            self.history_list.addArrangedSubview_(ui.label(
+                "No dictations yet." if on else "Turn on Keep recent dictations to save them here.", 12, secondary=True))
+
+    def _history_toggled(self, on):
+        self._set("dictation_history", on)
+        if not on:
+            history.clear()  # off deletes what was saved
+        self.app.history_changed()
+
+    def _clear_history(self):
+        history.clear()
+        self.app.history_changed()
 
     def _polish_changed(self, on):
         self._set("dictate_polish", on)

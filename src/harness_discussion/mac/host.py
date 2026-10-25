@@ -5,7 +5,7 @@ import AppKit
 import objc
 from Foundation import NSObject
 
-from .. import icons, settings, updates
+from .. import history, icons, settings, updates
 from ..codex_rt import CodexEngine
 from ..cursor_tts import CursorEngine
 from ..kokoro_tts import KokoroEngine
@@ -72,6 +72,9 @@ class MacHost:
         self.menu.addItem_(AppKit.NSMenuItem.separatorItem())
         self._add("Settings…", put("settings"), ",")
         self._add("Take the Tour", put("tour_replay"))
+        self.history_menu = self._submenu("Recent Dictations")
+        self.history_item = self.menu.itemArray()[-1]
+        self._copy_history = ui.target(lambda s: self.copy_text(str(s.representedObject())))
         self.permission_item = self._add("Permission needed…", lambda _s: self.watcher and self.watcher.show_guide())
         self.error_item = self._add("", None)
         self.menu.addItem_(AppKit.NSMenuItem.separatorItem())
@@ -134,6 +137,15 @@ class MacHost:
         self._fill(self.source_menu, ready + ([None] if ready and fixes else []) + fixes,
                    app.chain.order()[0].name, self._pick_source)
         self.listen_item.setState_(1 if self.trigger else 0)
+        self.history_item.setHidden_(not app.cfg["dictation_history"])
+        self.history_menu.removeAllItems()
+        entries = history.entries()
+        self._fill(self.history_menu, entries, None, self._copy_history)
+        if entries:
+            self.history_menu.addItem_(AppKit.NSMenuItem.separatorItem())
+            self._add("Clear", lambda _s: history.clear() or app.history_changed(), menu=self.history_menu)
+        else:
+            self._add("No dictations yet", None, menu=self.history_menu)
 
     def set_permission_missing(self, missing):
         self._missing = missing

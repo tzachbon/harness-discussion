@@ -10,7 +10,7 @@ from .sources_ui import CARD
 PLAN_DEFAULTS = {k: settings.DEFAULTS[k] for k in ("writer", "writer_sources", "writer_models", "modes",
                                                    "default_mode", "rewrite_hotkey", "dictate_hotkey", "stt_sources",
                                                    "dictate_polish", "dictate_mode", "dictate_local_tidy",
-                                                   "dictate_microphone")}
+                                                   "dictate_microphone", "dictation_history")}
 LOCAL_MODEL = "Qwen3-4B"  # fixed: Local has no model or effort choice
 FIXES = {"missing": "Install…", "signed_out": "Sign in…", "expired": "Sign in…", "not_downloaded": "Download…"}
 
@@ -148,6 +148,7 @@ class WritingPage:
                   "earlier sources fail. Audio is not saved.",
                   style="Sub.Card.TLabel", wraplength=440).pack(anchor="w", pady=(8, 0))
         self.refresh_writing()
+        self._history_section(page)
 
     def _modes_section(self, card, font):
         row = tk.Frame(card, bg=CARD)
