@@ -183,6 +183,7 @@ class Writer(Dictation):
         self._rewrite_id += 1
         rid, cancel = self._rewrite_id, threading.Event()
         self._rewrite_cancel = cancel
+        self._rewrite_ctx = (rid, prev[0]) if prev else None  # a Mode retry's target; fresh captures validate before pasting
         self._set_rewriting(True)
         self.popup.set_last_mode(mode.name)
         self._summary_gen += 1  # a summary's idle stop must not stop the local model under this rewrite
