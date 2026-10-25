@@ -2,8 +2,8 @@
 import ctypes
 import hashlib
 import os
-import re
 import time
+import unicodedata
 from dataclasses import dataclass, field
 from ctypes import wintypes
 
@@ -25,8 +25,13 @@ k32.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wint
                                            ctypes.POINTER(wintypes.DWORD)]
 k32.CloseHandle.argtypes = [wintypes.HANDLE]
 MAX_DOCUMENT = 1_000_000
-# Chromium reports a line holding right-to-left script and Latin letters or digits in visual order
-MIXED_DIRECTION = re.compile("^(?=.*[\u0590-\u08ff\ufb1d-\ufdff\ufe70-\ufeff])(?=.*[A-Za-z0-9]).*$", re.M)
+def _mixed_direction(text):
+    """A line holding right-to-left script and left-to-right letters or digits: Chromium reports it in visual order."""
+    for line in text.splitlines():
+        kinds = {unicodedata.bidirectional(c) for c in line}
+        if kinds & {"R", "AL"} and kinds & {"L", "EN"}:
+            return True
+    return False
 NEWLINE = "\r\n"
 START, END = uia.TextPatternRangeEndpoint.Start, uia.TextPatternRangeEndpoint.End
 
@@ -299,14 +304,14 @@ def observe():
         name = _exe(context.app)
         if not name:
             return None
+        focus = selection.focused()
+        if focus.FrameworkId == "Chrome" and _mixed_direction(document):
+            return None  # ponytail: not checked in Chromium; read these once its text order is logical
         try:
-            focus = selection.focused()
             r = focus.BoundingRectangle
             rect = (r.left, r.top, r.right, r.bottom)
         except Exception:
-            focus, rect = None, None
-        if getattr(focus, "FrameworkId", "") == "Chrome" and MIXED_DIRECTION.search(document):
-            return None  # ponytail: not checked in Chromium; read these once its text order is logical
+            rect = None
         return edit_logic.Field(context.app, context.window, name, name.rsplit(".", 1)[0].capitalize(),
                                 _canonical(document), (context._start, context._end), context._digest, rect,
                                 context._element)
@@ -368,12 +373,18 @@ def bounds(field, spans):
             found = _inspect(live.LIVE_MAX_DOC)  # read-only here: select_range and replace always read afresh
         if not _same_field(field, found):
             return None
-        where = (field.handle, field.digest, tuple((r.left, r.top, r.right, r.bottom)
-                                                   for r in found[3].GetBoundingRectangles()))
-        if _placed[0] != where:
-            _placed[:] = where, {}
+        if not spans:
+            return []
+        # the first span sits elsewhere after any scroll or move, even inside a box that stays put
+        first = _place(found, *spans[0])
+        where = (field.handle, field.digest, spans[0], first)
+        if first is None or _placed[0] != where:
+            _placed[:] = where, {spans[0]: first}
         done = _placed[1]
-        return [done[s] if s in done else done.setdefault(s, _place(found, *s)) for s in spans]
+        for s in spans:
+            if s not in done:
+                done[s] = _place(found, *s)
+        return [done[s] for s in spans]
     return _run(place)
 
 def _place(found, start, end, expected):
