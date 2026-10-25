@@ -231,6 +231,7 @@ class SandboxTest(FlowTest):
                 self.app._rewrite_cancel = threading.Event()
                 self.app._set_rewriting = Mock()
                 self.app._arm_summary_stop = Mock()
+                self.app._restore_caret = Mock()
                 self.app.toast = SimpleNamespace(hide=Mock())
                 self.app.cancel_rewrite = lambda: app_writer.Writer.cancel_rewrite(self.app)
                 self.app.tour_next()

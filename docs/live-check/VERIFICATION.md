@@ -32,6 +32,18 @@ Apply all: with underlines on two lines and nothing selected, press the rewrite 
 lines are fixed, no new `live check` line is logged, and the toast says how many changes were applied. Record it in
 the Mode column of the en cell.
 
+Checking strip: within about a second after you stop typing (a 0.7 second pause plus up to one 0.5 second poll),
+a faint grey line sits under the line being checked until its result arrives.
+
+Rewrite shortcut with nothing selected (issue #120). Run each in a fresh line of the en cell's field:
+
+| Case | Pass when |
+| --- | --- |
+| Underlines shown | Every underlined change is applied, as in Apply all above. |
+| No underlines yet, even mid-check | The whole field is rewritten. The toasts read "Rewriting the whole field" and "Rewrote the whole field". |
+| Field over 4,000 characters | Nothing is sent. The toast says to select text and that the field has more than 4,000 characters. |
+| Shortcut bound to ⌘\` (Mac) | It fires in every app above, the same as ⌥⌘E. |
+
 ## Windows
 
 | Target | en | he | ar | ru | es | fr | Mode | Screenshot |
