@@ -42,11 +42,11 @@ class Live:
         elif not (kind == "press" and self._live_press(*args)):  # an underline or badge opens its card instead
             super()._handle(kind, *args)
 
-    def rewrite_selection(self, mode_name=None, prev=None):
-        if mode_name is None and prev is None and self._live_apply_all():
+    def rewrite_selection(self, mode_name=None, prev=None, bar=False):
+        if mode_name is None and prev is None and not bar and self._live_apply_all():
             return  # the shortcut, with nothing selected, applied the underlined changes
         self.live_cancel()  # a manual rewrite wins: a check in flight must not hold the source it needs
-        super().rewrite_selection(mode_name, prev)
+        super().rewrite_selection(mode_name, prev, bar)
 
     def _dictate_down(self, *args, **kwargs):
         self.live_cancel()
@@ -57,6 +57,7 @@ class Live:
             hasattr(self.edit, f) for f in ("observe", "bounds", "select_range")) and hasattr(self.host, "make_marks")
         self.live_cache, self._live_dismissed = live.Cache(), set()
         self._live_cancel, self._live_checking = threading.Event(), None  # the line being checked, or None
+        self._live_checking_at = 0  # where that line started, to tell it from an identical line
         self._live_seen, self._live_text = None, ""  # (app, window, handle, digest) and text of the last poll
         self._live_failed = None  # the line every source last failed on
         self._live_changed_at = 0.0
@@ -75,7 +76,8 @@ class Live:
 
     def _live_loop(self):
         while not self._live_stop.is_set():
-            self._live_wake.wait(live.POLL_S)
+            due = self._live_changed_at + live.PAUSE_S - time.monotonic() if self._live_typed else 0
+            self._live_wake.wait(min(live.POLL_S, due) if due > 0 else live.POLL_S)  # a paused line is checked on time
             self._live_wake.clear()
             if self._live_stop.is_set():
                 return
@@ -100,14 +102,14 @@ class Live:
             self.events.put(("live_marks", None, [], [], 0, []))
 
     @staticmethod
-    def _line_spans(text, core):
-        """(start, end, core) of every line of `text` whose stripped text is `core`."""
+    def _line_spans(text, core, near):
+        """[(start, end, core)] of the line of `text` whose stripped text is `core`, the one nearest `near`."""
         spans = []
         for at, line in live.lines(text):
             if line.strip() == core:
                 start = at + live.units(line[:line.index(core)])
                 spans.append((start, start + live.units(core), core))
-        return spans
+        return sorted(spans, key=lambda s: abs(s[0] - near))[:1]
 
     def _live_tick(self, now=None):
         """One poll: read the field, post what to draw, and start a check of a paused, uncached line."""
@@ -138,9 +140,11 @@ class Live:
                 and live.checkable(line) and line != self._live_failed and not self.live_cache.has(line, mode)
                 and self._live_on()):
             self._live_check(line, mode)  # first, so this same poll already draws its checking strip
+            self._live_checking_at = start
         found = live.suggestions(field.text, self.live_cache, self._live_dismissed, mode)[:live.MAX_SUGGESTIONS]
         checking = self._live_checking
-        spans = [(s.start, s.end, s.old) for s in found] + (self._line_spans(field.text, checking) if checking else [])
+        spans = [(s.start, s.end, s.old) for s in found] + (
+            self._line_spans(field.text, checking, self._live_checking_at) if checking else [])
         rects = self.edit.bounds(field, spans) if spans else []
         if rects is not None:
             rects, lines = rects[:len(found)], rects[len(found):]

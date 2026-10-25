@@ -32,8 +32,8 @@ Apply all: with underlines on two lines and nothing selected, press the rewrite 
 lines are fixed, no new `live check` line is logged, and the toast says how many changes were applied. Record it in
 the Mode column of the en cell.
 
-Checking strip: about 0.7 seconds after you stop typing, a faint grey line sits under the line being checked until
-its result arrives.
+Checking strip: within about a second after you stop typing (a 0.7 second pause plus up to one 0.5 second poll),
+a faint grey line sits under the line being checked until its result arrives.
 
 Rewrite shortcut with nothing selected (issue #120). Run each in a fresh line of the en cell's field:
 

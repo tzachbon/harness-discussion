@@ -171,15 +171,16 @@ class Writer(Dictation):
             self._esc.start() if self.rewriting or self._holding or self.toast.visible else self._esc.stop()
 
     def rewrite_from_bar(self, text, mode_name):
-        self.rewrite_selection(mode_name)
+        self.rewrite_selection(mode_name, bar=True)
 
-    def rewrite_selection(self, mode_name=None, prev=None):
+    def rewrite_selection(self, mode_name=None, prev=None, bar=False):
         """Captures the selection, rewrites it on a worker, and hands the result to `_rewrite_done`.
-        prev: (ctx, original, inserted) to rewrite the original again in place of the inserted text."""
+        prev: (ctx, original, inserted) to rewrite the original again in place of the inserted text.
+        bar: the bar's button, which rewrites what it captured and never the whole field."""
         if (not (self.writer_ready and self.cfg["writer"]) or self.rewriting
                 or self._recorder is not None or self._dictation_job is not None or self._writer_closed):
             return
-        whole = mode_name is None and prev is None and self._select_whole_field()  # the shortcut, not the bar
+        whole = not bar and prev is None and self._select_whole_field()
         if whole is None:
             return
         mode = self._find_mode(mode_name)

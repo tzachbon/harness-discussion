@@ -7,7 +7,6 @@ from CoreFoundation import CFRangeMake
 from .. import live
 
 LEAF_DEPTH, LEAF_NODES = 12, 400  # how far into a web field its text nodes are looked for
-WRAP_SCAN = 400  # a wrapped piece longer than this keeps one rectangle rather than one AX call per character
 
 
 def _attr(element, name):
@@ -36,24 +35,33 @@ def _same_row(a, b):
 
 def _rows(element, start, length):
     """One rectangle per visual line of [start, start + length) in `element`, from its bounds alone: [] when it is
-    not laid out or not visible, None when unreadable. Chromium's line indexes can't be trusted, so a piece whose
-    first and last characters sit on different rows is split character by character."""
+    not laid out or not visible, None when unreadable. Chromium's line indexes can't be trusted, so where a piece's
+    first and last characters sit on different rows, each row's last character is found by bisection."""
     whole = _rect(element, start, length)
     if whole is None or not _shown(whole):
         return None if whole is None else []
-    first, last = _rect(element, start, 1), _rect(element, start + length - 1, 1)
-    if (length == 1 or length > WRAP_SCAN or first is None or last is None or not (_shown(first) and _shown(last))
-            or _same_row(first, last)):
-        return [whole]
-    rows = []
-    for i in range(length):
-        r = _rect(element, start + i, 1)
-        if r is None or not _shown(r):
-            continue
-        if rows and _same_row(rows[-1], r):
-            rows[-1] = (min(rows[-1][0], r[0]), min(rows[-1][1], r[1]), max(rows[-1][2], r[2]), max(rows[-1][3], r[3]))
-        else:
-            rows.append(r)
+    end, last = start + length, _rect(element, start + length - 1, 1)
+    rows, at = [], start
+    while at < end:
+        first = _rect(element, at, 1)
+        if first is None or last is None or not (_shown(first) and _shown(last)):
+            return rows + [_rect(element, at, end - at) or whole] if rows else [whole]
+        if _same_row(first, last):
+            rows.append(whole if at == start else _rect(element, at, end - at) or whole)
+            break
+        lo, hi = at, end - 2  # the last character of this row
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            r = _rect(element, mid, 1)
+            if r is None:
+                return [whole]
+            lo, hi = (mid, hi) if _same_row(first, r) else (lo, mid - 1)
+        row = _rect(element, at, lo + 1 - at)
+        if row is None:
+            return [whole]
+        if _shown(row):
+            rows.append(row)
+        at = lo + 1
     return rows or [whole]
 
 def _by_lines(element, text, start, end):

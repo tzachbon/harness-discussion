@@ -60,6 +60,13 @@ class WholeField(unittest.TestCase):
                 self.assertEqual(app.edit.selected, (3, 3))
                 self.assertEqual(app.edit.pasted, [])
 
+    def test_a_mode_picked_after_a_double_press_also_rewrites_the_whole_field(self):
+        app = _App()
+        app.host.edit = app.edit = FieldEdit("hi there")
+        app.rewrite_selection("Fix errors")
+        self.assertEqual(app.edit.selected, (0, 8))
+        self.assertEqual(app.toast_.shown[-1][0], "Rewriting the whole field · Fix errors")
+
     def test_the_bar_rewrites_what_it_captured_never_the_whole_field(self):
         app = _App()
         app.host.edit = app.edit = FieldEdit("hi there")
