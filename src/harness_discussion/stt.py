@@ -140,7 +140,9 @@ def _settled(since_audio_end, since_last_word, audio_seconds=0, unheard=None):
         return True
     if since_last_word is None:
         return since_audio_end >= 2.5 + catch_up
-    trusted = unheard is not None and unheard >= -SKEW  # A position far past the end is implausible.
+    # Silence keeps streaming at SPEED after the audio, so Codex may legitimately pass the end by that much.
+    # Only a position past everything sent is implausible.
+    trusted = unheard is not None and unheard >= -(SKEW + since_audio_end * SPEED)
     behind = min(catch_up, max(0.0, unheard) + SKEW) if trusted else catch_up
     return since_audio_end >= 2.5 and since_last_word >= 2.0 + behind
 
