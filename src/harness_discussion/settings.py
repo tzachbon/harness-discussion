@@ -32,6 +32,8 @@ DEFAULTS = {"sources": [[n, True] for n in DEFAULT_SOURCES], "voices": {}, "spee
             # Writer: rewrite in place. Sources follow the voice order; models and modes are chosen in Settings.
             "writer": False, "writer_sources": [["Cursor", True], ["Codex", True], ["Local", True]],
             "writer_models": {}, "modes": [], "default_mode": "Fix errors",
+            # Check as you type: on with the Writer; apps listed by name are never checked.
+            "live_check": True, "live_off_apps": [],
             "rewrite_hotkey": hotkeys.REWRITE, "dictate_hotkey": hotkeys.DICTATE,
             "stt_sources": [["Local", True], ["Cursor", True], ["Codex", True]], "dictate_polish": True,
             "dictate_mode": "Clean dictation", "dictate_local_tidy": True, "dictate_microphone": ""}
@@ -104,8 +106,9 @@ def load(path=PATH) -> dict:
     for key in ("hotkey", "rewrite_hotkey", "dictate_hotkey"):
         if s[key] != "" and not hotkeys.parse(s[key]):
             s[key] = DEFAULTS[key]
-    if not isinstance(s["writer"], bool):
-        s["writer"] = DEFAULTS["writer"]
+    for key in ("writer", "live_check"):
+        if not isinstance(s[key], bool):
+            s[key] = DEFAULTS[key]
     if isinstance(saved, dict) and "writer_sources" not in saved:  # first run of the Writer: follow the voice order
         voice_order = [n for n, _ in s["sources"] if n in WRITER_SOURCES]
         s["writer_sources"] = [[n, True] for n in voice_order + [n for n in WRITER_SOURCES if n not in voice_order]]
@@ -122,6 +125,8 @@ def load(path=PATH) -> dict:
                           for name, choice in models.items() if name in WRITER_SOURCES and isinstance(choice, dict)}
     if not isinstance(s["modes"], list):
         s["modes"] = []
+    off = s["live_off_apps"] if isinstance(s["live_off_apps"], list) else []
+    s["live_off_apps"] = [a for a in dict.fromkeys(off) if isinstance(a, str) and a]
     for key in ("default_mode", "dictate_mode"):
         if not isinstance(s[key], str) or not s[key].strip():
             s[key] = DEFAULTS[key]

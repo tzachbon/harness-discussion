@@ -109,6 +109,11 @@ class Review:
     def visible(self):
         return bool(self.win.winfo_exists() and self.win.winfo_viewable())
 
+    def contains(self, x, y):
+        w = self.win
+        return (self.visible and w.winfo_rootx() <= x < w.winfo_rootx() + w.winfo_width()
+                and w.winfo_rooty() <= y < w.winfo_rooty() + w.winfo_height())
+
     def _replace(self):
         if self.can_replace and callable(self._shown_on_replace):
             self._shown_on_replace(self.result())

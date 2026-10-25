@@ -223,6 +223,10 @@ class MacHost:
     def make_review(self):
         return Review()
 
+    def make_marks(self):
+        from .marks import Marks  # only when Check as you type is available
+        return Marks()
+
     def esc_watcher(self, fn):
         return EscWatcher(fn)
 
@@ -250,11 +254,11 @@ class MacHost:
         self._error = message[:80]
         self.refresh_menu()
 
-    def confirm(self, title, message):
+    def confirm(self, title, message, ok="Download"):
         alert = AppKit.NSAlert.alloc().init()
         alert.setMessageText_(title)
         alert.setInformativeText_(message)
-        alert.addButtonWithTitle_("Download")
+        alert.addButtonWithTitle_(ok)
         alert.addButtonWithTitle_("Cancel")
         self.ns.activateIgnoringOtherApps_(True)  # an accessory app's alert opens behind the active app otherwise
         return alert.runModal() == AppKit.NSAlertFirstButtonReturn

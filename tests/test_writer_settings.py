@@ -100,6 +100,23 @@ class RoundTripTest(unittest.TestCase):
             self.assertEqual(loaded["default_mode"], "Email")
             self.assertFalse(loaded["dictate_polish"])
 
+    def test_check_as_you_type_is_on_and_its_app_list_is_cleaned(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "settings.json"
+            path.write_text("{}", encoding="utf-8")
+            loaded = settings.load(str(path))
+            self.assertIs(loaded["live_check"], True)
+            self.assertEqual(loaded["live_off_apps"], [])
+            path.write_text(json.dumps({"live_check": "yes", "live_off_apps": ["slack.exe", 3, "", "slack.exe", None]}),
+                            encoding="utf-8")
+            loaded = settings.load(str(path))
+            self.assertIs(loaded["live_check"], True)
+            self.assertEqual(loaded["live_off_apps"], ["slack.exe"])
+            path.write_text(json.dumps({"live_check": False, "live_off_apps": "slack.exe"}), encoding="utf-8")
+            loaded = settings.load(str(path))
+            self.assertIs(loaded["live_check"], False)
+            self.assertEqual(loaded["live_off_apps"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -378,5 +378,26 @@ class WritingSettingsUi(unittest.TestCase):
         self.assertFalse(w.dictate_mode.instate(["disabled"]))
 
 
+    def test_check_as_i_type_asks_first_and_lists_apps_it_is_off_in(self):
+        from harness_discussion.win import writing_page
+        cfg = dict(settings.DEFAULTS, writer=True, live_check=False, live_off_apps=["slack.exe"])
+        w = self.make_window(cfg)
+        with patch.object(writing_page.messagebox, "askokcancel", return_value=False) as ask:
+            w.live_check.invoke()
+        self.assertIn("Cursor", ask.call_args.args[1])
+        self.assertFalse(w.live_on.get())
+        self.assertNotIn(("live_check", True), [c[:2] for c in self.changes])
+        with patch.object(writing_page.messagebox, "askokcancel", return_value=True):
+            w.live_check.invoke()
+        self.assertIn(("live_check", True), [c[:2] for c in self.changes])
+        turn_on = next(c for row in w.live_off_frame.winfo_children() for c in row.winfo_children()
+                       if c.winfo_class() == "TButton")
+        turn_on.invoke()
+        self.assertEqual(cfg["live_off_apps"], [])
+        self.assertEqual(w.live_off_frame.winfo_children(), [])
+        w.writer_check.invoke()  # writer off
+        self.assertTrue(w.live_check.instate(["disabled"]))
+
+
 if __name__ == "__main__":
     unittest.main()

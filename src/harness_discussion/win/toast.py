@@ -161,9 +161,13 @@ class Toast:
             return False
 
     def contains(self, x, y):
-        w = self.win
-        return (self.visible and w.winfo_rootx() <= x < w.winfo_rootx() + w.winfo_width()
-                and w.winfo_rooty() <= y < w.winfo_rooty() + w.winfo_height())
+        """On the toast or its open menu."""
+        try:
+            return self.visible and any(
+                w and w.winfo_exists() and w.winfo_rootx() <= x < w.winfo_rootx() + w.winfo_width()
+                and w.winfo_rooty() <= y < w.winfo_rooty() + w.winfo_height() for w in (self.win, self._menu_win))
+        except tk.TclError:
+            return False
 
     def _legacy_action(self, name):
         if self.on_action:

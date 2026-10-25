@@ -58,6 +58,20 @@ class WritingSettingsTest(unittest.TestCase):
 
     def test_dictation_has_the_polish_switch(self):
         self.assertEqual(self.win.polish_switch.accessibilityLabel(), "Tidy dictation after transcribing")
+
+    def test_check_as_i_type_asks_first(self):
+        switch = self.win.live_switch
+        self.assertEqual(switch.accessibilityLabel(), "Check as I type")
+        self.app.host.confirm = mock.Mock(return_value=False)
+        switch.setState_(1)
+        self.click(switch)
+        self.assertEqual(self.app.host.confirm.call_args.kwargs, {"ok": "Turn On"})
+        self.assertEqual(switch.state(), 0)
+        self.assertNotIn(("live_check", True), self.changes)
+        self.app.host.confirm.return_value = True
+        switch.setState_(1)
+        self.click(switch)
+        self.assertIn(("live_check", True), self.changes)
         self.click(self.win.polish_switch)
         self.assertEqual(self.changes[-1][0], "dictate_polish")
 
