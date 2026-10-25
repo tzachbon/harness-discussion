@@ -58,6 +58,7 @@ class Live:
         self.live_cache, self._live_dismissed = live.Cache(), set()
         self._live_cancel, self._live_checking = threading.Event(), None  # the line being checked, or None
         self._live_seen, self._live_text = None, ""  # (app, window, handle, digest) and text of the last poll
+        self._live_failed = None  # the line every source last failed on
         self._live_changed_at = 0.0
         self._live_typed = None  # (app, window, handle, line start) of the line last typed in, while it is focused
         self._live_view, self._live_posted = None, None  # what the last live_marks event drew
@@ -107,6 +108,7 @@ class Live:
             if self._live_seen is not None and seen[:3] == self._live_seen[:3]:  # typed in: the text changed
                 a, b = live.edited(self._live_text, field.text)
                 self._live_typed = (*seen[:3], start) if a <= end and start <= b else None  # not if the caret left
+                self._live_failed = None
             elif self._live_typed is not None and self._live_typed[:3] != seen[:3]:
                 self._live_typed = None  # another field: a line is sent only after typing in it
             self._live_seen, self._live_text, self._live_changed_at = seen, field.text, now
@@ -121,7 +123,8 @@ class Live:
             self._live_cancel.set()  # the line being checked is gone
         line = live.text_at(field.text, start, end).strip()
         if (checking is None and self._live_typed == (*seen[:3], start) and now - self._live_changed_at >= live.PAUSE_S
-                and live.checkable(line) and not self.live_cache.has(line, mode) and self._live_on()):
+                and live.checkable(line) and line != self._live_failed and not self.live_cache.has(line, mode)
+                and self._live_on()):
             self._live_check(line, mode)
 
     def _live_check(self, line, mode):
@@ -141,6 +144,8 @@ class Live:
                     self.live_cache.put(line, mode, new)
             except Exception as e:
                 log.info("live check failed: %s", type(e).__name__)
+                if not isinstance(e, writer.Cancelled):
+                    self._live_failed = line  # every source failed: sent again only after more typing
             finally:
                 self._live_checking = None
                 self.events.put(("live_check_done",))
@@ -298,6 +303,8 @@ class Live:
         self.review.show(core, new, replace, self.host.copy_text)
 
     def _apply_live(self, key, value):
+        if key in ("default_mode", "modes", "writer_sources", "writer_models", "live_off_apps"):
+            self._live_cancel.set()  # a check in flight must not send on, or cache, under the old settings
         if key in ("default_mode", "modes", "writer_sources", "writer_models"):
             self.live_cache.clear()
         if key in ("live_check", "writer", "live_off_apps", "default_mode", "modes") and self.marks:
