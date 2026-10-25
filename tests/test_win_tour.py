@@ -26,7 +26,7 @@ def state(cfg, **kw):
     return SimpleNamespace(**{**s, **kw})
 
 
-READ, REWRITE, DICTATE, LIVE, DONE = 2, 3, 5, 6, 7
+READ, REWRITE, DICTATE, LIVE, DONE = 2, 3, 5, 6, 8
 
 
 class TourBase(unittest.TestCase):
@@ -187,10 +187,10 @@ class Frame(TourBase):
         self.app.cfg["tour_steps"] = {"welcome": "tried", "voice": "skipped"}
         self.show(DONE, progress=self.app.cfg["tour_steps"])
         texts = [lbl["text"] for lbl in labels(self.w.win)]
-        rows = ["Welcome", "Voice", "Read", "Rewrite", "Review", "Dictation", "Check as I type"]
+        rows = ["Welcome", "Voice", "Read", "Rewrite", "Review", "Dictation", "Check as I type", "About you"]
         self.assertEqual([t for t in texts if t.removeprefix("✓ ").removesuffix(" – skipped") in rows],
                          ["✓ Welcome"] + [f"{r} – skipped" for r in rows[1:]])
-        self.assertEqual(texts.count("Try now"), 6)
+        self.assertEqual(texts.count("Try now"), 7)
         self.assertIn(tour_copy.MORE, texts)
         self.assertEqual(set(self.w.shortcuts), set(hotkeys.SHORTCUTS))
         click(self.root, self.w.win, "Try now")

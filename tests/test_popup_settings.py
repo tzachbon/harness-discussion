@@ -161,7 +161,7 @@ class PopupSettings(unittest.TestCase):
     def test_summarize_reads_the_summary_and_settings_shows_the_model(self):
         popup, app = self.app.popup, self.app
         app._summarize_status = "ready"
-        app.summary_server = type("Fake", (), {"summarize": lambda self, text, language: "A short summary.",
+        app.summary_server = type("Fake", (), {"summarize": lambda self, text, language, about="": "A short summary.",
                                                "stop": lambda self: None})()
         label = popup.ai_btn.parts[1]
         label.event_generate("<ButtonPress-1>", x=2, y=2)

@@ -155,13 +155,13 @@ class Live:
         self._live_checking, self._live_cancel = line, threading.Event()
         cancel = self._live_cancel
         sources = writer.chain(self.writer_sources, self.cfg["writer_sources"])
-        models = self.cfg["writer_models"]
+        models, about = self.cfg["writer_models"], writer.about(self.cfg)
         self.events.put(("live_check_start",))
 
         def work():
             log.info("live check %d chars", len(line))  # before sending: proof of every send, never the text
             try:
-                new, source = writer.rewrite(line, mode, sources, models=models,
+                new, source = writer.rewrite(line, mode, sources, models=models, about=about,
                                              cancelled=lambda: cancel.is_set() or not self._live_on())
                 log.info("live check done with %s", source)
                 if not cancel.is_set():
@@ -329,9 +329,10 @@ class Live:
         self.review.show(core, new, replace, self.host.copy_text)
 
     def _apply_live(self, key, value):
-        if key in ("default_mode", "modes", "writer_sources", "writer_models", "live_off_apps"):
+        about = ("about_me", "about_me_on", "about_me_uncapped")  # the prompt changes, so cached fixes are stale
+        if key in ("default_mode", "modes", "writer_sources", "writer_models", "live_off_apps", *about):
             self._live_cancel.set()  # a check in flight must not send on, or cache, under the old settings
-        if key in ("default_mode", "modes", "writer_sources", "writer_models"):
+        if key in ("default_mode", "modes", "writer_sources", "writer_models", *about):
             self.live_cache.clear()
         if key in ("live_check", "writer", "live_off_apps", "default_mode", "modes") and self.marks:
             self._live_marks(None, [], [], 0)

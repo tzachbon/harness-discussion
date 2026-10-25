@@ -103,7 +103,7 @@ class TourWindowTest(_TourCase):
 
     def test_the_done_screen_lists_every_step(self):
         self.t.show(view(self.app, None, progress={"welcome": "tried", "voice": "skipped"}))
-        self.assertEqual(len(self.t.done_rows), 7)
+        self.assertEqual(len(self.t.done_rows), 8)
         self.assertIsNone(self.t.box)
 
     def test_every_step_draws_and_refreshes(self):

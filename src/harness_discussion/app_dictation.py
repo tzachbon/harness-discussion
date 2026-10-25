@@ -264,6 +264,7 @@ class Dictation:
         at = self._anchor()
         sources = self._dictation_writers() if mode else []
         models, order, chain = self.cfg["writer_models"], self.cfg["stt_sources"], self.stt_sources
+        about = writer.about(self.cfg)
         keep = lambda: self.cfg.get("dictation_history")  # read live: turning it off mid-dictation saves nothing
         self._toast("Transcribing", [("×", lambda: self.cancel_rewrite() if rid == self._rewrite_id else None)],
                     busy=True, at=at)
@@ -280,7 +281,8 @@ class Dictation:
                 if mode:
                     started = time.monotonic()
                     try:
-                        text, source = writer.rewrite(text, mode, sources, models=models, cancelled=cancel.is_set)
+                        text, source = writer.rewrite(text, mode, sources, models=models, cancelled=cancel.is_set,
+                                                      about=about)
                     finally:
                         rewrite_s = time.monotonic() - started
                     if kept is not None:

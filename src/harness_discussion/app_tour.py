@@ -75,7 +75,19 @@ class Tour:
         if carry and self.tour_box() is not None:
             self.tour_box().review_target = target  # carry only Undo/Review; pending writes stay invalid
 
+    def tour_save_about(self):
+        """Leaving the About you step, by any way out, keeps what the box says; any text counts as tried."""
+        box = getattr(self.tour, "box", None)  # also while the window is closing
+        if self.tour_step() != "about" or box is None:
+            return
+        text = box.text().strip()[:writer.about_limit(self.cfg)]
+        if text != self.cfg.get("about_me", ""):
+            self.change("about_me", text)
+        if text:
+            self.tour_mark("about")
+
     def tour_next(self):
+        self.tour_save_about()
         step = self.tour_step()
         if step == "welcome" and not self._mac():
             self.tour_mark("welcome")
@@ -101,6 +113,7 @@ class Tour:
         self._tour_close(window_gone=True)
 
     def _tour_close(self, window_gone=False):
+        self.tour_save_about()
         box = self.tour_box()
         if box is not None:
             box.reset_target()

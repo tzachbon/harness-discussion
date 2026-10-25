@@ -41,6 +41,7 @@ SIZE_LABEL = "2.5 GB"
 DIR = Path(settings.LOCAL_DIR) / "summarize"
 IDLE_S = 300  # the server holds about 3 GB of memory, so it stops after this long without a summary
 MAX_CHARS = 24000  # about 6000 tokens, inside the 8192-token context with room for the reply
+PROMPT_ROOM = 2000  # the local writer prompt with a capped About you note; only a longer prompt shortens the text
 PROMPT = ("Summarize the text between <text> and </text> in {lang}. A text-to-speech voice will read your summary "
           "aloud, so write 2 to 4 short spoken sentences of plain prose. Start with the main point. Write numbers, "
           "symbols, and abbreviations the way a person says them, and name a link by its site alone, never its "
@@ -286,9 +287,10 @@ class Server:
             raise Error("The local model's reply was cut off.")
         return content
 
-    def summarize(self, text, language, timeout=180):
-        summary = _clean(self.complete(PROMPT.format(lang=language), f"<text>\n{text[:MAX_CHARS]}\n</text>", 400,
-                                       timeout))
+    def summarize(self, text, language, timeout=180, about=""):
+        system = PROMPT.format(lang=language) + ("\n\n" + about if about else "")
+        text = text[:MAX_CHARS - len(about)]  # the note shares the context with the text
+        summary = _clean(self.complete(system, f"<text>\n{text}\n</text>", 400, timeout))
         if not summary:
             raise Error("The Summarize model returned no summary.")
         return summary
@@ -329,7 +331,8 @@ class LocalWriter:
                 logging.getLogger("harness_discussion").info("Local writer warmup failed: %s", type(e).__name__)
 
     def rewrite(self, system, text, model, effort, cancelled):
-        if len(text) > MAX_CHARS // 2:  # the reply is about as long as the text, and both share the context
+        # the reply is about as long as the text, and both share the context with the prompt and its About you note
+        if len(text) + max(0, len(system) - PROMPT_ROOM) > MAX_CHARS // 2:
             raise Error("The text is too long for the local model.")
         # about one token per character covers CJK text and code, within the 8192-token context.
         # A reply that still runs out is refused, never pasted.

@@ -1,5 +1,5 @@
 """The Get Started tour's steps and saved progress, shared by the Mac and Windows windows."""
-STEPS = ("welcome", "voice", "read", "rewrite", "review", "dictate", "live")
+STEPS = ("welcome", "voice", "read", "rewrite", "review", "dictate", "live", "about")
 PRACTICE_STEPS = frozenset({"read", "rewrite", "review", "dictate", "live"})  # steps with a practice box
 TRIED, SKIPPED = "tried", "skipped"
 
