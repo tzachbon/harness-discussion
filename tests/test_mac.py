@@ -139,6 +139,12 @@ class PermissionTest(unittest.TestCase):
                          [("hotkey", "<cmd>+<shift>+r"), ("rewrite_hotkey", "<cmd>+<alt>+e"),
                           ("dictate_hotkey", "<cmd>+<alt>+d")])
 
+    def test_a_dead_hold_shortcut_binds_again(self):
+        app = mock.Mock(cfg={"rewrite_hotkey": "<cmd>+<alt>+e", "dictate_hotkey": "<cmd>+<alt>+d"})
+        app.host.shortcuts = {"rewrite": mock.Mock(active=True), "dictate": mock.Mock(active=False)}
+        permission.Watcher(app)._heal()
+        self.assertEqual([c.args for c in app.apply.call_args_list], [("dictate_hotkey", "<cmd>+<alt>+d")])
+
     def test_reset_uses_fixed_arguments(self):
         with mock.patch.object(permission.subprocess, "run") as run:
             run.return_value.returncode = 0
