@@ -71,6 +71,7 @@ class MacHost:
                                      else self.start_trigger(*self._trigger_args))
         self.menu.addItem_(AppKit.NSMenuItem.separatorItem())
         self._add("Settings…", put("settings"), ",")
+        self._add("Take the Tour", put("tour_replay"))
         self.permission_item = self._add("Permission needed…", lambda _s: self.watcher and self.watcher.show_guide())
         self.error_item = self._add("", None)
         self.menu.addItem_(AppKit.NSMenuItem.separatorItem())
@@ -153,6 +154,10 @@ class MacHost:
 
     def open_settings(self, welcome=False):
         return SettingsWindow(self.app, lambda: self.watcher and self.watcher.show_guide(), welcome)
+
+    def make_tour(self, app):
+        from .tour import TourWindow
+        return TourWindow(app)
 
     def read_selection(self, clipboard_fallback):
         return selection.read(clipboard_fallback)
