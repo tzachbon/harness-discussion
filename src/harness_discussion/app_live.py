@@ -202,7 +202,7 @@ class Live:
         off = [(f"Turn off in {field.label}", lambda: self._live_turn_off(field), False)]
         self._toast(f"{short(old)} → {short(new)}", [("Apply", lambda: self._live_apply(field, s)),
                                                        ("Dismiss", lambda: self._live_dismiss(s)),
-                                                       ("Review", lambda: self._live_review(field)),
+                                                       ("Review", lambda: self._live_review(field, s.start)),
                                                        ("More", off)], at=(x, y + 12, None))
 
     def _live_dismiss(self, s):
@@ -275,10 +275,11 @@ class Live:
             self._toast(f"Applied {count} changes. Use {UNDO_KEYS} to undo.")
         return True
 
-    def _live_review(self, field):
-        """The caret line's original and rewrite in the Review panel. Replace swaps the whole line, guarded."""
+    def _live_review(self, field, at=None):
+        """The original and rewrite of the line at `at` (the caret's for the badge) in the Review panel. Replace swaps
+        the whole line, guarded."""
         mode = self._find_mode(None)
-        start, end = live.paragraph_at(field.text, field.caret[0])
+        start, end = live.paragraph_at(field.text, field.caret[0] if at is None else at)
         line = live.text_at(field.text, start, end)
         core = line.strip()
         new = self.live_cache.get(core, mode)

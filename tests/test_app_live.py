@@ -428,6 +428,13 @@ class Actions(unittest.TestCase):
         replace("I think we should of gone.")
         self.assertEqual(self.field.text, "I think we should of gone.")
 
+    def test_review_opens_the_clicked_line_not_the_caret_line(self):
+        self.app.live_cache.put("she go home now ok", self.app._find_mode(None), "She goes home now, ok.")
+        self.field.text += "\nshe go home now ok"  # the caret is on this line
+        self.app.tick(4)
+        self.click("i thinks")[1]["Review"]()
+        self.assertEqual(self.app.review_.shown[-1][0], "i thinks we should of gone.")
+
     def test_the_badge_opens_review(self):
         self.field.placeable = False
         self.app.tick(4)

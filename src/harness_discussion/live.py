@@ -160,8 +160,8 @@ def suggestions(text: str, cache: Cache, dismissed, mode) -> list[Suggestion]:
     for start, line in lines(text):
         core = line.strip()
         new = cache.get(core, mode) if core else None
-        if new is None or new == core:
-            continue
+        if new is None or new == core or _BREAK.search(new):
+            continue  # ponytail: a rewrite into several lines is not underlined; its parts would match this line again
         at = start + units(line[:line.index(core)])
         for offset, old, replacement in changes(core, new):
             key = (core, offset, old, replacement)

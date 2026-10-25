@@ -73,6 +73,10 @@ class Suggestions(unittest.TestCase):
         self.assertEqual([(s.old, s.new) for s in found], [("think", "I think that")])
         self.assertEqual(live.fixed("think we go", found), "I think that we go")
 
+    def test_a_rewrite_into_several_lines_is_not_underlined(self):
+        cache = cached(("Please send the report.", "Hi,\nPlease send the report.\nThanks"))
+        self.assertEqual(live.suggestions("Please send the report.", cache, set(), MODE), [])
+
     def test_deletion(self):
         cache = cached(("it is is fine now", "it is fine now"))
         found = live.suggestions("it is is fine now", cache, set(), MODE)
