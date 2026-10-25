@@ -329,9 +329,10 @@ class Live:
         self.review.show(core, new, replace, self.host.copy_text)
 
     def _apply_live(self, key, value):
-        if key in ("default_mode", "modes", "writer_sources", "writer_models", "live_off_apps"):
+        about = ("about_me", "about_me_on", "about_me_uncapped")  # the prompt changes, so cached fixes are stale
+        if key in ("default_mode", "modes", "writer_sources", "writer_models", "live_off_apps", *about):
             self._live_cancel.set()  # a check in flight must not send on, or cache, under the old settings
-        if key in ("default_mode", "modes", "writer_sources", "writer_models"):
+        if key in ("default_mode", "modes", "writer_sources", "writer_models", *about):
             self.live_cache.clear()
         if key in ("live_check", "writer", "live_off_apps", "default_mode", "modes") and self.marks:
             self._live_marks(None, [], [], 0)

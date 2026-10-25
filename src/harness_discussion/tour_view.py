@@ -96,9 +96,10 @@ def _rewrite(v, s, tried):
     if tried:
         v["status"] = (("✓ Rewritten in place, using a sample result.", True) if v["sample"]
                        else ("✓ Rewritten in place. Undo puts your words back.", True))
-    v["dest"] = (f"Sent to {s.writer_source}, the first ready writing source. Only this sample text is sent."
-                 if s.writer_source
-                 else "No writing source is ready, so the rewrite is a sample. Only this sample text is sent.")
+    v["dest"] = _with_about(f"Sent to {s.writer_source}, the first ready writing source. Only this sample text is sent."
+                            if s.writer_source
+                            else "No writing source is ready, so the rewrite is a sample. Only this sample text is sent.",
+                            s, "Only this sample text is sent")
     if "writer" in s.sandboxed:
         v["keep"] = {"label": "Keep Writing on in all apps", "action": "keep_writer",
                      "note": "Check as I type comes on with it." if s.cfg["live_check"] else None}
@@ -107,6 +108,10 @@ def _rewrite(v, s, tried):
         v["keep"] = {"text": f"Writing is on. {label} works in any app." if label != "Off"
                     else "Writing is on. ✎ on the bar works in any app."}
 
+
+def _with_about(dest, s, verb):
+    """A destination line that also names the About you context, when prompts carry it."""
+    return dest.replace(verb, f"{verb}, with your About you note and today's date", 1) if writer.about(s.cfg) else dest
 
 def _review(v, s, tried):
     if s.has_practice_edit and s.review_text is not None:
@@ -152,6 +157,7 @@ def _live(v, s, tried):
         v["status"] = ("Shown with a sample suggestion. Sign in for real ones.", False)
     v["dest"] = (f"Only lines you type in this box are sent, to {s.writer_source}." if s.writer_source else
                  "Only lines you type in this box are sent. No writing source is ready, so the suggestion is a sample.")
+    v["dest"] = _with_about(v["dest"], s, "are sent")
     if "live_check" in s.sandboxed:
         v["keep"] = {"label": "Check as I type in all apps", "action": "keep_live", "note": "asks first"}
     elif "writer" in s.sandboxed:
@@ -168,8 +174,8 @@ def _about(v, s, tried):
     v["box"] = {"text": s.cfg.get("about_me", ""), "select": "end"}
     if tried:
         v["status"] = ("✓ Saved. Edit it any time in Settings → General.", True)
-    v["dest"] = (f"Up to {writer.about_limit(s.cfg)} characters. Sent with every rewrite, dictation tidy, and "
-                 "summary to the source that runs it. Turn it off in Settings → General.")
+    v["dest"] = (f"Up to {writer.about_limit(s.cfg)} characters. Sent with every rewrite, Check as I type, "
+                 "dictation tidy, and summary to the source that runs it. Turn it off in Settings → General.")
 
 def _done(s):
     first = "Allow access" if s.mac else "Welcome"

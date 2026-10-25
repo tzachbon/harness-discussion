@@ -89,6 +89,18 @@ class AboutContextBudgetTest(unittest.TestCase):
         with self.assertRaises(summarize.Error):
             local.rewrite(capped + "n" * 5000, text, None, None, lambda: False)
 
+class AboutLiveCacheTest(unittest.TestCase):
+    def test_changing_about_you_drops_cached_checks_and_cancels_one_in_flight(self):
+        import threading
+        from harness_discussion import app_live
+        for key in ("about_me", "about_me_on", "about_me_uncapped"):
+            app = type("A", (), {"marks": None})()
+            app._live_cancel, app.live_cache = threading.Event(), type("C", (), {"cleared": 0})()
+            app.live_cache.clear = lambda c=app.live_cache: setattr(c, "cleared", c.cleared + 1)
+            app_live.Live._apply_live(app, key, "x")
+            self.assertTrue(app._live_cancel.is_set(), key)
+            self.assertEqual(app.live_cache.cleared, 1, key)
+
 class AboutTourTest(FlowTest):
     def test_leaving_the_step_saves_the_box_and_marks_it_tried(self):
         self.app.open()

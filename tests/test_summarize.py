@@ -307,7 +307,7 @@ class FlowTest(unittest.TestCase):
         app = _App("ready")
         app.summarize("text", "en-US")
         app.drain()
-        app.summary_server.summarize = lambda text, language: time.sleep(0.2) or "later."
+        app.summary_server.summarize = lambda text, language, about="": time.sleep(0.2) or "later."
         app.summarize("more", "en-US")
         app.timers[0]()  # fires while the second summary is still running
         time.sleep(0.05)

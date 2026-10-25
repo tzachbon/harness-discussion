@@ -155,10 +155,16 @@ class ViewTest(unittest.TestCase):
         self.assertEqual(tour_view.view(1, s)["dest"], "Read by Cursor. Online voices get only this sample text.")
         self.assertEqual(tour_view.view(2, s)["dest"], "Read by Cursor. Online voices get only the text you select here.")
         self.assertEqual(tour_view.view(3, s)["dest"],
-                         "Sent to Cursor, the first ready writing source. Only this sample text is sent.")
+                         "Sent to Cursor, the first ready writing source. Only this sample text is sent, with your "
+                         "About you note and today's date.")
         self.assertIsNone(tour_view.view(4, s)["dest"])
         self.assertEqual(tour_view.view(5, s)["dest"], "Your recording goes to Local. macOS asks for the microphone the first time.")
+        self.assertEqual(tour_view.view(6, s)["dest"], "Only lines you type in this box are sent, with your About you "
+                                                       "note and today's date, to Cursor.")
+        s.cfg = dict(s.cfg, about_me_on=False)
         self.assertEqual(tour_view.view(6, s)["dest"], "Only lines you type in this box are sent, to Cursor.")
+        self.assertEqual(tour_view.view(3, s)["dest"],
+                         "Sent to Cursor, the first ready writing source. Only this sample text is sent.")
 
     def test_a_sample_result_changes_the_status_and_the_destination(self):
         s = state(progress={"dictate": "tried"}, sample_used={"dictate"}, stt_source=None)
