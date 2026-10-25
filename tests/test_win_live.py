@@ -7,6 +7,7 @@ if sys.platform != "win32":
 
 from types import SimpleNamespace
 from unittest.mock import patch
+from _ctypes import COMError
 
 from tests.win_edit_fakes import Document, Range, target
 
@@ -157,6 +158,20 @@ class Place(unittest.TestCase):
             field = self.edit.observe()
             self.assertEqual(self.edit.bounds(field, [self.span(field, "thinks")]), [None])
         self.assertLessEqual(len(moves), 2 * 12)
+
+    def test_a_span_whose_rectangles_fail_is_unplaced_and_the_rest_still_drawn(self):
+        """Notepad raises "Catastrophic failure" for the number in a Hebrew line."""
+        document = LiveDocument("i thinks 10 ok")
+        real = LiveRange.GetBoundingRectangles
+        def rects(self):
+            if document.text[self.start:self.end] == "10":
+                raise COMError(-2147418113, "Catastrophic failure", None)
+            return real(self)
+        with target(document), patch.object(LiveRange, "GetBoundingRectangles", rects):
+            field = self.edit.observe()
+            placed = self.edit.bounds(field, [self.span(field, "10"), self.span(field, "thinks")])
+        self.assertIsNone(placed[0])
+        self.assertEqual(len(placed[1]), 1)
 
     def test_observe_and_bounds_never_use_the_clipboard_or_keys(self):
         document = LiveDocument("i thinks so ok")

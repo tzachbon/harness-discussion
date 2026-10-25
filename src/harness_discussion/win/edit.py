@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from ctypes import wintypes
 
 import uiautomation as uia
+from _ctypes import COMError
 
 from .. import edit_logic, live
 from . import clipboard, selection, uia_thread
@@ -356,8 +357,11 @@ def bounds(field, spans):
         out = []
         for start, end, expected in spans:
             candidate = _range_at(found[3], found[1], start, end, expected)
-            out.append(None if candidate is None else
-                       [(r.left, r.top, r.right, r.bottom) for r in candidate.GetBoundingRectangles()])
+            try:
+                out.append(None if candidate is None else
+                           [(r.left, r.top, r.right, r.bottom) for r in candidate.GetBoundingRectangles()])
+            except COMError:  # Notepad fails on a number inside a Hebrew line
+                out.append(None)
         return out
     return _run(place)
 
