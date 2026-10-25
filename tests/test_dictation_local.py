@@ -7,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from harness_discussion import dictation, local_stt, settings, writer
+from harness_discussion import dictation, local_stt, settings, stt, writer
 
 
 class LocalTest(unittest.TestCase):
@@ -124,6 +124,19 @@ class LocalTest(unittest.TestCase):
             load.assert_not_called()
             fetch.assert_not_called()
 
+    def test_cancel_during_model_load_never_starts_inference(self):
+        self.install()
+        source, cancelled, engine = local_stt.LocalStt(), threading.Event(), Mock()
+        self.addCleanup(source.close)
+        def load():
+            cancelled.set()
+            return engine
+        with patch.object(local_stt, "_load_model", side_effect=load), patch.object(
+                local_stt.stt, "decode_audio", return_value=b"pcm"):
+            with self.assertRaises(writer.Cancelled):
+                source.transcribe(b"audio", cancelled=cancelled.is_set)
+        engine.transcribe.assert_not_called()
+
     def test_cancelled_queued_work_never_starts_inference(self):
         self.install()
         source = local_stt.LocalStt()
@@ -140,6 +153,8 @@ class LocalTest(unittest.TestCase):
             thread.start()
             self.assertTrue(waiting.wait(1))
             cancelled.set()
+            thread.join(2)
+            self.assertFalse(thread.is_alive(), "Cancel must not wait for another inference to finish")
         thread.join(2)
         self.assertFalse(thread.is_alive())
         self.assertIsInstance(errors[0], writer.Cancelled)
@@ -147,6 +162,59 @@ class LocalTest(unittest.TestCase):
 
 
 class ChainTest(unittest.TestCase):
+    def test_codex_restart_waits_for_old_request_and_can_cancel_while_queued(self):
+        for cancel_waiter in (False, True):
+            with self.subTest(cancel_waiter=cancel_waiter), tempfile.TemporaryDirectory() as folder:
+                lock, waiting, cancel = threading.Lock(), threading.Event(), threading.Event()
+                lock.acquire()  # A cancelled native request still owns the transport.
+                def acquire(*args, **kwargs):
+                    acquired = lock.acquire(*args, **kwargs)
+                    if not acquired:
+                        waiting.set()
+                    return acquired
+                busy = Mock(acquire=acquire, release=lock.release)
+                results, errors = [], []
+                def transcribe():
+                    try:
+                        results.append(dictation.transcribe(
+                            b"new audio", [dictation.CodexStt()], [["Codex", True]],
+                            cancelled=cancel.is_set))
+                    except Exception as error:
+                        errors.append(error)
+                with patch.object(stt, "_busy", busy), patch.object(stt, "_run", return_value="new words") as run, \
+                        patch.object(stt, "DIAG_LOG", Path(folder) / "diag.log"), \
+                        patch.object(dictation.CodexStt, "status", return_value="ready"):
+                    worker = threading.Thread(target=transcribe, daemon=True)
+                    worker.start()
+                    try:
+                        self.assertTrue(waiting.wait(1))
+                        self.assertTrue(worker.is_alive())
+                        run.assert_not_called()
+                        if cancel_waiter:
+                            cancel.set()
+                            worker.join(0.5)
+                            self.assertFalse(worker.is_alive())
+                            self.assertTrue(lock.locked())
+                        else:
+                            lock.release()
+                            worker.join(1)
+                        self.assertFalse(worker.is_alive())
+                        if cancel_waiter:
+                            self.assertEqual(results, [])
+                            self.assertEqual(len(errors), 1)
+                            self.assertIsInstance(errors[0], writer.Cancelled)
+                            run.assert_not_called()
+                        else:
+                            self.assertEqual(errors, [])
+                            self.assertEqual(results, [("new words", "Codex")])
+                            run.assert_called_once()
+                            self.assertFalse(lock.locked())
+                    finally:
+                        cancel.set()
+                        if lock.locked():
+                            lock.release()
+                        worker.join(1)
+
     def test_ready_local_avoids_remote_status_checks_and_transcription(self):
         local = SimpleNamespace(name="Local", status=lambda: "ready", transcribe=lambda *a, **k: "words")
         remote = Mock(name="remote")

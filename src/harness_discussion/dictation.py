@@ -18,8 +18,8 @@ class CodexStt:
     def status(self):
         return codex_rt.login_status()
 
-    def transcribe(self, audio, language=""):
-        return stt.transcribe(audio, language=language)
+    def transcribe(self, audio, language="", cancelled=lambda: False):
+        return stt.transcribe(audio, language=language, cancelled=cancelled)
 
 
 def sources():
@@ -44,7 +44,8 @@ def transcribe(audio, chain, order, language="", cancelled=lambda: False):
             if source.status() != "ready":
                 continue
             check()
-            text = (source.transcribe(audio, language=language, cancelled=cancelled) if name == "Local"
+            text = (source.transcribe(audio, language=language, cancelled=cancelled)
+                    if name == "Local" or isinstance(source, CodexStt)
                     else source.transcribe(audio, language=language))
         except writer.Cancelled:
             raise

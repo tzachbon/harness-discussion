@@ -81,7 +81,10 @@ def _load_model(force_cpu=False):
                 return WhisperModel(str(DIR), device="cuda", compute_type="int8_float16", local_files_only=True)
         except (ImportError, OSError, RuntimeError) as e:
             log.info("Local dictation GPU unavailable: %s", type(e).__name__)
-    return WhisperModel(str(DIR), device="cpu", compute_type="int8", cpu_threads=8, local_files_only=True)
+    # ponytail: half the logical cores approximates the fast cores (Apple P-cores, x86 physical cores).
+    # Using every core starves the desktop and waits on efficiency cores. Read hw.perflevel0 if that misses.
+    threads = max(1, (os.cpu_count() or 2) // 2)
+    return WhisperModel(str(DIR), device="cpu", compute_type="int8", cpu_threads=threads, local_files_only=True)
 
 
 class LocalStt:
@@ -111,7 +114,10 @@ class LocalStt:
             log.info("Local dictation warmup failed: %s", type(e).__name__)
 
     def transcribe(self, audio, language="", cancelled=lambda: False):
-        with self._lock:
+        while not self._lock.acquire(timeout=0.1):
+            if cancelled():
+                raise writer.Cancelled("The dictation was cancelled.")
+        try:
             if cancelled():
                 raise writer.Cancelled("The dictation was cancelled.")
             self._load()
@@ -126,8 +132,12 @@ class LocalStt:
                 log.info("Local dictation GPU failed; retrying on CPU")
                 self._model = _load_model(force_cpu=True)
                 return self._transcript(audio, language, cancelled)
+        finally:
+            self._lock.release()
 
     def _transcript(self, audio, language, cancelled):
+        if cancelled():
+            raise writer.Cancelled("The dictation was cancelled.")
         # Preserve the container's sample rate. Whisper resamples it to 16 kHz itself.
         segments, _ = self._model.transcribe(io.BytesIO(audio), language=language or None, beam_size=1,
                                              condition_on_previous_text=False)

@@ -68,7 +68,12 @@ default. After a device change, dictation can refresh the device list and retry
 the selected microphone once when no audio stream is open. It never switches
 to another input. If it is disconnected, choose another input in Settings.
 
-The recording and transcription pill has an **×** cancel button. Dictation
+The recording and transcription pill has an **×** cancel button. Cancelling
+during transcription lets you start another recording immediately and discards
+any late result. An in-progress native model call may finish its current segment
+in the background. A replacement Codex transcription waits for that transport
+to become free; cancelling while queued discards it before starting a request.
+Dictation
 finishes quietly after requesting insertion. It neither retries nor copies an
 unconfirmed paste. With no safe input target it shows **Copied to clipboard**
 after copying the result, or reports a clipboard failure with a manual Copy retry.
