@@ -73,6 +73,19 @@ class Module(unittest.TestCase):
             server.return_value.close.assert_called_once()
         self.assertFalse(stt._busy.locked())
 
+    def test_prewarmed_codex_is_used_once_and_a_dead_spare_is_replaced(self):
+        with patch.object(stt, "AppServer") as server, patch.object(stt, "_receive", AsyncMock(return_value="hi")):
+            stt.prewarm()
+            stt.prewarm()  # a running spare is kept, not duplicated
+            self.assertEqual(server.call_count, 1)
+            self.assertEqual(stt.transcribe(wav()), "hi")
+            self.assertEqual(server.call_count, 1)  # the spare, no cold start
+            self.assertIsNone(stt._spare)
+            server.return_value.alive = False
+            stt.prewarm()
+            self.assertEqual(stt.transcribe(wav()), "hi")
+            self.assertEqual(server.call_count, 3)  # a dead spare is never used
+
     def test_failures_are_classified_and_logged_without_content(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(stt, "DIAG_LOG", Path(folder) / "diag.log"):
             with patch.object(stt, "AppServer", side_effect=RuntimeError("thread/start: sk-secret said hello")):

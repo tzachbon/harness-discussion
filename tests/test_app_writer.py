@@ -103,6 +103,9 @@ class _App(app_summarize.Summaries, app_writer.Writer):
         self._summary_gen = 0
         self._init_writer()
         self.writer_sources = sources or [Source("Cursor")]
+        for source in self.stt_sources:  # Codex prewarm spawns a real codex app-server
+            if source.name == "Codex":
+                source.prewarm = lambda: None
 
     def drain(self, until=None):
         while True:
