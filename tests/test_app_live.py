@@ -441,6 +441,16 @@ class Actions(unittest.TestCase):
         self.assertTrue(self.app._live_press(400, 0))
         self.assertEqual(self.app.review_.shown[-1][0], "i thinks we should of gone.")
 
+    def test_the_badge_follows_the_caret_between_lines(self):
+        self.app.live_cache.put("she go home now ok", self.app._find_mode(None), "She goes home now, ok.")
+        self.field.text += "\nshe go home now ok"
+        self.field.placeable = False
+        self.app.tick(4)
+        self.field.at = 0  # an arrow key moves the caret up, typing nothing
+        self.app.tick(5)
+        self.assertTrue(self.app._live_press(400, 0))
+        self.assertEqual(self.app.review_.shown[-1][0], "i thinks we should of gone.")
+
     def test_quit_stops_checking_before_the_sources_close(self):
         order = []
         self.app._live_stop = SimpleNamespace(set=lambda: order.append("live"), is_set=lambda: True)

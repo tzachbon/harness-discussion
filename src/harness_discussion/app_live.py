@@ -82,7 +82,8 @@ class Live:
 
     def _live_post(self, field, found, placed, unplaced):
         """Posts what to draw only when it differs from the last post, so an idle field costs no main-thread work."""
-        drawn = (field.digest, field.rect, tuple(s.key for s in found), tuple(placed), unplaced) if found else None
+        drawn = (field.digest, field.rect, tuple(s.key for s in found), tuple(placed), unplaced,
+                 field.caret if unplaced else None) if found else None  # the badge reviews the caret's line
         if drawn != self._live_posted:
             self._live_posted = drawn
             self.events.put(("live_marks", field if found else None, found, placed, unplaced))
