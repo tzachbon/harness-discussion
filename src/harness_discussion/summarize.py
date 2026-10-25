@@ -2,6 +2,7 @@
 use and verified by size and SHA-256, as Snapdraft does. The text goes only to the local server."""
 import hashlib
 import json
+import logging
 import os
 import platform
 import re
@@ -28,8 +29,8 @@ RUNTIMES = {
                           "412e1aa1806d798cd4b74a0a3901f2703d0ec230fd0eeaae1d3adf5bcbb0e078"),
     ("darwin", "x86_64"): (f"llama-{BUILD}-bin-macos-x64.tar.gz", 11798896,
                            "5d451ccb09ffa597e6afd3a30e43d710612d636358dac93d3a8a255002dd634a"),
-    ("win32", "AMD64"): (f"llama-{BUILD}-bin-win-cpu-x64.zip", 19707505,
-                         "ccb97cc6c188425c0f56679d7ba433e05e8c1b7e0201ad3134f2f876db362b75"),
+    ("win32", "AMD64"): (f"llama-{BUILD}-bin-win-vulkan-x64.zip", 32358940,
+                         "ef623c883e0b67e84b92ca5fde04b65b74ef3691898b9510ff335c8d601076bd"),
     ("win32", "ARM64"): (f"llama-{BUILD}-bin-win-cpu-arm64.zip", 12594121,
                          "5f229ed843e043dd1b65b88cc323d4cb0b8b2ec0699cc7c9aec0a09767e81781"),
 }
@@ -108,8 +109,28 @@ def status():
 
 
 def _server_path():
-    found = sorted((DIR / "runtime").rglob(SERVER))
+    found = sorted(_runtime_dir().rglob(SERVER))
     return found[0] if found else None
+
+
+def _runtime_dir():
+    # Keep an older CPU runtime intact while an installed app may still be using its DLLs.
+    return DIR / ("runtime-vulkan" if "vulkan" in (runtime() or ("",))[0] else "runtime")
+
+
+def model_downloaded():
+    """The model already passed our download verification, even if its runtime needs updating."""
+    try:
+        marker = json.loads(_marker().read_text(encoding="utf-8"))
+        return (isinstance(marker, dict) and marker.get("model") == MODEL[2]
+                and model_path().is_file() and model_path().stat().st_size == MODEL[1])
+    except (OSError, ValueError):
+        return False
+
+
+def download_size_label():
+    found = runtime()
+    return f"{found[1] / 1_000_000:.0f} MB runtime update" if found and model_downloaded() else SIZE_LABEL
 
 
 def _fetch(url, size, sha256, path, progress, cancelled):
@@ -154,19 +175,21 @@ def download(progress=lambda done, total: None, cancelled=lambda: False):
     if found is None:
         raise Error("Summarize isn't available on this computer.")
     archive_name, archive_size, archive_sha = found
-    total = archive_size + MODEL[1]
+    reuse_model = model_downloaded()
+    total = archive_size + (0 if reuse_model else MODEL[1])
     DIR.mkdir(parents=True, exist_ok=True)
-    _marker().unlink(missing_ok=True)
     work = Path(tempfile.mkdtemp(prefix="download-", dir=DIR))
     try:
         archive = work / archive_name
         _fetch(RELEASE + archive_name, archive_size, archive_sha, archive, lambda n: progress(n, total), cancelled)
         _extract(archive, work / "runtime")
-        model = work / "model.gguf"
-        _fetch(MODEL[0], MODEL[1], MODEL[2], model, lambda n: progress(archive_size + n, total), cancelled)
-        shutil.rmtree(DIR / "runtime", ignore_errors=True)
-        os.replace(work / "runtime", DIR / "runtime")
-        os.replace(model, model_path())
+        if not reuse_model:
+            model = work / "model.gguf"
+            _fetch(MODEL[0], MODEL[1], MODEL[2], model, lambda n: progress(archive_size + n, total), cancelled)
+        shutil.rmtree(_runtime_dir(), ignore_errors=True)
+        os.replace(work / "runtime", _runtime_dir())
+        if not reuse_model:
+            os.replace(model, model_path())
         _marker().write_text(json.dumps(_expected()), encoding="utf-8")
     finally:
         shutil.rmtree(work, ignore_errors=True)
@@ -195,12 +218,21 @@ class Server:
     def __init__(self):
         # _starting spans the model load. _lock only guards _proc, so stop() never waits for a load.
         self._proc, self._port, self._lock, self._starting = None, None, threading.Lock(), threading.Lock()
+        self._closed = False
 
     @property
     def running(self):
         return self._proc is not None and self._proc.poll() is None
 
+    def prewarm(self):
+        """Load the model while the user speaks, sharing initialization with complete()."""
+        with self._starting:
+            if not self.running:
+                self._start(90)
+
     def _start(self, timeout):
+        if self._closed:
+            raise Error("The local model has stopped.")
         exe = _server_path()
         if exe is None or not model_path().is_file():
             raise Error("Download the Summarize model first.")
@@ -212,6 +244,9 @@ class Server:
              "-np", "1", "--no-webui"], cwd=exe.parent, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, creationflags=flags)
         with self._lock:
+            if self._closed:
+                proc.terminate()
+                raise Error("The local model has stopped.")
             self._proc, self._port = proc, port
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -268,6 +303,11 @@ class Server:
             except subprocess.TimeoutExpired:
                 proc.kill()
 
+    def close(self):
+        with self._lock:
+            self._closed = True
+        self.stop()
+
 
 class LocalWriter:
     """The writer source for the Summarize model. It shares the app's `Server`, so the idle stop and the stop on
@@ -280,6 +320,13 @@ class LocalWriter:
 
     def status(self):
         return status()
+
+    def prewarm(self, model=None):
+        if self.status() == "ready":
+            try:
+                self._server.prewarm()
+            except Exception as e:
+                logging.getLogger("harness_discussion").info("Local writer warmup failed: %s", type(e).__name__)
 
     def rewrite(self, system, text, model, effort, cancelled):
         if len(text) > MAX_CHARS // 2:  # the reply is about as long as the text, and both share the context

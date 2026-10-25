@@ -12,6 +12,10 @@ from pathlib import Path
 from release_version import parse_tag
 
 
+# ponytail: says unsigned until SignPath signing starts, then update this line.
+POLICY = ("Code signing policy: https://github.com/tzachbon/harness-discussion#code-signing-policy. "
+          "Signing is pending, this installer is unsigned.")
+
 def command(*args):
     return subprocess.run(args, check=True, capture_output=True, text=True, encoding="utf-8").stdout
 
@@ -25,7 +29,7 @@ def remote_tags():
 
 def read_release(repository, tag):
     return json.loads(command("gh", "release", "view", tag, "--repo", repository,
-                              "--json", "assets,isDraft"))
+                              "--json", "assets,body,isDraft"))
 
 
 def complete_asset(release, name):
@@ -54,11 +58,12 @@ def publish(version, commit, repository, artifacts):
         raise ValueError(f"{tag} does not point to the tested commit {commit}")
     # A failed read may be auth/network related; create fails rather than modifying an existing release.
     existing = subprocess.run(["gh", "release", "view", tag, "--repo", repository,
-                               "--json", "assets,isDraft"], capture_output=True, text=True,
+                               "--json", "assets,body,isDraft"], capture_output=True, text=True,
                               encoding="utf-8")
     if existing.returncode:
         command("gh", "release", "create", tag, str(artifacts[0]), "--repo", repository,
-                "--verify-tag", "--draft", "--title", f"Harness Discussion {tag}", "--generate-notes")
+                "--verify-tag", "--draft", "--title", f"Harness Discussion {tag}", "--generate-notes",
+                "--notes", POLICY)  # gh puts it above the generated notes
         release = read_release(repository, tag)
     else:
         release = json.loads(existing.stdout)
@@ -73,7 +78,9 @@ def publish(version, commit, repository, artifacts):
                             ".[] | select(.draft == false and .prerelease == false) | .tag_name")
         versions = [value for name in published.splitlines() if (value := parse_tag(name)) is not None]
         latest = "true" if not versions or parse_tag(tag) >= max(versions) else "false"
-        command("gh", "release", "edit", tag, "--repo", repository, "--draft=false", f"--latest={latest}")
+        notes = [] if POLICY in (release.get("body") or "") else [  # a draft resumed from an older run
+            "--notes", f"{POLICY}\n\n{release.get('body') or ''}".rstrip()]
+        command("gh", "release", "edit", tag, "--repo", repository, "--draft=false", f"--latest={latest}", *notes)
         if read_release(repository, tag)["isDraft"]:
             raise ValueError("Release is still a draft after publication")
     print(f"Published {tag} at {commit}")

@@ -1,0 +1,17 @@
+Where your text goes
+
+Harness Discussion reads selected text aloud. By default it tries these voices in order:
+
+- Cursor: sends the text to Cursor through your Cursor sign-in, if you are signed in.
+- Codex: sends the text to OpenAI through your Codex sign-in, if you are signed in.
+- Kokoro: runs on this PC after a one-time model download from GitHub.
+- Edge: sends the text to Microsoft's Edge read-aloud service.
+- Windows: runs on this PC.
+
+The optional speech-to-text server, off by default, sends audio, and any prompt hint, from other apps on this PC to OpenAI through your Codex sign-in.
+
+The app checks GitHub for updates, and installs them automatically only if you turn that on. It downloads the Kokoro or Summarize model from GitHub or Hugging Face only when you ask. It does not send your text anywhere else. The log records the engine, timing and errors, never the text.
+
+To keep your text and audio on this PC, check "Use only voices that run on this PC" on the next page. It turns off Cursor, Codex, Edge and the speech-to-text server. Update checks send no text and are not changed. You can change these later in Settings.
+
+Full privacy policy: https://github.com/tzachbon/harness-discussion/blob/master/PRIVACY.md

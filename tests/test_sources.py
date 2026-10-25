@@ -53,6 +53,28 @@ class Load(unittest.TestCase):
         self.assertEqual(self.load({"voices": {"Cursor": "eve", "Codex": 3}})["voices"], {"Cursor": "eve"})
         self.assertEqual(self.load({"voices": ["eve"]})["voices"], {})
 
+    def test_local_only_turns_off_every_online_service_and_keeps_other_settings(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "settings.json")
+            settings.save({"speed": 1.5, "prefetch": True}, path)
+            settings.local_only(path)
+            s = settings.load(path)
+        on = {n for n, enabled in s["sources"] if enabled}
+        self.assertEqual(on, {"Kokoro", "Windows", "macOS"} & set(ALL))
+        self.assertEqual([n for n, enabled in s["writer_sources"] if enabled], ["Local"])
+        self.assertFalse(any(enabled for _, enabled in s["stt_sources"]))
+        self.assertFalse(s["prefetch"])
+        self.assertEqual(s["speed"], 1.5)
+
+    def test_local_only_never_leaves_an_empty_order_that_falls_back_to_online_voices(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "settings.json")
+            settings.save({"sources": [[n, n == "Cursor"] for n in ALL], "stt_server": True}, path)
+            settings.local_only(path)
+            s = settings.load(path)
+        self.assertEqual({n for n, enabled in s["sources"] if enabled}, {"Kokoro", "Windows", "macOS"} & set(ALL))
+        self.assertFalse(s["stt_server"])  # the speech-to-text server sends audio to OpenAI
+
 
 class Fake:
     speed = 1.0
@@ -364,6 +386,22 @@ class Bar(unittest.TestCase):
             first.pump()
             self.assertEqual(first.host.opened, [True, False])  # opened from the bar: no welcome
             second = core.App(FakeHost([Engine("Codex")]))
+            second.pump()
+            self.assertEqual(second.host.opened, [])
+
+    def test_settings_written_by_the_installer_still_get_the_first_run_welcome(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        path = os.path.join(folder.name, "settings.json")
+        load, save = settings.load, settings.save  # never the real settings file
+        with patch.object(settings, "PATH", path), patch.object(settings, "load", lambda p=path: load(p)),                 patch.object(settings, "save", lambda s, p=path: save(s, p)):
+            settings.local_only(path)
+            settings.local_only(path)  # setup run again before the app first starts
+            first = core.App(FakeHost([Engine("Windows")]))
+            first.pump()
+            self.assertEqual(first.host.opened, [True])
+            self.assertEqual(first.cfg["sources"], load(path)["sources"])  # the privacy choice is kept
+            second = core.App(FakeHost([Engine("Windows")]))
             second.pump()
             self.assertEqual(second.host.opened, [])
 

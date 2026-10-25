@@ -17,6 +17,7 @@ from .app_summarize import Summaries
 from .app_updates import Updates
 from .app_writer import Writer
 from .captions import Captions
+from .engines import causes as _causes
 from .sources import Sources
 
 log = logging.getLogger("harness_discussion")
@@ -28,16 +29,6 @@ SPEECH_KEYS = ("sources", "voices", "speed", "prefetch")  # captured for the ent
 # a third of the words, at most FIRST_WORDS, so a one-word first line doesn't end before the next piece is ready.
 PIECE_CHARS = 5000
 FIRST_WORDS = 30
-
-
-def _causes(err):
-    """"NoAudioError from HTTPError 401": type names and HTTP codes only, since messages could echo the text."""
-    names = []
-    while err is not None and len(names) < 5:
-        code = getattr(err, "code", None)
-        names.append(f"{type(err).__name__} {code}" if isinstance(code, int) else type(err).__name__)
-        err = err.__cause__ or err.__context__
-    return " from ".join(names)
 
 
 class App(Captions, Sources, Updates, Summaries, Skips, Writer):
@@ -62,7 +53,7 @@ class App(Captions, Sources, Updates, Summaries, Skips, Writer):
         self.chain.on_engine = lambda name: self.events.put(("engine", name))
         self.statuses = {}  # engine name -> status(), filled by refresh_statuses
         self._checking = threading.Lock()  # one status check at a time, so an older slow one can't win
-        first_run = not os.path.exists(settings.PATH)
+        first_run = not os.path.exists(settings.PATH) or settings.first_run(settings.PATH)  # or the installer wrote it
         self.cfg = settings.load()
         if first_run:
             try:
@@ -91,7 +82,11 @@ class App(Captions, Sources, Updates, Summaries, Skips, Writer):
 
     def start(self):
         """Starts listening for selections and schedules the update check."""
-        self.host.start_trigger(self._selected, lambda x, y: self.events.put(("press", x, y)))
+        def pressed(x, y):
+            self._invalidate_dictation_target()
+            self.events.put(("press", x, y))
+
+        self.host.start_trigger(self._selected, pressed)
         self.host.after(30_000, self._auto_update)
         self.refresh_statuses()
 
@@ -196,18 +191,27 @@ class App(Captions, Sources, Updates, Summaries, Skips, Writer):
         self.chain.speak(text, "en-US", done)
 
     def _selected(self, x, y):  # trigger thread: hand off, never block
+        if self._selection_busy():
+            return
         self._seq += 1
         threading.Thread(target=self._read, args=(self._seq, x, y), daemon=True).start()
 
+    def _selection_busy(self):
+        return self._holding or self._recorder is not None or self.rewriting
+
     def _read(self, seq, x, y):
         time.sleep(0.08)  # let the app finish updating its selection
+        if seq != self._seq or self._selection_busy():
+            return
         try:
             text = self.host.read_selection(self.cfg["clipboard_fallback"])
+            if seq != self._seq or self._selection_busy():
+                return
             ctx = self.edit.capture(False) if text and self.writer_ready and self.cfg["writer"] else None
         except Exception:
             return  # some apps throw from the accessibility API; no popup is the right outcome
-        if text and seq == self._seq:
-            self.events.put(("show", text, x, y, bool(ctx and ctx.editable and not ctx.secure)))
+        if text and seq == self._seq and not self._selection_busy():
+            self.events.put(("show", text, x, y, bool(ctx and ctx.editable and not ctx.secure), seq))
 
     def _units_for(self, text):
         """Codex reads the whole selection in one session; other engines get the opening, then the rest."""
@@ -328,6 +332,8 @@ class App(Captions, Sources, Updates, Summaries, Skips, Writer):
             self._update_status(args[1])
             self._try_update()
         elif kind == "show":
+            if self._selection_busy() or (len(args) > 4 and args[4] != self._seq):
+                return
             text, x, y, editable = (*args, False)[:4]
             # double-clicking the popup is not a new selection, and a running read isn't interrupted
             if not (p.contains(x, y) or (p.playing and not p.paused) or self.rewriting):
@@ -337,6 +343,7 @@ class App(Captions, Sources, Updates, Summaries, Skips, Writer):
                 self._prepare_selection()
                 self.refresh_statuses()  # a sign-in may have changed since the last check
         elif kind == "press":
+            self._invalidate_dictation_target()
             if p.contains(*args):
                 pass  # clicks on the popup itself (including opening the menu)
             elif p.menu_open:

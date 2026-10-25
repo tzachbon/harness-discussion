@@ -60,7 +60,17 @@ class Watcher:
         if now != self.state:
             self.state = now
             self._changed(now)
+        if now:
+            self._heal()
         self.app.host.after(1000, self.tick)
+
+    def _heal(self):
+        """A hold shortcut's event tap can fail at launch or right after a grant, and never retries itself."""
+        for name, key in (("rewrite", "rewrite_hotkey"), ("dictate", "dictate_hotkey")):
+            shortcut = self.app.host.shortcuts.get(name)
+            if shortcut is not None and not shortcut.active:
+                log.info("%s shortcut inactive, binding again", name)
+                self.app.apply(key, self.app.cfg[key])
 
     def _changed(self, now):
         host, build = self.app.host, current_build_id()
@@ -77,7 +87,8 @@ class Watcher:
         stale = is_stale(self.app.cfg.get("ax_granted_build"), build)
         log.info("accessibility missing (stale: %s)", stale)
         host.set_permission_missing(True)
-        self.show_guide(stale)
+        if not getattr(self.app, "tour_pending", lambda: False)():
+            self.show_guide(stale)  # the tour's first step asks instead, and shows the guide when it closes
 
     def show_guide(self, stale=None):
         if stale is None:

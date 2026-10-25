@@ -4,6 +4,10 @@ from . import writer
 
 LOCAL_MODEL = "Qwen3-4B"
 
+def default_label(name):
+    """Codex picks the right model for the account itself, so its own default is the one to suggest."""
+    return "Default (recommended)" if name == "Codex" else "Default"
+
 
 def move(order, name, step):
     order = [list(item) for item in order]
@@ -22,7 +26,7 @@ def model_choices(name, models):
     if name == "Local":
         return [("", LOCAL_MODEL)]
     listed = [(m["id"], m.get("label") or m["id"]) for m in models.get(name, ()) if m.get("id")]
-    return [("", "Default")] + listed
+    return [("", default_label(name))] + listed
 
 
 def effort_choices(name, models, model_id):
@@ -82,3 +86,10 @@ def default_mode(default, custom, fallback="Fix errors"):
     """The selected mode, or its fallback when the saved one was deleted or renamed."""
     names = [m.name for m in writer.all_modes(custom)]
     return default if default in names else fallback
+
+
+def live_confirm_text(names, here) -> str:
+    """The Check as I type privacy confirm, shared by both Settings pages and the tour."""
+    return (f"When you pause typing, the line you are typing is sent to {', '.join(names)} in order, in every "
+            "app except password fields, terminals, and apps you turn it off for. Cursor and Codex send it "
+            f"to their service. Local keeps it on {here}.")

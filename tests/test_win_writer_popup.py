@@ -103,6 +103,34 @@ class WriterBar(unittest.TestCase):
         self.assertEqual(get_foreground(), foreground)
         self.assertTrue(field.selection_present())
 
+    def test_toolbar_suppresses_the_native_border_across_layout_and_visibility_changes(self):
+        from ctypes import wintypes
+
+        set_attribute = ctypes.windll.dwmapi.DwmSetWindowAttribute
+        borders = []
+
+        def record_border(hwnd, attribute, value, size):
+            result = set_attribute(hwnd, attribute, value, size)
+            if attribute == 34:  # DWMWA_BORDER_COLOR is set-only; DwmGetWindowAttribute rejects it.
+                borders.append((hwnd, ctypes.cast(value, ctypes.POINTER(wintypes.DWORD)).contents.value,
+                                size, result))
+            return result
+
+        callback = lambda *args: None
+        with patch.object(ctypes.windll.dwmapi, "DwmSetWindowAttribute", side_effect=record_border):
+            bar = win_popup.Popup(self.root, 1, on_play=callback, on_stop=callback, on_pause=callback,
+                                  on_resume=callback, on_lang=callback, on_speed=callback,
+                                  on_settings=callback, on_source=callback, sources=lambda: [], on_skip=callback)
+            self.addCleanup(bar.hide)
+            for state in ("show", "expand", "reshow"):
+                if state == "expand":
+                    bar.set_playing(True)
+                else:
+                    bar.hide()
+                    bar.show("Selected text", 140, 140)
+                self.root.update()
+                self.assertEqual(borders, [(win_popup._get_parent(bar.win.winfo_id()), 0xFFFFFFFE, 4, 0)])
+
     def test_playback_controls_stay_inside_the_screen_when_the_bar_expands(self):
         area = SimpleNamespace(left=0, top=0, right=600, bottom=800)
         with patch.object(win_popup, "work_area", return_value=area):

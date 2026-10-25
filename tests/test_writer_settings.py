@@ -63,6 +63,13 @@ class ModeTest(unittest.TestCase):
 
 
 class RoundTripTest(unittest.TestCase):
+    def test_microphone_name_survives_save_load_and_invalid_values_use_default(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "settings.json"
+            for value, expected in (("HyperX, MME", "HyperX, MME"), (None, ""), (2, ""), ([], "")):
+                path.write_text(json.dumps({"dictate_microphone": value}), encoding="utf-8")
+                self.assertEqual(settings.load(str(path))["dictate_microphone"], expected)
+
     def test_every_writer_key_survives_save_and_load(self):
         s = dict(settings.DEFAULTS)
         s["writer_sources"] = ws.toggle(ws.move(s["writer_sources"], "Local", -2), "Cursor", False)
@@ -92,6 +99,23 @@ class RoundTripTest(unittest.TestCase):
             self.assertEqual(loaded["dictate_mode"], "Clean dictation")
             self.assertEqual(loaded["default_mode"], "Email")
             self.assertFalse(loaded["dictate_polish"])
+
+    def test_check_as_you_type_is_on_and_its_app_list_is_cleaned(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "settings.json"
+            path.write_text("{}", encoding="utf-8")
+            loaded = settings.load(str(path))
+            self.assertIs(loaded["live_check"], True)
+            self.assertEqual(loaded["live_off_apps"], [])
+            path.write_text(json.dumps({"live_check": "yes", "live_off_apps": ["slack.exe", 3, "", "slack.exe", None]}),
+                            encoding="utf-8")
+            loaded = settings.load(str(path))
+            self.assertIs(loaded["live_check"], True)
+            self.assertEqual(loaded["live_off_apps"], ["slack.exe"])
+            path.write_text(json.dumps({"live_check": False, "live_off_apps": "slack.exe"}), encoding="utf-8")
+            loaded = settings.load(str(path))
+            self.assertIs(loaded["live_check"], False)
+            self.assertEqual(loaded["live_off_apps"], [])
 
 
 if __name__ == "__main__":

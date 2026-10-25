@@ -1,4 +1,4 @@
-"""Windows entry point: single instance, the installer's --startup command, logging, DPI."""
+"""Windows entry point: single instance, the installer's --startup and --local-only commands, logging, DPI."""
 import ctypes
 import logging
 import logging.handlers
@@ -9,7 +9,8 @@ import time
 from ctypes import wintypes
 
 from .. import settings
-from ..core import App, log
+from ..app_tour import App
+from ..core import log
 from .host import TkHost
 
 k32 = ctypes.windll.kernel32
@@ -33,6 +34,12 @@ def main():
                 settings.set_startup(sys.argv[2:3] == ["on"])
         except Exception:
             sys.exit(1)  # a windowed exe would show a dialog that blocks setup; the user can retry in Settings
+        return
+    if sys.argv[1:2] == ["--local-only"]:  # the installer's privacy option: only voices that run on this PC
+        try:
+            settings.local_only()
+        except Exception:
+            sys.exit(1)  # Settings → Voices can still turn the online sources off
         return
     mutex = k32.CreateMutexW(None, False, "harness-discussion-single-instance")
     if k32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS: ask the running copy to open Settings

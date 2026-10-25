@@ -1,8 +1,9 @@
 """The platform-free part of in-place editing: the context, guards, UTF-16 lengths, and the undo sequence.
 
 A platform module (`mac/edit.py`, `win/edit.py`) provides `capture(clipboard_fallback)`, `replace(text, ctx)`,
-`type_at_caret(text, ctx)`, and `select_back(n, ctx)`, each refusing when the target is no longer `ctx`'s, and
+`type_at_caret(text, ctx, *, cancelled)`, and `select_back(n, ctx)`, each refusing when the target is no longer `ctx`'s, and
 optionally `collapse()`.
+Dictation's optional `cancelled` predicate is checked after native validation, immediately before paste input.
 """
 from dataclasses import dataclass, field as _field
 
@@ -16,6 +17,24 @@ class Context:
     secure: bool
     field: object = _field(default=None, compare=False)  # the platform's focused-element handle, or None
     caret: object = _field(default=None, compare=False)  # (start, length) of the selection, or None
+    _digest: bytes | None = _field(default=None, compare=False, repr=False)
+
+
+@dataclass(frozen=True)
+class Field:
+    """The focused text field as Check as you type sees it, read without the clipboard or keys. `text` has "\\n" line
+    breaks on Windows and is the raw AXValue on macOS, `caret` is the selection's (start, end) in UTF-16 units of
+    `text`, and `digest` is the SHA-256 of `text` in UTF-16-LE. `app_name` is what the per-app off list stores; `label`
+    is shown to the user."""
+    app: int
+    window: int
+    app_name: str
+    label: str
+    text: str
+    caret: tuple
+    digest: bytes
+    rect: tuple = None  # (left, top, right, bottom) of the field on screen, where the badge goes; None when unknown
+    handle: object = _field(default=None, compare=False)  # the platform's focused-element identity
 
 
 def utf16_len(text: str, newline: str = "\n") -> int:
@@ -39,6 +58,8 @@ def undo(platform, ctx: Context, original: str, inserted: str, newline: str = "\
     """Select the inserted text, check it is still what we pasted in the same window, then put the original back.
     When `ctx.caret` is known, the selection must also be exactly where the paste landed.
     False when any check fails: the caller tells the user to use the app's own undo."""
+    if hasattr(platform, "undo"):
+        return platform.undo(ctx, original, inserted)
     n = utf16_len(inserted, newline)
     if not platform.select_back(n, ctx):
         return False

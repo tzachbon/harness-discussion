@@ -109,6 +109,13 @@ class TidyTest(unittest.TestCase):
 
 
 class ChainTest(unittest.TestCase):
+    def test_status_failure_does_not_block_the_next_source(self):
+        bad, good = Fake("Cursor"), Fake("Local", reply="fixed")
+        def fail():
+            raise RuntimeError("private status details")
+        bad.status = fail
+        self.assertEqual(writer.rewrite("hi", writer.BUILTIN_MODES[0], [bad, good]), ("fixed", "Local"))
+
     def test_order_and_disabled_sources(self):
         a, b, c = Fake("A"), Fake("B"), Fake("C")
         self.assertEqual([s.name for s in writer.chain([a, b, c], [["C", True], ["A", False], ["B", True]])], ["C", "B"])

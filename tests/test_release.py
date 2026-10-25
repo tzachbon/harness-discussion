@@ -149,7 +149,11 @@ class Publication(unittest.TestCase):
         elif args[:3] == ("gh", "release", "create"):
             self.assertIn("--verify-tag", args)
             self.assertNotIn("--target", args)
-            self.release = {"isDraft": True, "assets": [self.asset(self.upload_state, Path(args[4]))]}
+            self.assertIn("--generate-notes", args)
+            self.assertTrue(args[args.index("--notes") + 1].startswith(  # SignPath requires it on release pages
+                "Code signing policy: https://github.com/tzachbon/harness-discussion#code-signing-policy"))
+            self.release = {"isDraft": True, "body": args[args.index("--notes") + 1],
+                            "assets": [self.asset(self.upload_state, Path(args[4]))]}
         elif args[:3] == ("gh", "release", "upload"):
             self.assertNotIn("--clobber", args)
             path = Path(args[4])
@@ -158,6 +162,8 @@ class Publication(unittest.TestCase):
             output = "\n".join(self.published)
         elif args[:3] == ("gh", "release", "edit"):
             self.release["isDraft"] = False
+            if "--notes" in args:
+                self.release["body"] = args[args.index("--notes") + 1]
         else:
             self.fail(f"Unexpected external command: {args}")
         result = subprocess.CompletedProcess(args, status, stdout=output, stderr="")
@@ -170,6 +176,7 @@ class Publication(unittest.TestCase):
 
     def test_new_release_is_bound_to_tested_commit_and_published(self):
         self.publish()
+        self.assertEqual(sum("--notes" in call for call in self.calls), 1)  # the policy is not added twice
         self.assertEqual(self.tags["v0.2.0"], self.commit)
         self.assertFalse(self.release["isDraft"])
         self.assertTrue(any("--latest=true" in call for call in self.calls))
@@ -238,6 +245,7 @@ class Publication(unittest.TestCase):
                 self.publish()
                 self.assertFalse(self.release["isDraft"])
                 self.assertEqual(len(self.release["assets"]), 1)
+                self.assertTrue(self.release["body"].startswith("Code signing policy: "))  # added on resume
 
     def test_delayed_older_version_does_not_replace_latest(self):
         self.published = ["v0.3.0", "v0.1.0", "v9.0.0-rc.1", "legacy"]

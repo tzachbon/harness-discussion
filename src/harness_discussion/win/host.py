@@ -1,5 +1,6 @@
 """Windows host: Tk on the main thread, pystray in the tray, UI Automation for the selection."""
 import ctypes
+import os
 import threading
 from ctypes import wintypes
 import tkinter as tk
@@ -12,8 +13,9 @@ from ..cursor_tts import CursorEngine
 from ..engines import EdgeEngine
 from ..icons import icon_image
 from ..kokoro_tts import KokoroEngine
-from . import clipboard, selection, uia_thread
+from . import clipboard, edit, microphone, selection, uia_thread
 from .popup import Popup
+from .marks import Marks
 from .review import Review
 from .settings_ui import SettingsWindow
 from .toast import Toast
@@ -22,6 +24,8 @@ from .voice import SapiEngine
 
 
 class TkHost:
+    edit = edit
+
     def __init__(self):
         self.app = None  # set by core.App
         self.root = tk.Tk()
@@ -36,6 +40,7 @@ class TkHost:
         put = lambda *event: lambda: self.app.events.put(event)
         return pystray.Menu(
             pystray.MenuItem("Settings", put("settings"), default=True),
+            pystray.MenuItem("Take the Tour", put("tour_replay")),
             pystray.MenuItem(lambda _: f"Last voice source: {self.app.chain.last or '-'}", None, enabled=False),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quit", put("quit")))
@@ -49,7 +54,7 @@ class TkHost:
         return Popup(self.root, speed, **callbacks)
 
     def esc_watcher(self, on_escape):
-        watcher = Escape(lambda: self.app.events.put(("call", on_escape)),
+        watcher = Escape(on_escape,
                          suppress=lambda: bool(self.app.rewriting), autostart=False)
         self._writer_esc.append(watcher)
         self._cancel_writer = on_escape
@@ -61,6 +66,9 @@ class TkHost:
     def make_review(self):
         return Review(self.root)
 
+    def make_marks(self):
+        return Marks(self.root)
+
     def pick_mode(self, names, current, pick):
         if self._mode_menu:
             self._mode_menu.destroy()
@@ -71,14 +79,14 @@ class TkHost:
                                  command=lambda name=name: pick(name))
         menu.post(*self.pointer())
 
-    def copy_text(self, text):
+    def copy_text(self, text, *, cancelled=lambda: False):
         try:
             if not isinstance(text, str) or "\0" in text:
                 raise ValueError("Invalid clipboard text")
-            clipboard.write_text(text)
-            return True
+            return clipboard.write_text(text, cancelled=cancelled)
         except (OSError, ValueError):
-            self.notify("Could not copy the result.")
+            if not cancelled():
+                self.notify("Could not copy the result.")
             return False
 
     def open_settings(self, welcome=False):
@@ -90,7 +98,34 @@ class TkHost:
                               on_fix=a.fix_source, summarizer=a,
                               writer_catalogs=lambda: a.writer_models, writer_statuses=lambda: a.writer_statuses,
                               on_writer_fix=a.fix_writer,
+                              stt_statuses=lambda: a.stt_statuses,
+                              dictate_status=self.mic_status, on_mic_settings=self.open_mic_settings,
                               on_record=self._record_shortcuts)
+
+    def make_tour(self, app):
+        from .tour import TourWindow
+        return TourWindow(self.root, app, on_record=self._record_shortcuts)  # pauses the shortcuts while Change… records
+
+    def mic_status(self):
+        return microphone.status()
+
+    def dictation_target(self):
+        """Cheap foreground identity before the worker performs editor capture."""
+        try:
+            identity = edit._foreground()
+            return identity if identity and all(identity) and identity[0] != os.getpid() else None
+        except Exception:
+            return None
+
+    def mic_permission(self, then):
+        # Desktop apps use Windows' shared privacy switch, without an app permission prompt.
+        then(self.mic_status() == "Available")
+
+    def open_mic_settings(self):
+        try:
+            os.startfile("ms-settings:privacy-microphone")
+        except OSError:
+            self.notify("Could not open Windows microphone settings.")
 
     def _record_shortcuts(self, recording):
         if recording and self._cancel_writer:
@@ -115,12 +150,15 @@ class TkHost:
             self.hotkey.stop()
         self.hotkey = HotKey(spec, on_hotkey) if spec else None
 
-    def set_shortcut(self, name, spec, on_hotkey, on_release=None):
+    def set_shortcut(self, name, spec, on_hotkey, on_release=None, *, on_activity=None, on_cancel=None):
         old = self.shortcuts.pop(name, None)
         if old:
             old.stop()
         if spec:
-            self.shortcuts[name] = HotKey(spec, on_hotkey, on_release)
+            options = {"on_activity": on_activity} if on_activity is not None else {}
+            if on_cancel is not None:
+                options["on_cancel"] = on_cancel
+            self.shortcuts[name] = HotKey(spec, on_hotkey, on_release, **options)
 
     def pointer(self):
         point = wintypes.POINT()

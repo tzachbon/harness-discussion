@@ -12,19 +12,19 @@ from harness_discussion.edit_logic import Context
 from harness_discussion.mac import edit
 
 FIELD, OTHER = NSString.stringWithString_("field"), NSString.stringWithString_("other")
-CTX = Context("", 1, 2, True, False, FIELD, (5, 0))
+CTX = Context("", 1, 2, True, False, FIELD, (5, 0), b"document")
 
 
 class GuardTest(unittest.TestCase):
     def typed(self, now):
         pasted = []
         with mock.patch.object(edit, "capture", return_value=now), \
-                mock.patch.object(edit, "_paste", side_effect=lambda t: pasted.append(t) or True):
+                mock.patch.object(edit, "_paste", side_effect=lambda t, ctx=None, **kw: pasted.append(t) or True):
             ok = edit.type_at_caret("hello", CTX)
         return ok, pasted
 
     def test_dictation_types_only_at_the_captured_caret_in_the_captured_field(self):
-        self.assertEqual(self.typed(Context("", 1, 2, True, False, FIELD, (5, 0))), (True, ["hello"]))
+        self.assertEqual(self.typed(Context("", 1, 2, True, False, FIELD, (5, 0), b"document")), (True, ["hello"]))
         self.assertEqual(self.typed(Context("", 1, 2, True, False, OTHER, (5, 0))), (False, []))
         self.assertEqual(self.typed(Context("x", 1, 2, True, False, FIELD, (0, 3))), (False, []))  # moved selection
         self.assertEqual(self.typed(Context("", 1, 2, True, True, FIELD, (5, 0))), (False, []))  # now secure

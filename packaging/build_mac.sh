@@ -22,6 +22,7 @@ uv run pyinstaller --noconfirm --clean --windowed --name "Harness Discussion" \
     --osx-bundle-identifier com.tzachbon.harnessdiscussion --target-arch arm64 --icon "$PWD/build/icon.icns" \
     --hidden-import harness_discussion.mac.main --collect-submodules harness_discussion.mac --copy-metadata harness-discussion \
     --collect-all kokoro_onnx --collect-all espeakng_loader \
+    --collect-all faster_whisper --collect-all ctranslate2 --collect-all tokenizers \
     --distpath build/dist --workpath build/work --specpath build packaging/launcher.py
 app="build/dist/Harness Discussion.app"
 plist="$app/Contents/Info.plist"

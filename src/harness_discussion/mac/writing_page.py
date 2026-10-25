@@ -1,7 +1,7 @@
 """Settings → Writing and Dictation on macOS: sources with models, the default mode, modes, and shortcuts."""
 import AppKit
 
-from .. import settings, writer
+from .. import mic, settings, writer
 from .. import writer_settings as ws
 from . import ui
 
@@ -28,7 +28,13 @@ class WritingPage:
     def _writing_page(self):
         from .settings_ui import WIDTH, _card, _divider, _note, _spacer  # settings_ui imports this module
         on, _ = ui.option("Rewrite selected text", "Adds ✎ to the bar over text you can edit, and the shortcut.",
-                          self.cfg["writer"], lambda v: self._set("writer", v), WIDTH)
+                          self.cfg["writer"], self._writer_changed, WIDTH)
+        live, self.live_switch = ui.option(
+            "Check as I type", "When you pause, underlines the default mode's changes to the line you are typing. "
+            "The rewrite shortcut with nothing selected applies them all. Never in password fields.",
+            self.cfg.get("live_check", settings.DEFAULTS["live_check"]), self._live_changed, WIDTH)
+        self.live_switch.setEnabled_(self.cfg["writer"])
+        self.live_off_list = ui.stack([], spacing=6)
         self.default_popup = _popup(self._default_picked)
         default = ui.stack([ui.label("Default mode", 13), _spacer(), self.default_popup], vertical=False)
         default.widthAnchor().constraintEqualToConstant_(WIDTH).setActive_(True)
@@ -54,32 +60,76 @@ class WritingPage:
         for row in (modes[0], modes[3]):
             row.widthAnchor().constraintEqualToConstant_(WIDTH).setActive_(True)
         self._editing, self._loaded = self.cfg["default_mode"], None
-        return [_card([on, _divider(), default, _divider(), self._shortcut_row("rewrite_hotkey")]),
+        self._show_live_off()
+        return [_card([on, _divider(), live, self.live_off_list, _divider(), default, _divider(),
+                       self._shortcut_row("rewrite_hotkey")]),
                 ui.label("Sources", 13, bold=True), _card([self.writer_list]),
                 _note("Sources rewrite top to bottom. If one fails, the next one tries. Cursor and Codex send "
                       "the selected text to their service. Local keeps it on this Mac."),
                 ui.label("Modes", 13, bold=True), _card(modes)]
+
+    def _writer_changed(self, on):
+        self._set("writer", on)
+        self.live_switch.setEnabled_(on)
+
+    def _live_changed(self, on):
+        if on:
+            names = [n for n, enabled in self.cfg["writer_sources"] if enabled] or ["no source"]
+            if not self.app.host.confirm(
+                    "Check as I type", ws.live_confirm_text(names, "this Mac"), ok="Turn On"):
+                self.live_switch.setState_(0)
+                return
+        self._set("live_check", on)
+
+    def _show_live_off(self):
+        """One row per app the user turned checking off for, each with Turn On."""
+        for view in list(self.live_off_list.arrangedSubviews()):
+            self.live_off_list.removeArrangedSubview_(view)
+            view.removeFromSuperview()
+        for name in self.cfg.get("live_off_apps", []):
+            self.live_off_list.addArrangedSubview_(ui.stack(
+                [ui.label(f"Off in {name}", 12, secondary=True),
+                 ui.button("Turn On", lambda name=name: self._live_turn_on(name))], vertical=False))
+
+    def _live_turn_on(self, name):
+        self._set("live_off_apps", [n for n in self.cfg.get("live_off_apps", []) if n != name])
+        self._show_live_off()
+        if hasattr(self, "win"):
+            self._fit()
 
     def _dictation_page(self):
         from .settings_ui import WIDTH, _card, _divider, _note, _spacer
         self.stt_rows = {name: self._writer_row(name, True) for name in settings.STT_SOURCES}
         self.stt_list = ui.stack([], spacing=10)
         self.mic_status = ui.label("", 11, secondary=True)
-        mic = ui.stack([ui.stack([ui.label("Microphone", 13), self.mic_status], spacing=1), _spacer(),
+        permission = ui.stack([ui.stack([ui.label("Microphone", 13), self.mic_status], spacing=1), _spacer(),
                         ui.button("Open Settings", self.app.host.open_mic_settings)], vertical=False)
-        mic.widthAnchor().constraintEqualToConstant_(WIDTH).setActive_(True)
+        permission.widthAnchor().constraintEqualToConstant_(WIDTH).setActive_(True)
+        self._mic_devices = ["", *mic.input_devices()]
+        chosen = self.cfg["dictate_microphone"]
+        if chosen not in self._mic_devices:
+            self._mic_devices.append(chosen)
+        self.microphone = _popup(lambda i: self._set("dictate_microphone", self._mic_devices[i]))
+        self.microphone.setAccessibilityLabel_("Input device")
+        _fill(self.microphone, ["System default", *self._mic_devices[1:]], self._mic_devices.index(chosen))
+        self.microphone.widthAnchor().constraintEqualToConstant_(WIDTH - 90).setActive_(True)
+        input_row = ui.stack([ui.label("Input device", 13), _spacer(), self.microphone], vertical=False)
+        input_row.widthAnchor().constraintEqualToConstant_(WIDTH).setActive_(True)
         polish, self.polish_switch = ui.option("Tidy dictation after transcribing", "Off types exactly what was heard, sooner.",
                               self.cfg["dictate_polish"], self._polish_changed, WIDTH)
+        local_tidy, _ = ui.option("Prefer local tidy for faster results",
+                "Uses Writing → Local when downloaded and enabled. Otherwise uses your writing sources.",
+                self.cfg["dictate_local_tidy"], lambda on: self._set("dictate_local_tidy", on), WIDTH)
         self.dictate_popup = _popup(lambda i: self._set("dictate_mode", self._mode_list()[i].name))
         self.dictate_popup.setAccessibilityLabel_("Dictation mode")
         mode = ui.stack([ui.label("Dictation mode", 13), _spacer(), self.dictate_popup], vertical=False)
         mode.widthAnchor().constraintEqualToConstant_(WIDTH).setActive_(True)
-        return [_card([self.stt_list]), _card([polish, _divider(), mode]),
+        return [_card([self.stt_list]), _card([polish, _divider(), local_tidy, _divider(), mode]),
                 _note("Create or edit a custom prompt in Writing → Modes, then select it here."),
-                _card([self._shortcut_row("dictate_hotkey"), _divider(), mic]),
+                _card([self._shortcut_row("dictate_hotkey"), _divider(), input_row, _divider(), permission]),
                 _note("Hold the shortcut and speak. Release to transcribe and type at the cursor, tidied with the "
-                      "dictation mode when that is on. A short tap does nothing. The audio goes to the first ready "
-                      "source and is not saved.")]
+                      "dictation mode when that is on. A short tap does nothing. Local keeps audio on this Mac. "
+                      "Enabled Cursor or Codex sources receive audio if earlier sources fail. Audio is not saved.")]
 
     def _polish_changed(self, on):
         self._set("dictate_polish", on)
@@ -135,6 +185,8 @@ class WritingPage:
                 down.setEnabled_(i < len(order) - 1)
                 stack.addArrangedSubview_(row)
         self.mic_status.setStringValue_(MIC_TEXT[self.app.host.mic_status()])
+        self.live_switch.setState_(1 if self.cfg.get("live_check") else 0)
+        self._show_live_off()
         self._refresh_modes()
         if hasattr(self, "win"):
             self._fit()

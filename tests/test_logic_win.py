@@ -56,8 +56,22 @@ class Trigger(unittest.TestCase):
         t._click(100, 0, Button.left, False)  # drag
         click(500, 500)  # single click: nothing
         click(500, 500)  # second click: double-click
-        t._click(0, 0, Button.right, True)  # other buttons ignored
+        t._click(0, 0, Button.right, True)  # other buttons do not select text
         self.assertEqual(hits, [(100, 0), (500, 500)])
+
+    def test_every_mouse_button_down_notifies_but_only_left_drives_selection(self):
+        selected, pressed = mock.Mock(), mock.Mock()
+        with mock.patch("harness_discussion.win.trigger.mouse.Listener"):
+            watcher = SelectionTrigger(selected, pressed)
+        watcher._clicks = mock.Mock()
+        for button in (Button.left, Button.right, Button.middle):
+            watcher._click(10, 20, button, True)
+        self.assertEqual(pressed.call_count, 3)
+        watcher._clicks.down.assert_called_once_with(10, 20)
+        for button in (Button.right, Button.middle):
+            watcher._click(10, 20, button, False)
+        watcher._clicks.up.assert_not_called()
+        selected.assert_not_called()
 
 
 class SignInTask(unittest.TestCase):

@@ -14,6 +14,7 @@ k32.GlobalSize.restype, k32.GlobalAlloc.argtypes = c_size_t, [c_uint, c_size_t]
 u32.SetClipboardData.restype = c_void_p
 k32.GlobalFree.argtypes, k32.GlobalFree.restype = [c_void_p], c_void_p
 u32.OpenClipboard.argtypes = [wintypes.HWND]
+u32.GetClipboardOwner.restype = wintypes.HWND
 u32.CreateWindowExW.argtypes = [wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD,
                               ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
                               wintypes.HWND, wintypes.HMENU, wintypes.HINSTANCE, c_void_p]
@@ -75,6 +76,11 @@ def formats() -> set[int]:
 
 def sequence() -> int:
     return u32.GetClipboardSequenceNumber()
+
+
+def _owned_sequence(hwnd):
+    current = sequence()
+    return current if u32.GetClipboardOwner() == hwnd else None
 
 
 def snapshot() -> list[tuple[int, bytes]]:
@@ -171,17 +177,17 @@ class PreparedRestore:
         self.handles = []
 
     def apply(self, expected_sequence):
-        with _Open():
+        with _Open() as opened:
             if sequence() != expected_sequence:
                 return None
             _install_locked(self.handles)
             _materialize_text_locked()
-            return sequence()
+        return _owned_sequence(opened.hwnd)
 
 
 def restore(saved: list[tuple[int, bytes]], expected_sequence=None):
     """Replace only if still ours. Sequence is checked while locked, before clearing anything."""
-    with _Open():
+    with _Open() as opened:
         if expected_sequence is not None and sequence() != expected_sequence:
             return None
         current = _snapshot_locked()
@@ -194,22 +200,28 @@ def restore(saved: list[tuple[int, bytes]], expected_sequence=None):
             except OSError:
                 _install_locked(backup)
                 raise
-            return sequence()
         finally:
             _free(incoming)
             _free(backup)
+    # CloseClipboard synthesizes text formats and advances the sequence. Do not adopt another owner's copy.
+    return _owned_sequence(opened.hwnd)
 
 
-def write_text(text: str) -> None:
+def write_text(text: str, *, cancelled=lambda: False) -> bool:
     """Explicit Copy replaces old contents, including formats we cannot snapshot."""
     if not isinstance(text, str) or "\0" in text:
         raise ValueError("Invalid clipboard text")
+    if cancelled():
+        return False
     incoming = _allocate([(13, (text + "\0").encode("utf-16-le"))])
     try:
         with _Open():
+            if cancelled():
+                return False
             _install_locked(incoming)
     finally:
         _free(incoming)
+    return True
 
 
 def html() -> str:

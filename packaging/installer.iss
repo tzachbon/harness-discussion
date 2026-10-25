@@ -32,10 +32,12 @@ WizardStyle=modern
 Compression=lzma2/max
 SolidCompression=yes
 CloseApplications=no
+InfoBeforeFile=privacy.txt
 
 [Tasks]
 Name: startup; Description: "Start {#AppName} when I sign in to Windows"; Check: IsFreshInstall
 Name: desktopicon; Description: "Create a desktop shortcut"; Flags: unchecked
+Name: localonly; Description: "Use only voices that run on this PC (turns off Cursor, Codex, Edge and the speech-to-text server)"; Flags: unchecked
 
 [Files]
 Source: "..\build\dist\HarnessDiscussion\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -71,7 +73,7 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 Filename: "{app}\{#AppExe}"; Parameters: "--startup on"; Tasks: startup; Flags: runhidden waituntilterminated
 ; An existing sign-in task is re-pointed here, even if the app isn't launched after setup
 Filename: "{app}\{#AppExe}"; Parameters: "--startup refresh"; Flags: runhidden waituntilterminated
-Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait postinstall
+Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait postinstall; Check: CanLaunch
 
 [UninstallRun]
 Filename: "{app}\{#AppExe}"; Parameters: "--startup off"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveStartupTask"
@@ -125,10 +127,39 @@ begin
   Result := '';
 end;
 
+// The privacy choice must be saved before the app starts. A failure shows an error, skips the launch,
+// and makes setup exit with code 1. Raising an exception here would not stop the launch.
+var LocalOnlyFailed: Boolean;
+
+function CanLaunch: Boolean;
+begin
+  Result := not LocalOnlyFailed;
+end;
+
+function GetCustomSetupExitCode: Integer;
+begin
+  Result := Ord(LocalOnlyFailed);
+end;
+
+function ApplyLocalOnly(const Exe: String): Boolean;
+var
+  Code: Integer;
+begin
+  Result := Exec(Exe, '--local-only', '', SW_HIDE, ewWaitUntilTerminated, Code) and (Code = 0);
+end;
+// end ApplyLocalOnly
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep <> ssPostInstall then
     Exit;
+  if WizardIsTaskSelected('localonly') and not ApplyLocalOnly(ExpandConstant('{app}\{#AppExe}')) then
+  begin
+    LocalOnlyFailed := True;
+    SuppressibleMsgBox('Could not turn off the online voices, so {#AppName} was not started. Check that '
+      + ExpandConstant('{userappdata}') + '\harness-discussion\settings.json can be written, then run setup again.',
+      mbError, MB_OK, IDOK);
+  end;
   // Keep shared folders and any folder containing the new install.
   if (OldDir <> '') and (FileExists(AddBackslash(OldDir) + '{#OldExe}') or FileExists(AddBackslash(OldDir) + '{#OldExe2}'))
      and (CompareText(RemoveBackslash(OldDir), RemoveBackslash(ExpandConstant('{app}'))) <> 0)

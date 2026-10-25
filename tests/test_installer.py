@@ -153,5 +153,82 @@ procedure CurStepChanged{isolated_cleanup}
                     self.assertFalse(uninstaller.with_suffix(".dat").exists())
 
 
+    def test_local_only_reports_whether_the_privacy_choice_was_saved(self):
+        source = (ROOT / "packaging/installer.iss").read_text(encoding="utf-8")
+        apply = source.split("function ApplyLocalOnly", 1)[1].split("// end ApplyLocalOnly", 1)[0]
+        with tempfile.TemporaryDirectory() as temporary:
+            scratch = Path(temporary).resolve()
+            results = scratch / "results.txt"
+            for name, code in (("saved", 0), ("failed", 1)):  # the app exits 1 when it cannot save
+                (scratch / f"{name}.cmd").write_text(f'@if "%1"=="--local-only" exit /b {code}\n@exit /b 9\n')
+            paths = {name: str(scratch / name).replace("'", "''") for name in ("saved.cmd", "failed.cmd", "missing.exe")}
+            results_literal = str(results).replace("'", "''")
+            harness = scratch / "check.iss"
+            harness.write_text(f"""[Setup]
+AppName=Harness Discussion local-only check
+AppVersion=1.0
+DefaultDirName={scratch}
+PrivilegesRequired=lowest
+Uninstallable=no
+OutputDir={scratch}
+OutputBaseFilename=check
+
+[Code]
+function ApplyLocalOnly{apply}
+function InitializeSetup: Boolean;
+begin
+  SaveStringToFile('{results_literal}', IntToStr(Ord(ApplyLocalOnly('{paths["saved.cmd"]}'))) + ' '
+    + IntToStr(Ord(ApplyLocalOnly('{paths["failed.cmd"]}'))) + ' '
+    + IntToStr(Ord(ApplyLocalOnly('{paths["missing.exe"]}'))), False);
+  Result := False;
+end;
+""", encoding="utf-8")
+            compiled = subprocess.run([str(ISCC), "/Q", str(harness)], capture_output=True, text=True, timeout=60)
+            self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
+            subprocess.run([str(scratch / "check.exe"), "/VERYSILENT", "/SUPPRESSMSGBOXES"], timeout=60)
+            self.assertEqual(results.read_text(), "1 0 0")  # saved, a failed save, an app that cannot start
+
+    def test_a_failed_privacy_choice_skips_the_launch_and_fails_setup(self):
+        source = (ROOT / "packaging/installer.iss").read_text(encoding="utf-8")
+        definitions = source.split("[Setup]", 1)[0]
+        tasks = next(line for line in source.splitlines() if line.startswith("Name: localonly;"))
+        launch = next(line for line in source.splitlines() if 'Description: "Launch {#AppName}"' in line)
+        gate = source.split("var LocalOnlyFailed", 1)[1].split("procedure CurStepChanged", 1)[0]
+        post = source.split("procedure CurStepChanged(CurStep: TSetupStep);", 1)[1].split("  // Keep shared folders", 1)[0]
+        for code, launched in ((1, False), (0, True)):
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as temporary:
+                scratch = Path(temporary).resolve()
+                marker = scratch / "launched.txt"
+                (scratch / "app.cmd").write_text(
+                    f'@if "%1"=="--local-only" exit /b {code}\n@echo launched> "{marker}"\n')
+                harness = scratch / "check.iss"
+                harness.write_text(definitions.replace('"HarnessDiscussion.exe"', '"HarnessDiscussion.cmd"') + f"""[Setup]
+AppName=Harness Discussion local-only check
+AppVersion=1.0
+DefaultDirName={scratch / "app"}
+PrivilegesRequired=lowest
+Uninstallable=no
+OutputDir={scratch}
+OutputBaseFilename=check
+
+[Tasks]
+{tasks}
+[Files]
+Source: "{scratch / "app.cmd"}"; DestDir: "{{app}}"; DestName: "{{#AppExe}}"
+
+[Run]
+{launch.replace("nowait postinstall", "postinstall runhidden waituntilterminated")}
+
+[Code]
+var LocalOnlyFailed{gate}
+procedure CurStepChanged(CurStep: TSetupStep);{post}end;
+""", encoding="utf-8")
+                compiled = subprocess.run([str(ISCC), "/Q", str(harness)], capture_output=True, text=True, timeout=60)
+                self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
+                installed = subprocess.run([str(scratch / "check.exe"), "/VERYSILENT", "/SUPPRESSMSGBOXES",
+                                            "/TASKS=localonly", "/NORESTART"], timeout=60)
+                self.assertEqual(installed.returncode, 0 if launched else 1)
+                self.assertEqual(marker.exists(), launched)
+
 if __name__ == "__main__":
     unittest.main()

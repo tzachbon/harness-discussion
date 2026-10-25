@@ -190,10 +190,10 @@ def rewrite(text, mode: Mode, sources, models=None, cancelled=lambda: False):
     for source in sources:
         if cancelled():
             raise Cancelled("The rewrite was cancelled.")
-        if source.status() != "ready":
-            continue
         choice = models.get(source.name) or {}
         try:
+            if source.status() != "ready":
+                continue
             system = system_prompt(mode, getattr(source, "short_prompt", False))
             out = source.rewrite(system, wrap(text), choice.get("model"), choice.get("effort"), cancelled)
         except Cancelled:

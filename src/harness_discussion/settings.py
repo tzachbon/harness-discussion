@@ -6,7 +6,7 @@ import shutil
 import sys
 import tempfile
 
-from . import hotkeys
+from . import hotkeys, tour
 
 if sys.platform == "win32":
     import winreg
@@ -32,10 +32,12 @@ DEFAULTS = {"sources": [[n, True] for n in DEFAULT_SOURCES], "voices": {}, "spee
             # Writer: rewrite in place. Sources follow the voice order; models and modes are chosen in Settings.
             "writer": False, "writer_sources": [["Cursor", True], ["Codex", True], ["Local", True]],
             "writer_models": {}, "modes": [], "default_mode": "Fix errors",
+            # Check as you type: on with the Writer; apps listed by name are never checked.
+            "live_check": True, "live_off_apps": [], "tour_done": False, "tour_steps": {},
             "rewrite_hotkey": hotkeys.REWRITE, "dictate_hotkey": hotkeys.DICTATE,
-            "stt_sources": [["Cursor", True], ["Codex", True]], "dictate_polish": True,
-            "dictate_mode": "Clean dictation"}
-WRITER_SOURCES, STT_SOURCES = ("Cursor", "Codex", "Local"), ("Cursor", "Codex")
+            "stt_sources": [["Local", True], ["Cursor", True], ["Codex", True]], "dictate_polish": True,
+            "dictate_mode": "Clean dictation", "dictate_local_tidy": True, "dictate_microphone": ""}
+WRITER_SOURCES, STT_SOURCES = ("Cursor", "Codex", "Local"), ("Local", "Cursor", "Codex")
 SPEEDS = (0.5, 2.0)
 SPEED_PRESETS = (0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)  # the popup's speed menu
 TASK = "Harness Discussion"  # the installer creates and removes it with `--startup on|off`
@@ -95,7 +97,8 @@ def load(path=PATH) -> dict:
         ok = False
     s["caption_background_opacity"] = (min(max(float(opacity), 0.0), 1.0)
                                         if ok else DEFAULTS["caption_background_opacity"])
-    for key in ("clipboard_fallback", "stt_server", "prefetch", "caption_background", "auto_update", "dictate_polish"):
+    for key in ("clipboard_fallback", "stt_server", "prefetch", "caption_background", "auto_update", "dictate_polish",
+                "dictate_local_tidy"):
         if not isinstance(s[key], bool):
             s[key] = DEFAULTS[key]
     if not isinstance(s["ax_granted_build"], (str, type(None))):
@@ -103,18 +106,28 @@ def load(path=PATH) -> dict:
     for key in ("hotkey", "rewrite_hotkey", "dictate_hotkey"):
         if s[key] != "" and not hotkeys.parse(s[key]):
             s[key] = DEFAULTS[key]
-    if not isinstance(s["writer"], bool):
-        s["writer"] = DEFAULTS["writer"]
+    for key in ("writer", "live_check", "tour_done"):
+        if not isinstance(s[key], bool):
+            s[key] = DEFAULTS[key]
+    s["tour_steps"] = tour.clean(s["tour_steps"])
     if isinstance(saved, dict) and "writer_sources" not in saved:  # first run of the Writer: follow the voice order
         voice_order = [n for n, _ in s["sources"] if n in WRITER_SOURCES]
         s["writer_sources"] = [[n, True] for n in voice_order + [n for n in WRITER_SOURCES if n not in voice_order]]
     s["writer_sources"] = _ordered(s["writer_sources"], WRITER_SOURCES)
-    s["stt_sources"] = _ordered(s["stt_sources"], STT_SOURCES)
+    stt_items = s["stt_sources"] if isinstance(s["stt_sources"], list) else []
+    stt_order = _ordered(stt_items, STT_SOURCES)
+    if ["Local", True] not in stt_items and ["Local", False] not in stt_items:
+        stt_order = [["Local", True]] + [item for item in stt_order if item[0] != "Local"]
+    s["stt_sources"] = stt_order
+    if not isinstance(s["dictate_microphone"], str):
+        s["dictate_microphone"] = ""
     models = s["writer_models"] if isinstance(s["writer_models"], dict) else {}
     s["writer_models"] = {name: {k: v for k, v in choice.items() if k in ("model", "effort") and isinstance(v, str)}
                           for name, choice in models.items() if name in WRITER_SOURCES and isinstance(choice, dict)}
     if not isinstance(s["modes"], list):
         s["modes"] = []
+    off = s["live_off_apps"] if isinstance(s["live_off_apps"], list) else []
+    s["live_off_apps"] = [a for a in dict.fromkeys(off) if isinstance(a, str) and a]
     for key in ("default_mode", "dictate_mode"):
         if not isinstance(s[key], str) or not s[key].strip():
             s[key] = DEFAULTS[key]
@@ -172,6 +185,27 @@ def save(s: dict, path=PATH) -> None:
         json.dump(s, f, indent=2)
     os.replace(tmp, path)  # never leaves a half-written file behind
 
+
+def first_run(path=PATH) -> bool:
+    """True when only the installer has written the settings, so the app has not welcomed the user yet."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f).get("first_run") is True
+    except (OSError, ValueError, AttributeError):
+        return False
+
+LOCAL_SOURCES = ("Kokoro", "Windows", "macOS")
+
+def local_only(path=PATH) -> None:
+    """The installer's privacy choice: only sources that run on this computer, other settings kept.
+
+    The local voices are turned on, since with every source off the chain falls back to all of them."""
+    s = load(path)
+    s["sources"] = [[n, n in LOCAL_SOURCES] for n, _ in s["sources"]]
+    s["writer_sources"] = [[n, n == "Local"] for n, _ in s["writer_sources"]]
+    s["stt_sources"] = [[n, False] for n, _ in s["stt_sources"]]
+    s["prefetch"] = s["stt_server"] = False
+    save({**s, "first_run": not os.path.exists(path) or first_run(path)}, path)  # the app still welcomes a new install
 
 WELCOME = "Pick the voices Harness Discussion uses."  # Settings header on first run, above Sources
 STATUS_TEXT = {"ready": "Ready", "missing": "Not installed", "signed_out": "Not signed in",

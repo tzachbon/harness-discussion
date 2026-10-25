@@ -11,6 +11,10 @@ class _Button(AppKit.NSButton):
     def acceptsFirstMouse_(self, event):
         return True  # one click works while another app stays active
 
+    def alignmentRectInsets(self):
+        # AppKit pads image buttons 2 points above and below their constrained size, which a layer background shows
+        return (0, 0, 0, 0) if not self.isBordered() else objc.super(_Button, self).alignmentRectInsets()
+
 
 class _Hover(AppKit.NSView):
     """Content view that reports mouse enter and exit, so the idle timer pauses while hovered."""
@@ -37,28 +41,30 @@ class _Hover(AppKit.NSView):
         self.owner.schedule_hide()
 
 
-def _icon_button(name, description, fn, tint=None):
+def _icon_button(name, description, fn, tint=None, size=26, fill=None):
+    """A system symbol button, a circle of `fill` when one is given."""
     b = _Button.alloc().init()
     b.setBezelStyle_(AppKit.NSBezelStyleRegularSquare)
     b.setBordered_(False)
     b.setImage_(ui.symbol(name, description))
+    b.setImagePosition_(AppKit.NSImageOnly)
     b.setImageScaling_(AppKit.NSImageScaleProportionallyDown)
     b.setContentTintColor_(tint or AppKit.NSColor.colorWithWhite_alpha_(1, 0.6))
     b.setToolTip_(description)
-    b.widthAnchor().constraintEqualToConstant_(26).setActive_(True)
-    b.heightAnchor().constraintEqualToConstant_(26).setActive_(True)
+    b.setAccessibilityLabel_(description)
+    b.widthAnchor().constraintEqualToConstant_(size).setActive_(True)
+    b.heightAnchor().constraintEqualToConstant_(size).setActive_(True)
+    if fill:
+        b.setWantsLayer_(True)
+        b.layer().setCornerRadius_(size / 2)
+        b.layer().setBackgroundColor_(ui.cg(fill))
     return ui.bind(b, lambda s: fn(s))
 
 
 def _play_button(fn):
     """Play/Pause: a filled circle in the system accent color, the one control that stands out."""
-    b = _icon_button("play.fill", "Play", lambda _s: fn(), tint=AppKit.NSColor.whiteColor())
-    for c in b.constraints():
-        c.setConstant_(30)
-    b.setWantsLayer_(True)
-    b.layer().setCornerRadius_(15)
-    b.layer().setBackgroundColor_(ui.cg(AppKit.NSColor.controlAccentColor()))
-    return b
+    return _icon_button("play.fill", "Play", lambda _s: fn(), tint=AppKit.NSColor.whiteColor(), size=30,
+                        fill=AppKit.NSColor.controlAccentColor())
 
 
 def _text_button(fn, title, titles, icon=lambda _t: None):

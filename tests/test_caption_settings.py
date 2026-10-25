@@ -89,11 +89,12 @@ class CaptionSettingsUi(unittest.TestCase):
     def test_the_sidebar_shows_one_page_and_marks_voices_while_a_source_needs_a_sign_in(self):
         self.make_window(dict(settings.DEFAULTS), lambda *args: None, statuses=lambda: {"Cursor": "signed_out"})
         self.assertEqual([bool(p.winfo_manager()) for p in self.window.pages],
-                         [True, False, False, False, False, False, False])
+                         [i == 0 for i in range(len(settings_ui.PAGES))])
         self.assertEqual(str(self.window.nav[0]["image"]), str(self.window._tiles["Voices"][1]))
-        self.window.nav[4].invoke()
+        speech_page = settings_ui.PAGES.index("Speech to Text")
+        self.window.nav[speech_page].invoke()
         self.assertEqual([bool(p.winfo_manager()) for p in self.window.pages],
-                         [False, False, False, False, True, False, False])
+                         [i == speech_page for i in range(len(settings_ui.PAGES))])
         self.assertEqual(self.window.title["text"], "Speech to Text")
         self.window.statuses = lambda: {"Cursor": "ready"}
         self.window.refresh_sources()
@@ -131,9 +132,10 @@ class CaptionSettingsUi(unittest.TestCase):
         self.assertLess(self.window._scroll_canvas.winfo_height(), self.window.content.winfo_reqheight())
         self.assertTrue(self.window.close_button.winfo_viewable())
 
-        self.window.show_page(4)  # the tallest content sits at the end of Speech to Text
+        self.window.show_page(settings_ui.PAGES.index("Speech to Text"))
         self.window._scroll_canvas.yview_moveto(1)
         self.root.update_idletasks()
+        self.assertTrue(self.window.stt_status.winfo_viewable())
         content_bottom = self.window.stt_status.winfo_rooty() + self.window.stt_status.winfo_height()
         viewport_bottom = self.window._scroll_canvas.winfo_rooty() + self.window._scroll_canvas.winfo_height()
         self.assertLessEqual(content_bottom, viewport_bottom)

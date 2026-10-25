@@ -1,9 +1,11 @@
 """macOS host: AppKit on the main thread, a menu bar item, Accessibility for the selection."""
+import os
+
 import AppKit
 import objc
 from Foundation import NSObject
 
-from .. import icons, settings, updates
+from .. import hotkeys, icons, settings, updates
 from ..codex_rt import CodexEngine
 from ..cursor_tts import CursorEngine
 from ..kokoro_tts import KokoroEngine
@@ -15,7 +17,6 @@ from .settings_ui import SettingsWindow
 from .toast import Toast
 from .trigger import HotKey, SelectionTrigger, top_left
 from .voice import MacVoiceEngine
-
 
 class _Delegate(NSObject):
     def initWithHost_(self, host):
@@ -69,6 +70,7 @@ class MacHost:
                                      else self.start_trigger(*self._trigger_args))
         self.menu.addItem_(AppKit.NSMenuItem.separatorItem())
         self._add("Settings…", put("settings"), ",")
+        self._add("Take the Tour", put("tour_replay"))
         self.permission_item = self._add("Permission needed…", lambda _s: self.watcher and self.watcher.show_guide())
         self.error_item = self._add("", None)
         self.menu.addItem_(AppKit.NSMenuItem.separatorItem())
@@ -134,6 +136,10 @@ class MacHost:
 
     def set_permission_missing(self, missing):
         self._missing = missing
+        if missing:
+            for shortcut in self.shortcuts.values():
+                if shortcut.on_release is not None:
+                    shortcut.stop()
         self.refresh_menu()
         win = self.app.settings_win
         if win and win.alive:
@@ -148,8 +154,23 @@ class MacHost:
     def open_settings(self, welcome=False):
         return SettingsWindow(self.app, lambda: self.watcher and self.watcher.show_guide(), welcome)
 
+    def make_tour(self, app):
+        from .tour import TourWindow
+        return TourWindow(app)
+
     def read_selection(self, clipboard_fallback):
         return selection.read(clipboard_fallback)
+
+    def dictation_target(self):
+        """Freeze identity without Accessibility traversal or clipboard capture."""
+        try:
+            pid = edit._frontmost_pid()
+            if not pid or pid == os.getpid():
+                return None
+            window = edit._window_number(pid)
+            return (pid, window) if window else None
+        except Exception:
+            return None
 
     def start_trigger(self, on_selection, on_press):
         self._trigger_args = on_selection, on_press
@@ -168,13 +189,18 @@ class MacHost:
             self.hotkey.stop()
         self.hotkey = HotKey(spec, on_hotkey) if spec else None
 
-    def set_shortcut(self, name, spec, fn, on_release=None):
+    def set_shortcut(self, name, spec, fn, on_release=None, *, on_activity=None, on_cancel=None):
         """Replaces one of the writer's shortcuts; "" turns it off. on_release makes it a hold shortcut."""
         old = self.shortcuts.pop(name, None)
         if old:
             old.stop()
         if spec:
-            self.shortcuts[name] = HotKey(spec, fn, on_release)
+            options = {"on_activity": on_activity} if on_activity is not None else {}
+            if on_cancel is not None:
+                options["on_cancel"] = on_cancel
+            if on_release is None and hotkeys.parse(spec)[1] is not None:
+                options["press"] = True  # the event tap a hold uses also sees keys macOS reserves, such as ⌘`
+            self.shortcuts[name] = HotKey(spec, fn, on_release, **options)
 
     def mic_permission(self, then):
         """Calls then(granted) on the main thread, asking the first time."""
@@ -203,13 +229,21 @@ class MacHost:
     def make_review(self):
         return Review()
 
+    def make_marks(self):
+        from .marks import Marks  # only when Check as you type is available
+        return Marks()
+
     def esc_watcher(self, fn):
         return EscWatcher(fn)
 
-    def copy_text(self, text):
+    def copy_text(self, text, *, cancelled=lambda: False):
+        if cancelled():
+            return False
         board = AppKit.NSPasteboard.generalPasteboard()
+        if cancelled():
+            return False
         board.clearContents()
-        board.setString_forType_(text, AppKit.NSPasteboardTypeString)
+        return bool(board.setString_forType_(text, AppKit.NSPasteboardTypeString))
 
     def pick_mode(self, names, current, pick):
         """The mode menu at the pointer, for a double press of the rewrite shortcut."""
@@ -226,11 +260,11 @@ class MacHost:
         self._error = message[:80]
         self.refresh_menu()
 
-    def confirm(self, title, message):
+    def confirm(self, title, message, ok="Download"):
         alert = AppKit.NSAlert.alloc().init()
         alert.setMessageText_(title)
         alert.setInformativeText_(message)
-        alert.addButtonWithTitle_("Download")
+        alert.addButtonWithTitle_(ok)
         alert.addButtonWithTitle_("Cancel")
         self.ns.activateIgnoringOtherApps_(True)  # an accessory app's alert opens behind the active app otherwise
         return alert.runModal() == AppKit.NSAlertFirstButtonReturn

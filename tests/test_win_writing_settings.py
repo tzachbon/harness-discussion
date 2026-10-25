@@ -20,7 +20,63 @@ CATALOGS = {"Codex": [{"id": "gpt-5.5", "label": "GPT-5.5", "efforts": ["low", "
 
 
 class WritingSettingsUi(unittest.TestCase):
+    def test_recording_meter_is_replaced_by_transcription_activity(self):
+        from harness_discussion.win.toast import Toast
+        toast = Toast(self.root)
+        try:
+            toast.show("Listening", 100, 100, busy=True)
+            toast.set_input_level(0.75)
+            self.assertTrue(toast.meter.winfo_manager())
+            self.assertFalse(toast.spinner.winfo_manager())
+            self.assertEqual(toast.label["text"], "Listening")
+            self.assertTrue(toast._busy)
+            toast.show("Transcribing", 100, 100, busy=True)
+            self.assertFalse(toast.meter.winfo_manager())
+            self.assertTrue(toast.spinner.winfo_manager())
+        finally:
+            toast.destroy()
+
+    def test_microphone_menu_displays_and_saves_the_selected_input(self):
+        cfg = {**settings.DEFAULTS, "dictate_microphone": "HyperX, MME"}
+        with patch("harness_discussion.win.writing_page.mic.input_devices", return_value=["HyperX, MME"]):
+            w = self.make_window(cfg)
+        self.assertEqual(w.microphone.get(), "HyperX, MME")
+        self.pick(w.microphone, "System default")
+        self.assertEqual(self.changes[-1], ("dictate_microphone", ""))
+
+    def test_local_dictation_download_and_tidy_preference_are_separate_controls(self):
+        fixes = []
+        w = self.make_window(stt_statuses=lambda: {"Local": "missing"},
+                             on_writer_fix=lambda *args: fixes.append(args))
+        self.assertEqual(w.dictation_rows["Local"]["fix"]["text"], "Download…")
+        w.dictation_rows["Local"]["fix"].invoke()
+        self.assertEqual(fixes, [("Local", True)])
+        self.assertTrue(w.local_tidy_on.get())
+        w.local_tidy_check.invoke()
+        self.assertEqual(self.changes[-1], ("dictate_local_tidy", False))
+
+    def test_dictation_has_its_own_statuses_fixes_and_microphone_settings(self):
+        fixes, opened = [], []
+        w = self.make_window(writer_statuses=lambda: {"Codex": "ready"},
+                             stt_statuses=lambda: {"Codex": "signed_out"},
+                             on_writer_fix=lambda *args: fixes.append(args),
+                             on_mic_settings=lambda: opened.append(True), dictate_status=lambda: "Available")
+        self.assertEqual(w.writer_rows["Codex"]["status"]["text"], "Ready")
+        self.assertEqual(w.dictation_rows["Codex"]["status"]["text"], "Not signed in")
+        w.dictation_rows["Codex"]["fix"].invoke()
+        self.assertEqual(fixes, [("Codex", True)])
+        self.assertEqual(w.mic_status["text"], "Microphone: Available")
+        next(c for c in w.mic_status.master.winfo_children()
+             if c.winfo_class() == "TButton" and c["text"] == "Microphone settings").invoke()
+        self.assertEqual(opened, [True])
+
     def setUp(self):
+        win_key = patch("harness_discussion.win.shortcut_row.win_down", return_value=False)
+        win_key.start()
+        self.addCleanup(win_key.stop)
+        devices = patch("harness_discussion.win.writing_page.mic.input_devices", return_value=[])
+        devices.start()
+        self.addCleanup(devices.stop)
         self.root = tk.Tk()
         self.root.withdraw()
         self.changes, self.window = [], None
@@ -42,9 +98,22 @@ class WritingSettingsUi(unittest.TestCase):
                 lambda _text: None, **kw)
         return self.window
 
-    def test_writing_page_sits_before_general_and_toggles_and_orders_sources(self):
+    def test_writing_and_dictation_are_separate_pages_before_speech_to_text(self):
         w = self.make_window()
-        self.assertEqual(settings_ui.PAGES[-2:], ("Writing", "General"))
+        self.assertEqual(settings_ui.PAGES[4:7], ("Writing", "Dictation", "Speech to Text"))
+        owner = lambda widget: next(i for i, p in enumerate(w.pages) if str(widget).startswith(str(p) + "."))
+        writing, dictation = settings_ui.PAGES.index("Writing"), settings_ui.PAGES.index("Dictation")
+        for widget in (w.writer_check, w.default_mode, w.mode_pick, w.mode_save, w.writer_rows["Codex"]["model"],
+                       w.shortcuts["rewrite_hotkey"]["change"]):
+            self.assertEqual(owner(widget), writing)
+        for widget in (w.polish_check, w.dictate_mode, w.mic_status, w.dictation_rows["Codex"]["up"],
+                       w.shortcuts["dictate_hotkey"]["change"]):
+            self.assertEqual(owner(widget), dictation)
+        w.nav[dictation].invoke()
+        self.assertEqual(w.title["text"], "Dictation")
+
+    def test_writing_page_toggles_and_orders_sources(self):
+        w = self.make_window()
         w.nav[settings_ui.PAGES.index("Writing")].invoke()
         self.assertEqual(w.title["text"], "Writing")
         w.writer_check.invoke()
@@ -94,8 +163,8 @@ class WritingSettingsUi(unittest.TestCase):
         self.assertTrue(w.writer_rows["Local"]["model"].instate(["disabled"]))
         catalogs.update(CATALOGS)
         w.refresh_writing()
-        self.assertEqual(list(model["values"]), ["Default", "GPT-5.5", "GPT-5.5 mini"])
-        self.assertEqual(model.get(), "Default")
+        self.assertEqual(list(model["values"]), ["Default (recommended)", "GPT-5.5", "GPT-5.5 mini"])
+        self.assertEqual(model.get(), "Default (recommended)")
         self.pick(model, "GPT-5.5")
         self.assertEqual(self.changes[-1], ("writer_models", {"Codex": {"model": "gpt-5.5", "effort": "medium"}}))
         self.assertEqual(list(effort["values"]), ["low", "medium", "high"])
@@ -104,7 +173,7 @@ class WritingSettingsUi(unittest.TestCase):
         self.pick(model, "GPT-5.5 mini")
         self.assertEqual(self.changes[-1], ("writer_models", {"Codex": {"model": "gpt-5.5-mini", "effort": None}}))
         self.assertTrue(effort.instate(["disabled"]))
-        self.pick(model, "Default")
+        self.pick(model, "Default (recommended)")
         self.assertEqual(self.changes[-1], ("writer_models", {}))
 
     def test_a_saved_model_shows_selected(self):
@@ -118,7 +187,7 @@ class WritingSettingsUi(unittest.TestCase):
                               {"id": "gpt-6-luna", "label": "", "efforts": []}]}
         w = self.make_window(writer_catalogs=lambda: catalogs)
         model = w.writer_rows["Codex"]["model"]
-        self.assertEqual(list(model["values"]), ["Default", "gpt-6.1-sol", "gpt-6-luna"])
+        self.assertEqual(list(model["values"]), ["Default (recommended)", "gpt-6.1-sol", "gpt-6-luna"])
         self.pick(model, "gpt-6.1-sol")
         self.assertEqual(self.changes[-1],
                          ("writer_models", {"Codex": {"model": "gpt-6.1-sol", "effort": None}}))
@@ -151,21 +220,22 @@ class WritingSettingsUi(unittest.TestCase):
         self.pick(w.default_mode, "Email")
         self.assertEqual(self.changes[-1], ("default_mode", "Email"))
         self.pick(w.mode_pick, "Fix errors")
-        self.assertTrue(w.mode_delete.instate(["disabled"]))  # built-ins can't be deleted
+        self.assertTrue(w.mode_delete.instate(["disabled"]))  # nothing to reset on a built-in
+        self.assertTrue(w.mode_name.instate(["disabled"]))  # built-ins keep their name
         self.assertIn("spelling", w.mode_text.get("1.0", "end"))
 
         w.mode_new.invoke()
         self.edit_mode(w, "  ", "Anything")
-        self.assertEqual(w.mode_error["text"], "Give the mode a name.")
+        self.assertEqual(w.mode_status["text"], "A mode needs a name and instructions.")
         self.edit_mode(w, "Tweet", "Under 280 characters.")
         self.assertEqual(self.changes[-1], ("modes", [{"name": "Tweet", "instructions": "Under 280 characters."}]))
-        self.assertEqual(w.mode_error["text"], "")
+        self.assertEqual(w.mode_status["text"], "Saved.")
         self.assertIn("Tweet", w.default_mode["values"])
         self.pick(w.default_mode, "Tweet")
 
         self.edit_mode(w, "Post", "Under 280 characters.")  # rename keeps the default pointing at it
-        self.assertEqual(self.changes[-2], ("modes", [{"name": "Post", "instructions": "Under 280 characters."}]))
-        self.assertEqual(self.changes[-1], ("default_mode", "Post"))
+        self.assertEqual(self.changes[-2], ("default_mode", "Post"))
+        self.assertEqual(self.changes[-1], ("modes", [{"name": "Post", "instructions": "Under 280 characters."}]))
 
         self.pick(w.mode_pick, "Email")
         self.edit_mode(w, "Email", "A formal email.")  # a custom mode with a built-in's name overrides it
@@ -175,16 +245,33 @@ class WritingSettingsUi(unittest.TestCase):
 
         w.mode_new.invoke()
         self.edit_mode(w, "Post", "Again")
-        self.assertEqual(w.mode_error["text"], "A mode named Post already exists.")
+        self.assertEqual(w.mode_status["text"], "There is already a mode called Post.")
 
+        new = {"name": "New mode", "instructions": "Describe how to rewrite the text."}  # Add saves it at once
         self.pick(w.mode_pick, "Post")
         w.mode_delete.invoke()
-        self.assertEqual(self.changes[-2], ("modes", [{"name": "Email", "instructions": "A formal email."}]))
+        self.assertEqual(self.changes[-2], ("modes", [{"name": "Email", "instructions": "A formal email."}, new]))
         self.assertEqual(self.changes[-1], ("default_mode", "Fix errors"))
         self.pick(w.mode_pick, "Email")
+        self.assertEqual(w.mode_delete["text"], "Reset")  # a built-in's override resets
         w.mode_delete.invoke()  # the built-in comes back
-        self.assertEqual(self.changes[-1], ("modes", []))
+        self.assertEqual(self.changes[-1], ("modes", [new]))
         self.assertIn("greeting", w.mode_text.get("1.0", "end"))
+
+    def test_invalid_saved_modes_do_not_break_save_add_or_delete(self):
+        custom = {"name": "Custom", "instructions": "Existing instructions."}
+        cfg = {**settings.DEFAULTS, "modes": ["nope", None, {"name": "Broken", "instructions": 12}, custom]}
+        w = self.make_window(cfg)
+        self.pick(w.mode_pick, "Custom")
+        self.edit_mode(w, "Custom", "Updated instructions.")
+        self.assertEqual(w.cfg["modes"], [{"name": "Custom", "instructions": "Updated instructions."}])
+        w.cfg["modes"].append("nope")
+        w.mode_new.invoke()
+        self.assertEqual(w.mode_name.get(), "New mode")
+        w.cfg["modes"].append(None)
+        self.pick(w.mode_pick, "Custom")
+        w.mode_delete.invoke()
+        self.assertEqual([m["name"] for m in w.cfg["modes"]], ["New mode"])
 
     def press(self, w, keycode, state):
         w.win.event_generate("<KeyPress>", keycode=keycode, state=state, when="now")
@@ -206,7 +293,7 @@ class WritingSettingsUi(unittest.TestCase):
         w = self.make_window(on_record=recording.append)
         w._record_hotkey()
         self.press(w, 0x11, 0)  # Ctrl alone waits for the key
-        self.assertEqual(w.hotkey_lbl["text"], "Press keys…")
+        self.assertEqual(w.hotkey_lbl["text"], "Ctrl…")
         self.press(w, 0xC0, 0x4)  # Ctrl+`
         self.assertEqual(self.changes[-1], ("hotkey", "<ctrl>+<key_192>"))
         self.assertEqual(w.hotkey_lbl["text"], "Ctrl+" + key_name(0xC0))
@@ -259,11 +346,11 @@ class WritingSettingsUi(unittest.TestCase):
         mic = ["Not checked"]
         w = self.make_window(dictate_status=lambda: mic[0])
         self.assertEqual(w.mic_status["text"], "Microphone: Not checked")
-        self.assertTrue(w.dictation_rows["Cursor"]["up"].instate(["disabled"]))  # Cursor transcribes first
+        self.assertTrue(w.dictation_rows["Local"]["up"].instate(["disabled"]))
         w.dictation_rows["Codex"]["up"].invoke()
-        self.assertEqual(self.changes[-1], ("stt_sources", [["Codex", True], ["Cursor", True]]))
+        self.assertEqual(self.changes[-1], ("stt_sources", [["Local", True], ["Codex", True], ["Cursor", True]]))
         w.dictation_rows["Cursor"]["toggle"].invoke()
-        self.assertEqual(self.changes[-1], ("stt_sources", [["Codex", True], ["Cursor", False]]))
+        self.assertEqual(self.changes[-1], ("stt_sources", [["Local", True], ["Codex", True], ["Cursor", False]]))
         self.assertTrue(w.polish_on.get())
         w.polish_check.invoke()
         self.assertEqual(self.changes[-1], ("dictate_polish", False))
@@ -289,6 +376,27 @@ class WritingSettingsUi(unittest.TestCase):
         self.assertTrue(w.dictate_mode.instate(["disabled"]))
         w.polish_check.invoke()
         self.assertFalse(w.dictate_mode.instate(["disabled"]))
+
+
+    def test_check_as_i_type_asks_first_and_lists_apps_it_is_off_in(self):
+        from harness_discussion.win import writing_page
+        cfg = dict(settings.DEFAULTS, writer=True, live_check=False, live_off_apps=["slack.exe"])
+        w = self.make_window(cfg)
+        with patch.object(writing_page.messagebox, "askokcancel", return_value=False) as ask:
+            w.live_check.invoke()
+        self.assertIn("Cursor", ask.call_args.args[1])
+        self.assertFalse(w.live_on.get())
+        self.assertNotIn(("live_check", True), [c[:2] for c in self.changes])
+        with patch.object(writing_page.messagebox, "askokcancel", return_value=True):
+            w.live_check.invoke()
+        self.assertIn(("live_check", True), [c[:2] for c in self.changes])
+        turn_on = next(c for row in w.live_off_frame.winfo_children() for c in row.winfo_children()
+                       if c.winfo_class() == "TButton")
+        turn_on.invoke()
+        self.assertEqual(cfg["live_off_apps"], [])
+        self.assertEqual(w.live_off_frame.winfo_children(), [])
+        w.writer_check.invoke()  # writer off
+        self.assertTrue(w.live_check.instate(["disabled"]))
 
 
 if __name__ == "__main__":
