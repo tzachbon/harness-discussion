@@ -3,24 +3,36 @@ _select(start, end), _rects(start, end) and screen_rect(); offsets are UTF-16 un
 import hashlib
 import os
 
-from . import edit_logic, live
-from .practice import PRACTICE_WINDOW, PracticeCtx
+from . import live
+from .practice import PRACTICE_WINDOW, PracticeCtx, PracticeField
 
 
 class Box:
+    review_target = None
+
+    @property
+    def target(self):
+        if not hasattr(self, "_target"):
+            self._target = object()
+        return self._target
+
+    def reset_target(self):
+        self._target, self.review_target = object(), None
+
     def selected_text(self):
         s, e = self.selection()
         return live.text_at(self.text(), s, e)
 
     def context(self):
         s, e = self.selection()
-        return PracticeCtx(self.selected_text(), os.getpid(), PRACTICE_WINDOW, True, False, field=self, caret=(s, e - s))
+        return PracticeCtx(self.selected_text(), os.getpid(), PRACTICE_WINDOW, True, False, field=self,
+                           caret=(s, e - s), target=self.target)
 
     def field(self):
         text = self.text()
-        return edit_logic.Field(os.getpid(), PRACTICE_WINDOW, "Harness Discussion tour", "the practice box", text,
-                                self.selection(), hashlib.sha256(text.encode("utf-16-le")).digest(),
-                                self.screen_rect(), self)
+        return PracticeField(os.getpid(), PRACTICE_WINDOW, "Harness Discussion tour", "the practice box", text,
+                             self.selection(), hashlib.sha256(text.encode("utf-16-le")).digest(),
+                             self.screen_rect(), self.target, target=self.target)
 
     def replace(self, ctx, new):
         s, n = ctx.caret

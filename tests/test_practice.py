@@ -166,7 +166,7 @@ class ObserveTest(unittest.TestCase):
         self.assertEqual(field.text, box.text())
         self.assertEqual(field.caret, (28, 28))
         self.assertEqual((field.app, field.window), (os.getpid(), practice.PRACTICE_WINDOW))
-        self.assertIs(field.handle, box)
+        self.assertIs(field.handle, box.target)
 
     def test_the_other_practice_steps_are_never_checked(self):
         real = FakeReal()
@@ -236,7 +236,7 @@ class UndoTest(unittest.TestCase):
     def test_a_practice_context_swaps_the_inserted_text_back(self):
         box = FakeBox("New words", (9, 9))
         app, edit = make(box=box, frontmost=True)
-        ctx = PracticeCtx("old words", os.getpid(), practice.PRACTICE_WINDOW, True, False, caret=(0, 9))
+        ctx = PracticeCtx("old words", os.getpid(), practice.PRACTICE_WINDOW, True, False, field=box, caret=(0, 9), target=box.target)
         self.assertTrue(edit.undo(ctx, "old words", "New words"))
         self.assertEqual(box.text(), "old words")
         self.assertEqual(box.selection(), (9, 9))
@@ -344,6 +344,48 @@ class CollapseTest(unittest.TestCase):
         app, edit = make(real=bare, box=FakeBox(SAMPLE), frontmost=False)
         edit.collapse()
         self.assertEqual(bare.calls, [])
+
+
+class TargetLifecycleTest(unittest.TestCase):
+    def test_cancelled_dictation_neither_types_nor_marks(self):
+        box = FakeBox("Hello", (5, 5))
+        app, edit = make(box=box, frontmost=True)
+        self.assertFalse(edit.type_at_caret(" lost", edit.capture(), cancelled=lambda: True))
+        self.assertEqual((box.text(), app.marks), ("Hello", []))
+
+    def test_old_context_and_live_snapshot_reject_identical_replacement_or_reset(self):
+        for reused in (False, True):
+            with self.subTest(reused=reused):
+                box = FakeBox(SAMPLE, (3, 11))
+                app, edit = make(box=box, step="live", frontmost=True)
+                ctx, field = edit.capture(), edit.observe()
+                if reused:
+                    box.reset_target()
+                else:
+                    app.box = FakeBox(SAMPLE, (3, 11))
+                self.assertIsNot(edit.observe().handle, field.handle)
+                self.assertFalse(edit.same_context(ctx))
+                self.assertFalse(edit.replace("received", ctx))
+                self.assertFalse(edit.type_at_caret("lost", ctx))
+                self.assertFalse(edit.select_back(3, ctx))
+                self.assertFalse(edit.undo(ctx, "old", "recieved"))
+                self.assertIsNone(edit.bounds(field, [(3, 11, "recieved")]))
+                self.assertIsNone(edit.select_range(field, 3, 11, "recieved"))
+                self.assertEqual((app.box.text(), app.marks), (SAMPLE, []))
+
+    def test_main_thread_revalidates_queued_capture_observe_and_write(self):
+        for operation in ("capture", "observe", "replace", "type_at_caret"):
+            with self.subTest(operation=operation):
+                box = FakeBox(SAMPLE, (3, 11))
+                app, edit = make(box=box, step="live", frontmost=True)
+                ctx = edit.capture()
+                def delayed(fn, default=None):
+                    box.reset_target()
+                    return fn()
+                app.on_main = delayed
+                result = getattr(edit, operation)("received", ctx) if operation in ("replace", "type_at_caret") else getattr(edit, operation)()
+                self.assertFalse(result)
+                self.assertEqual((box.text(), app.marks), (SAMPLE, []))
 
 
 class BoxTest(unittest.TestCase):
