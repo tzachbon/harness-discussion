@@ -158,6 +158,38 @@ class PracticeFieldTest(_TourCase):
         self.t.show(view(self.app, "read"))
         self.box = self.t.box
 
+    def test_dictation_and_typing_keep_the_dark_fields_text_style(self):
+        import AppKit
+        sample = "Let's meet tomorrow at ten and bring the report."
+        for action in ("dictate", "type", "clear and dictate", "replace sample"):
+            with self.subTest(action=action):
+                self.t.show(view(self.app, "dictate"))
+                box, tv = self.t.box, self.t.box.text_view
+                self.assertEqual(box.text(), "")
+                if action == "replace sample":
+                    box.load("Hello", "all")
+                    self.assertTrue(box.replace(box.context(), sample))
+                elif action == "type":
+                    tv.insertText_replacementRange_(sample, (0, 0))
+                else:
+                    if action == "clear and dictate":
+                        tv.insertText_replacementRange_("temporary", (0, 0))
+                        tv.selectAll_(None)
+                        tv.deleteBackward_(None)
+                        self.assertEqual(box.text(), "")
+                    self.assertTrue(box.type_at_caret(sample))
+                self.assertEqual(box.text(), sample)
+                self.assertEqual(box.selection(), (len(sample), len(sample)))
+                for index in (0, len(sample) - 1):
+                    attrs = tv.textStorage().attributesAtIndex_effectiveRange_(index, None)[0]
+                    self.assertIsNotNone(attrs.get(AppKit.NSForegroundColorAttributeName))
+                    color = attrs[AppKit.NSForegroundColorAttributeName].colorUsingColorSpace_(
+                        AppKit.NSColorSpace.sRGBColorSpace())
+                    for component in (color.redComponent(), color.greenComponent(), color.blueComponent()):
+                        self.assertAlmostEqual(component, 1)
+                    self.assertIsNotNone(attrs.get(AppKit.NSFontAttributeName))
+                    self.assertEqual(attrs[AppKit.NSFontAttributeName].pointSize(), 15)
+
     def test_set_replaces_and_moves_the_caret(self):
         self.box.load("Hello", None)
         self.box._set(0, 2, "Hi")
