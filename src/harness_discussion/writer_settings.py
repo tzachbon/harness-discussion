@@ -82,3 +82,10 @@ def default_mode(default, custom, fallback="Fix errors"):
     """The selected mode, or its fallback when the saved one was deleted or renamed."""
     names = [m.name for m in writer.all_modes(custom)]
     return default if default in names else fallback
+
+
+def live_confirm_text(names, here) -> str:
+    """The Check as I type privacy confirm, shared by both Settings pages and the tour."""
+    return (f"When you pause typing, the line you are typing is sent to {', '.join(names)} in order, in every "
+            "app except password fields, terminals, and apps you turn it off for. Cursor and Codex send it "
+            f"to their service. Local keeps it on {here}.")

@@ -70,10 +70,7 @@ class WritingPage:
         if self.live_on.get():
             names = [n for n, on in self.cfg["writer_sources"] if on] or ["no source"]
             ok = messagebox.askokcancel(
-                "Check as I type",
-                f"When you pause typing, the line you are typing is sent to {', '.join(names)} in order, "
-                "in every app except password fields, terminals, and apps you turn it off for. "
-                "Cursor and Codex send it to their service. Local keeps it on this PC.",
+                "Check as I type", ws.live_confirm_text(names, "this PC"),
                 icon="question", parent=self.win)
             if not ok:
                 self.live_on.set(False)

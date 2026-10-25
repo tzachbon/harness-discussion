@@ -76,10 +76,7 @@ class WritingPage:
         if on:
             names = [n for n, enabled in self.cfg["writer_sources"] if enabled] or ["no source"]
             if not self.app.host.confirm(
-                    "Check as I type",
-                    f"When you pause typing, the line you are typing is sent to {', '.join(names)} in order, in every "
-                    "app except password fields, terminals, and apps you turn it off for. Cursor and Codex send it "
-                    "to their service. Local keeps it on this Mac.", ok="Turn On"):
+                    "Check as I type", ws.live_confirm_text(names, "this Mac"), ok="Turn On"):
                 self.live_switch.setState_(0)
                 return
         self._set("live_check", on)
