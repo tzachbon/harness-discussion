@@ -49,5 +49,17 @@ class StopsAndRetries(unittest.TestCase):
         self.assertEqual(len(self.app.source.texts), 2)
 
 
+class IdenticalLines(unittest.TestCase):
+    def test_a_click_applies_to_the_clicked_line(self):
+        app = _App(reply="This is wrong.")
+        app.type("This are wrong.", at=0)
+        app.tick(2)
+        app.field_.text = "This are wrong.\nThis are wrong."  # pasted again below
+        app.tick(3)
+        first = min(app.marks_.word.items(), key=lambda kv: kv[0][0])[1]
+        self.assertTrue(app._live_press(first[0] + 1, first[1] + 1))
+        app.toast_.shown[-1][1]["Apply"]()
+        self.assertEqual(app.field_.text, "This is wrong.\nThis are wrong.")
+
 if __name__ == "__main__":
     unittest.main()

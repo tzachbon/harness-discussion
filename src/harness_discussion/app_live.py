@@ -116,7 +116,7 @@ class Live:
         found = live.suggestions(field.text, self.live_cache, self._live_dismissed, mode)[:live.MAX_SUGGESTIONS]
         rects = self.edit.bounds(field, [(s.start, s.end, s.old) for s in found]) if found else []
         if rects is not None:
-            placed = [(s.key, r) for s, rs in zip(found, rects) if rs for r in rs]
+            placed = [((s.start, *s.key), r) for s, rs in zip(found, rects) if rs for r in rs]
             self._live_post(field, found, placed, sum(rs is None for rs in rects))
         checking = self._live_checking
         if checking is not None and checking not in {line.strip() for _, line in live.lines(field.text)}:
@@ -170,7 +170,7 @@ class Live:
             self._live_view = None
             self.marks.hide()
             return
-        self._live_view = (field, {s.key: s for s in found})
+        self._live_view = (field, {(s.start, *s.key): s for s in found})  # identical lines share s.key
         badge = None
         if unplaced:
             right, top = (field.rect[2], field.rect[1]) if field.rect else self.host.pointer()

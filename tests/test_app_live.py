@@ -296,7 +296,7 @@ class WhatItDraws(unittest.TestCase):
 
     def test_an_underline_per_change(self):
         strips, badge = self.app.marks_.shown
-        self.assertEqual([key[2:] for key, _ in strips], [("i thinks", "I think")])
+        self.assertEqual([key[3:] for key, _ in strips], [("i thinks", "I think")])
         self.assertIsNone(badge)
 
     def test_an_idle_field_posts_nothing_new(self):
@@ -337,7 +337,7 @@ class Actions(unittest.TestCase):
 
     def click(self, old):
         for key, (left, top, right, bottom) in self.app.marks_.word.items():
-            if key[2] == old:
+            if key[3] == old:
                 self.assertTrue(self.app._live_press(left + 1, top + 1))
                 return self.app.toast_.shown[-1]
         self.fail(f"no underline for {old!r}")
@@ -346,7 +346,7 @@ class Actions(unittest.TestCase):
         self.assertFalse(self.app._live_press(1000, 1000))
 
     def test_a_click_on_our_card_or_review_over_an_underline_is_theirs(self):
-        (left, top, _, _), = [r for k, r in self.app.marks_.word.items() if k[2] == "of"]
+        (left, top, _, _), = [r for k, r in self.app.marks_.word.items() if k[3] == "of"]
         for window in (self.app.toast_, self.app.review_, self.app.popup):
             window.contains = lambda x, y: True
             self.assertFalse(self.app._live_press(left + 1, top + 1))
@@ -364,7 +364,7 @@ class Actions(unittest.TestCase):
         for at in range(4, 8):
             self.app.tick(at)
         self.assertEqual(len(self.app.source.texts), 1)
-        self.assertEqual([k[2] for k in self.app.marks_.word], ["of"])
+        self.assertEqual([k[3] for k in self.app.marks_.word], ["of"])
 
     def test_undo_restores_the_original(self):
         self.click("i thinks")[1]["Apply"]()
@@ -398,7 +398,7 @@ class Actions(unittest.TestCase):
     def test_dismiss_survives_later_polls(self):
         self.click("i thinks")[1]["Dismiss"]()
         self.app.tick(4)
-        self.assertEqual([k[2] for k in self.app.marks_.word], ["of"])
+        self.assertEqual([k[3] for k in self.app.marks_.word], ["of"])
 
     def test_turn_off_in_this_app(self):
         menu = self.click("i thinks")[1]["More"]
