@@ -83,6 +83,19 @@ class Observe(unittest.TestCase):
         self.assertEqual(field.caret, (units(field.text), units(field.text)))
         self.assertEqual((field.app_name, field.label, field.rect), ("notepad.exe", "Notepad", (10, 20, 410, 220)))
 
+    def test_chromium_mixed_direction_fields_are_not_observed(self):
+        """Chromium reports such a line in visual order ("שלום 10 עולם" reads " עולם10שלום "), so a check would send,
+        and a whole-field rewrite paste back, reordered text."""
+        for text, framework, readable in (("שלום 10 עולם", "Chrome", False), ("ok\nשלום abc", "Chrome", False),
+                                          ("שלום עולם ,ואז", "Chrome", True), ("mixed שלום 10", "Win32", True),
+                                          ("plain words", "Chrome", True)):
+            with self.subTest(text=text, framework=framework):
+                document = LiveDocument(text)
+                document.FrameworkId = framework
+                with target(document):
+                    field = self.edit.observe()
+                self.assertEqual(field is not None, readable)
+
     def test_refuses_our_own_window_before_asking_uia(self):
         document = LiveDocument("some text here")
         with target(document), patch.object(self.edit.os, "getpid", return_value=9), \

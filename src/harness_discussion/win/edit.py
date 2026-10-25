@@ -2,6 +2,7 @@
 import ctypes
 import hashlib
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from ctypes import wintypes
@@ -24,6 +25,8 @@ k32.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wint
                                            ctypes.POINTER(wintypes.DWORD)]
 k32.CloseHandle.argtypes = [wintypes.HANDLE]
 MAX_DOCUMENT = 1_000_000
+# Chromium reports a line holding right-to-left script and Latin letters or digits in visual order
+MIXED_DIRECTION = re.compile("^(?=.*[\u0590-\u08ff\ufb1d-\ufdff\ufe70-\ufeff])(?=.*[A-Za-z0-9]).*$", re.M)
 NEWLINE = "\r\n"
 START, END = uia.TextPatternRangeEndpoint.Start, uia.TextPatternRangeEndpoint.End
 
@@ -296,10 +299,13 @@ def observe():
         if not name:
             return None
         try:
-            r = selection.focused().BoundingRectangle
+            focus = selection.focused()
+            r = focus.BoundingRectangle
             rect = (r.left, r.top, r.right, r.bottom)
         except Exception:
-            rect = None
+            focus, rect = None, None
+        if getattr(focus, "FrameworkId", "") == "Chrome" and MIXED_DIRECTION.search(document):
+            return None  # ponytail: not checked in Chromium; read these once its text order is logical
         return edit_logic.Field(context.app, context.window, name, name.rsplit(".", 1)[0].capitalize(),
                                 _canonical(document), (context._start, context._end), context._digest, rect,
                                 context._element)
