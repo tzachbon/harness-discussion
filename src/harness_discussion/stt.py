@@ -3,6 +3,7 @@
 No microphone, persistent audio, or API key. Codex owns ChatGPT authentication.
 """
 import asyncio
+import atexit
 from fractions import Fraction
 import io
 import json
@@ -29,6 +30,7 @@ SKEW = 1.0  # Seconds Codex fragment end_ms may run ahead of the sent stream (0.
 DIAG_LOG = Path(settings.LOCAL_DIR) / "stt-diagnostics.log"
 _busy = threading.Lock()
 _diag_lock = threading.Lock()
+_spare, _spare_lock = None, threading.Lock()  # one Codex process started while the user speaks
 
 
 class BusyError(RuntimeError):
@@ -140,7 +142,9 @@ def _settled(since_audio_end, since_last_word, audio_seconds=0, unheard=None):
         return True
     if since_last_word is None:
         return since_audio_end >= 2.5 + catch_up
-    trusted = unheard is not None and unheard >= -SKEW  # A position far past the end is implausible.
+    # Silence keeps streaming at SPEED after the audio, so Codex may legitimately pass the end by that much.
+    # Only a position past everything sent is implausible.
+    trusted = unheard is not None and unheard >= -(SKEW + since_audio_end * SPEED)
     behind = min(catch_up, max(0.0, unheard) + SKEW) if trusted else catch_up
     return since_audio_end >= 2.5 and since_last_word >= 2.0 + behind
 
@@ -253,6 +257,43 @@ def _write_diag(record):
         pass  # Diagnostics must never fail a transcription.
 
 
+def prewarm():
+    """Start Codex during recording, so the transcription skips its cold start. At most one spare."""
+    global _spare
+    with _spare_lock:
+        if _spare is not None and _spare.alive:
+            return
+    try:
+        srv = AppServer()
+    except Exception:
+        return  # The transcription starts its own and reports the failure.
+    with _spare_lock:
+        if _spare is None or not _spare.alive:
+            _spare, srv = srv, None
+    if srv is not None:
+        srv.close()
+
+def _take():
+    """(server, warm): the prewarmed spare if it is still running, otherwise a fresh one."""
+    global _spare
+    with _spare_lock:
+        srv, _spare = _spare, None
+    if srv is not None and srv.alive:
+        return srv, True
+    if srv is not None:
+        srv.close()  # reap the exited spare's pipes
+    return AppServer(), False
+
+@atexit.register
+def _close_spare():
+    with _spare_lock:
+        srv = _spare
+    if srv is not None:
+        try:
+            srv.close()
+        except Exception:
+            pass
+
 def _run(audio, language, prompt, diag):
     pcm = decode_audio(audio)
     diag["audio_ms"] = len(pcm) * 1000 // (RATE * 2)
@@ -261,7 +302,7 @@ def _run(audio, language, prompt, diag):
     srv = None
     try:
         try:
-            srv = AppServer()
+            srv, diag["warm"] = _take()
         except Exception as error:
             raise SttError("backend_start_failed", "backend_start") from error
         _mark(diag, "backend_ready")

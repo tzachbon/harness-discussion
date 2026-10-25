@@ -18,6 +18,9 @@ class CodexStt:
     def status(self):
         return codex_rt.login_status()
 
+    def prewarm(self):
+        stt.prewarm()
+
     def transcribe(self, audio, language="", cancelled=lambda: False):
         return stt.transcribe(audio, language=language, cancelled=cancelled)
 

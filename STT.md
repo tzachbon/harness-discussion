@@ -64,7 +64,9 @@ input under **Settings → Dictation → Input device**, or leave **System defau
 The recording pill shows live input bars while the shortcut is held. Flat bars
 mean little or no input, which can reveal a muted or incorrectly routed virtual
 microphone. The selected device is saved for this app without changing the system
-default. If it is disconnected, choose another input in Settings.
+default. After a device change, dictation can refresh the device list and retry
+the selected microphone once when no audio stream is open. It never switches
+to another input. If it is disconnected, choose another input in Settings.
 
 The recording and transcription pill has an **×** cancel button. Cancelling
 during transcription lets you start another recording immediately and discards

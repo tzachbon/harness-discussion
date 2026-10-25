@@ -54,7 +54,7 @@ class Stretcher:
             out += bytes(f.planes[0])[: f.samples * 2]
 
 
-_live, _live_lock = set(), threading.Lock()  # open players' streams, which a PortAudio reset would close
+_live, _live_lock = set(), threading.Lock()  # open input/output streams, which a PortAudio reset would close
 
 
 CLOSE_WAIT_S = 1.0  # how long close() waits for the callback to stop the stream
@@ -81,16 +81,17 @@ class PcmPlayer:
                 sd._terminate()
                 sd._initialize()
                 self._stream = self._open(rate, channels)
-            _live.add(self._stream)
 
     def _open(self, rate, channels):
         self._stopped = threading.Event()  # set at the end of PortAudio's stop notification on the IO thread
         stream = sd.RawOutputStream(samplerate=rate, channels=channels, dtype="int16",
                                     blocksize=rate // 50, callback=self._fill, finished_callback=self._stopped.set)
+        _live.add(stream)
         try:
             stream.start()
         except sd.PortAudioError:
             stream.close()
+            _live.discard(stream)
             raise
         return stream
 
@@ -158,7 +159,5 @@ class PcmPlayer:
             # listed, so no PortAudio reset closes it either; after a device change the next source reads instead.
             return
         with _live_lock:  # a reset waits until this stream is closed, not just unlisted
-            try:
-                self._stream.close()
-            finally:
-                _live.discard(self._stream)
+            self._stream.close()
+            _live.discard(self._stream)

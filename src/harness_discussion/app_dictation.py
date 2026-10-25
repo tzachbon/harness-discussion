@@ -94,12 +94,14 @@ class Dictation:
         """Only this worker may start, stop or close the native stream."""
         audio, duration, ctx, error = b"", 0.0, None, None
         generation, binding = session.generation, session.binding
+        stage = "permission"
         try:
             session.permission.wait()
             if session.stop.is_set():
                 return
             if not session.granted:
                 raise PermissionError()
+            stage = "target capture"
             ctx = self.edit.capture(False)
             if ctx is not None and ctx.secure:
                 raise PermissionError()
@@ -110,6 +112,7 @@ class Dictation:
                 return
             recorder = mic.Recorder(device=session.device)
             session.recorder = recorder
+            stage = "start"
             recorder.start()
             ready = not session.stop.is_set()
             try:
@@ -119,11 +122,13 @@ class Dictation:
             finally:
                 session.stop.set()
                 self.events.put(("recording_stopping", generation, binding))
+                stage = "stop"
                 audio = recorder.stop()
                 duration = recorder.duration
                 if not ready:
                     audio, duration = b"", 0.0
-        except Exception:
+        except Exception as e:
+            log.info("dictation recording failed during %s: %s", stage, type(e).__name__)
             error = "The microphone could not finish the recording."
         finally:
             self.events.put(("recording_done", generation, binding, audio, duration, ctx, error))

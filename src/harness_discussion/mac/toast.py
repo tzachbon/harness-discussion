@@ -1,11 +1,32 @@
 """The writer's toast: a HUD pill like the bar, with a message and a few actions. It hides itself after about
 6 s, and waits while the pointer is over it. It never takes focus, so the user's app keeps typing."""
 import AppKit
+import Quartz
 
 from . import ui
 from .popup import _Button, _Hover, _cocoa_y, _screen_at, build_menu
 
 HIDE_S = 6.0
+WAVE_BARS, BAR, GAP, WAVE_H = 9, 2.5, 2.5, 16  # as Windows: rounded bars of the latest levels, newest on the right
+
+def _close_button(fn):
+    """× as the system xmark, so it stays centered and crisp instead of a text glyph."""
+    b = _Button.alloc().init()
+    b.setBezelStyle_(AppKit.NSBezelStyleRegularSquare)
+    b.setBordered_(False)
+    b.setImage_(ui.symbol("xmark", "Cancel"))
+    b.setImagePosition_(AppKit.NSImageOnly)
+    b.setAccessibilityLabel_("Cancel")
+    b.setSymbolConfiguration_(AppKit.NSImageSymbolConfiguration.configurationWithPointSize_weight_(
+        10, AppKit.NSFontWeightBold))
+    b.setContentTintColor_(AppKit.NSColor.colorWithWhite_alpha_(1, 0.75))
+    b.setWantsLayer_(True)
+    b.layer().setCornerRadius_(11)
+    b.layer().setBackgroundColor_(ui.cg(AppKit.NSColor.colorWithWhite_alpha_(1, 0.12)))
+    b.setToolTip_("Cancel")
+    for anchor in (b.widthAnchor(), b.heightAnchor()):
+        anchor.constraintEqualToConstant_(22).setActive_(True)
+    return ui.bind(b, lambda s: fn(s))
 
 
 def _action_button(title, fn):
@@ -28,9 +49,24 @@ class Toast:
         self.on_hide = lambda: None
         self.label = ui.label("", 12)
         self.label.setTextColor_(AppKit.NSColor.whiteColor())
-        self.meter = ui.label("▯" * 8, 12, width=64)
-        self.meter.setTextColor_(AppKit.NSColor.systemGreenColor())
+        self.meter = AppKit.NSView.alloc().init()
+        self.meter.setWantsLayer_(True)
+        self.meter.widthAnchor().constraintEqualToConstant_(WAVE_BARS * (BAR + GAP) - GAP).setActive_(True)
+        self.meter.heightAnchor().constraintEqualToConstant_(WAVE_H).setActive_(True)
+        self.meter.setAccessibilityElement_(True)
+        self.meter.setAccessibilityRole_(AppKit.NSAccessibilityLevelIndicatorRole)
         self.meter.setAccessibilityLabel_("Microphone input level")
+        self.meter.setAccessibilityMinValue_(0.0)
+        self.meter.setAccessibilityMaxValue_(1.0)
+        self._wave = []
+        for i in range(WAVE_BARS):
+            bar = Quartz.CALayer.layer()
+            bar.setCornerRadius_(BAR / 2)
+            bar.setBackgroundColor_(ui.cg(AppKit.NSColor.controlAccentColor()))
+            self.meter.layer().addSublayer_(bar)
+            self._wave.append(bar)
+        self._levels, self._envelope = [0.0] * WAVE_BARS, 0.0
+        self._draw_wave()
         self.meter.setHidden_(True)
         self.spinner = AppKit.NSProgressIndicator.alloc().init()
         self.spinner.setStyle_(AppKit.NSProgressIndicatorStyleSpinning)
@@ -91,11 +127,14 @@ class Toast:
                 entries = action
                 button = _action_button(f"{title} ▾", lambda s, entries=entries: self._menu(s, entries))
             else:
-                button = _action_button(title, lambda _s, fn=action: (self.hide(), fn()))
+                make = _close_button if title == "×" else lambda fn: _action_button(title, fn)
+                button = make(lambda _s, fn=action: (self.hide(), fn()))
             self.row.addArrangedSubview_(button)
             self.actions.append(button)
         self.label.setStringValue_(message)
         self.meter.setHidden_(True)
+        self._levels, self._envelope = [0.0] * WAVE_BARS, 0.0
+        self._draw_wave()
         self.spinner.setHidden_(not busy)
         self.spinner.startAnimation_(None) if busy else self.spinner.stopAnimation_(None)
         p = self.win
@@ -115,12 +154,24 @@ class Toast:
         self.schedule_hide()
 
     def set_input_level(self, level):
-        count = round(max(0.0, min(1.0, level)) * 8)
-        self.meter.setStringValue_("▮" * count + "▯" * (8 - count))
+        level = max(0.0, min(1.0, level))
+        # Fast attack, slower release, so syllables register at once and pauses settle instead of flicker.
+        self._envelope += (level - self._envelope) * (0.7 if level > self._envelope else 0.35)
+        self._levels = self._levels[1:] + [self._envelope]
+        self._draw_wave()
         self.meter.setHidden_(False)
         self.spinner.stopAnimation_(None)
         self.spinner.setHidden_(True)
         self.win.setContentSize_(self.win.contentView().fittingSize())
+
+    def _draw_wave(self):
+        self.meter.setAccessibilityValue_(round(self._envelope, 2))
+        Quartz.CATransaction.begin()
+        Quartz.CATransaction.setDisableActions_(True)  # each level jumps, as on Windows, instead of easing
+        for i, (bar, value) in enumerate(zip(self._wave, self._levels)):
+            height = BAR + value * (WAVE_H - BAR)  # silence is a row of calm dots
+            bar.setFrame_(((i * (BAR + GAP), (WAVE_H - height) / 2), (BAR, height)))
+        Quartz.CATransaction.commit()
 
     def _menu(self, button, entries):
         self.menu_open = True

@@ -4,6 +4,10 @@ from . import writer
 
 LOCAL_MODEL = "Qwen3-4B"
 
+def default_label(name):
+    """Codex picks the right model for the account itself, so its own default is the one to suggest."""
+    return "Default (recommended)" if name == "Codex" else "Default"
+
 
 def move(order, name, step):
     order = [list(item) for item in order]
@@ -22,7 +26,7 @@ def model_choices(name, models):
     if name == "Local":
         return [("", LOCAL_MODEL)]
     listed = [(m["id"], m.get("label") or m["id"]) for m in models.get(name, ()) if m.get("id")]
-    return [("", "Default")] + listed
+    return [("", default_label(name))] + listed
 
 
 def effort_choices(name, models, model_id):

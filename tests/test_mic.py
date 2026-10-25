@@ -3,7 +3,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from harness_discussion import dictation, mic, stt, writer
+from harness_discussion import audio, dictation, mic, stt, writer
 
 
 class FakeStream:
@@ -21,6 +21,22 @@ class FakeStream:
 
 
 class MicTest(unittest.TestCase):
+    def test_stale_input_refreshes_once_and_resolves_the_selected_device_again(self):
+        selected = {"name": "HyperX", "hostapi": 0, "max_input_channels": 1}
+        other = {**selected, "name": "Other mic"}
+        stream = Mock()
+        with patch("sounddevice.RawInputStream", side_effect=[audio.sd.PortAudioError("gone"), stream]) as opening, \
+                patch("sounddevice.query_devices", side_effect=[[selected, other], [other, selected]]), \
+                patch("sounddevice.query_hostapis", return_value=[{"name": "MME"}]), \
+                patch("sounddevice._terminate") as terminate, patch("sounddevice._initialize") as initialize:
+            rec = mic.Recorder(device="HyperX, MME")
+            rec.start()
+            self.addCleanup(rec.stop)
+        self.assertEqual([call.kwargs["device"] for call in opening.call_args_list], [0, 1])
+        terminate.assert_called_once_with()
+        initialize.assert_called_once_with()
+        rec.stop()
+
     def test_selected_microphone_reaches_the_native_stream(self):
         device = "Microphone (HyperX SoloCast 2), MME"
         devices = [{"name": "Wrong mic", "hostapi": 0, "max_input_channels": 1},
@@ -38,10 +54,97 @@ class MicTest(unittest.TestCase):
         for devices in ([{**exact, "name": "2- HyperX"}], [exact, exact]):
             with self.subTest(devices=devices), patch("sounddevice.RawInputStream") as stream, patch(
                     "sounddevice.query_devices", return_value=devices), patch(
-                    "sounddevice.query_hostapis", return_value=[{"name": "MME"}]):
+                    "sounddevice.query_hostapis", return_value=[{"name": "MME"}]), \
+                    patch("sounddevice._terminate") as terminate, patch("sounddevice._initialize") as initialize:
                 with self.assertRaisesRegex(ValueError, "selected microphone"):
                     mic.Recorder(device="HyperX, MME").start()
                 stream.assert_not_called()
+                terminate.assert_called_once_with()
+                initialize.assert_called_once_with()
+
+    def test_missing_selected_device_is_resolved_again_after_refresh(self):
+        selected = {"name": "HyperX", "hostapi": 0, "max_input_channels": 1}
+        with patch("sounddevice.RawInputStream") as opening, \
+                patch("sounddevice.query_devices", side_effect=[[], [selected]]), \
+                patch("sounddevice.query_hostapis", return_value=[{"name": "MME"}]), \
+                patch("sounddevice._terminate"), patch("sounddevice._initialize"):
+            rec = mic.Recorder(device="HyperX, MME")
+            rec.start()
+            self.addCleanup(rec.stop)
+            self.assertEqual(opening.call_args.kwargs["device"], 0)
+            opening.assert_called_once()
+            rec.stop()
+
+    def test_persistent_native_failure_retries_only_once(self):
+        with patch("sounddevice.RawInputStream", side_effect=audio.sd.PortAudioError("gone")) as opening, \
+                patch("sounddevice._terminate") as terminate, patch("sounddevice._initialize") as initialize:
+            with self.assertRaises(audio.sd.PortAudioError):
+                mic.Recorder().start()
+        self.assertEqual(opening.call_count, 2)
+        terminate.assert_called_once_with()
+        initialize.assert_called_once_with()
+
+    def test_failed_native_start_is_closed_before_refresh(self):
+        failed, working = Mock(), Mock()
+        failed.start.side_effect = audio.sd.PortAudioError("gone")
+        with patch("sounddevice.RawInputStream", side_effect=[failed, working]), \
+                patch("sounddevice._terminate") as terminate, patch("sounddevice._initialize"):
+            terminate.side_effect = lambda: self.assertNotIn(failed, audio._live)
+            rec = mic.Recorder()
+            rec.start()
+            self.addCleanup(rec.stop)
+        failed.close.assert_called_once_with()
+        rec.stop()
+
+    def test_no_reset_if_failed_native_start_cannot_close(self):
+        failed = Mock()
+        failed.start.side_effect = audio.sd.PortAudioError("gone")
+        failed.close.side_effect = RuntimeError("cannot close")
+        self.addCleanup(audio._live.discard, failed)
+        with patch("sounddevice.RawInputStream", return_value=failed) as opening, \
+                patch("sounddevice._terminate") as terminate:
+            with self.assertRaises(audio.sd.PortAudioError):
+                mic.Recorder().start()
+        self.assertIn(failed, audio._live)
+        opening.assert_called_once()
+        terminate.assert_not_called()
+
+    def test_no_reset_while_another_microphone_is_open(self):
+        first = mic.Recorder(lambda cb: Mock())
+        first.start()
+        self.addCleanup(first.stop)
+        with patch("sounddevice.RawInputStream", side_effect=audio.sd.PortAudioError("gone")) as opening, \
+                patch("sounddevice._terminate") as terminate:
+            with self.assertRaises(audio.sd.PortAudioError):
+                mic.Recorder().start()
+        opening.assert_called_once()
+        terminate.assert_not_called()
+
+    def test_microphone_stays_registered_under_the_reset_lock_until_closed(self):
+        stream, operations = Mock(), []
+        stream.start.side_effect = lambda: operations.append(("start", audio._live_lock.locked(), stream in audio._live))
+        stream.close.side_effect = lambda: operations.append(("close", audio._live_lock.locked(), stream in audio._live))
+        rec = mic.Recorder(lambda cb: stream)
+        rec.start()
+        self.addCleanup(rec.stop)
+        rec.stop()
+        self.assertEqual(operations, [("start", True, True), ("close", True, True)])
+        self.assertNotIn(stream, audio._live)
+
+    def test_microphone_close_failure_keeps_blocking_resets(self):
+        stream = Mock()
+        stream.close.side_effect = RuntimeError("cannot close")
+        self.addCleanup(audio._live.discard, stream)
+        rec = mic.Recorder(lambda cb: stream)
+        rec.start()
+        with self.assertRaisesRegex(RuntimeError, "cannot close"):
+            rec.stop()
+        with patch("sounddevice.RawInputStream", side_effect=audio.sd.PortAudioError("gone")), \
+                patch("sounddevice._terminate") as terminate:
+            with self.assertRaises(audio.sd.PortAudioError):
+                mic.Recorder().start()
+        terminate.assert_not_called()
+        self.assertIn(stream, audio._live)
 
     def test_device_menu_uses_input_names_in_the_default_host_api(self):
         devices = [{"name": "HyperX", "hostapi": 0, "max_input_channels": 2},
