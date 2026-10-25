@@ -24,14 +24,17 @@ class LifecycleTest(DictationCase):
         app._pending_update, app._closing, app._update_manual = object(), False, True
         app._read_options, app.stt, app._draining_stt = None, None, []
         app.chain = SimpleNamespace(busy=False)
-        app._update_status, app._try_update, app._handle = Mock(), Mock(), Mock()
+        app._update_status, app._handle = Mock(), Mock()
+        app._try_update = core.App._try_update.__get__(app)
         with patch.object(mic, "Recorder", RECORDER), \
                 patch.object(audio.sd, "RawInputStream", side_effect=open_stream), \
                 patch.object(audio, "CLOSE_WAIT_S", 0.01), \
                 patch.object(settings, "save"), patch.object(updates, "install") as install:
             self.start(app)
-            core.App._try_update(app)
+            app._try_update()
             install.assert_not_called()
+            retry = next(fn for ms, fn in app.deadlines if ms == 1000)
+            self.assertEqual(retry, app._try_update)
             with patch.object(mic.log, "warning") as warning:
                 app._dictate_up()
                 app.drain("recording_done")
@@ -44,7 +47,7 @@ class LifecycleTest(DictationCase):
             app.stt_sources[0].transcribe.assert_called_once()
             self.assertEqual(app.stt_sources[0].transcribe.call_args.args[0], mic.wav(pcm))
             app.host.edit.type_at_caret.assert_called_once()
-            core.App._try_update(app)
+            retry()
             install.assert_called_once_with(app._pending_update)
             app._handle.assert_called_once_with("quit")
         stream.stop.assert_not_called()
