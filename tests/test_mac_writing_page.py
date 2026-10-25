@@ -202,6 +202,16 @@ class WritingSettingsTest(unittest.TestCase):
             self.click(b)
         self.assertEqual([c.args[0] for c in self.app.host.copy_text.call_args_list], ["Tidy.", "words"])
 
+    def test_rebuilding_recent_dictations_keeps_no_more_callbacks(self):
+        from harness_discussion import history
+        from harness_discussion.mac import ui
+        with mock.patch.object(history, "rows", return_value=[("Tidy.", "Tidy.", "words")]):
+            self.win.refresh_history()
+            kept = len(ui._keep)
+            for _ in range(5):
+                self.win.refresh_history()
+        self.assertEqual(len(ui._keep), kept)  # no transcript stays referenced after its row is gone
+
 
 if __name__ == "__main__":
     unittest.main()

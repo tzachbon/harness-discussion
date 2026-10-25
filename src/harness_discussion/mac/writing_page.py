@@ -138,6 +138,9 @@ class WritingPage:
     def _history_card(self):
         from .settings_ui import _card
         self.history_list = ui.stack([], spacing=8)
+        # one target each, made once: ui.target() keeps every target alive, so rebuilt rows must not add more
+        self._copy_target = ui.target(lambda s: self.app.host.copy_text(str(s.representedObject())))
+        self._clear_target = ui.target(lambda _s: self._clear_history())
         self.refresh_history()
         return _card([self.history_list])
 
@@ -149,19 +152,25 @@ class WritingPage:
             view.removeFromSuperview()
         on = self.cfg.get("dictation_history", True)
         rows = history.rows() if on else []
-        copy = self.app.host.copy_text
         for preview, text, original in rows:
-            buttons = [ui.button("Copy", lambda t=text: copy(t))]
+            buttons = [self._history_button("Copy", text)]
             if original is not None:
-                buttons.append(ui.button("Original", lambda t=original: copy(t)))
+                buttons.append(self._history_button("Original", original))
             row = ui.stack([ui.label(preview, 12, width=WIDTH - 170), _spacer(), *buttons], vertical=False)
             row.widthAnchor().constraintEqualToConstant_(WIDTH).setActive_(True)
             self.history_list.addArrangedSubview_(row)
         if rows:
-            self.history_list.addArrangedSubview_(ui.button("Clear", self._clear_history))
+            self.history_list.addArrangedSubview_(self._history_button("Clear", None))
         else:
             self.history_list.addArrangedSubview_(ui.label(
                 "No dictations yet." if on else "Turn on Keep recent dictations to save them here.", 12, secondary=True))
+
+    def _history_button(self, title, text):
+        """A Copy or Original button carrying its text, or Clear when text is None, on the shared targets."""
+        b = AppKit.NSButton.buttonWithTitle_target_action_(
+            title, self._clear_target if text is None else self._copy_target, "run:")
+        b.setRepresentedObject_(text)
+        return b
 
     def _history_toggled(self, on):
         self._set("dictation_history", on)
