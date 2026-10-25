@@ -227,7 +227,7 @@ class NativeMacHold(unittest.TestCase):
         with patch.object(self.trigger, "top_left", return_value=(10, 20)):
             watcher = self.trigger.SelectionTrigger(selected, pressed)
             watcher.start()
-            mask = native.addGlobalMonitorForEventsMatchingMask_handler_.call_args.args[0]
+            mask = native.addGlobalMonitorForEventsMatchingMask_handler_.call_args_list[0].args[0]
             self.assertEqual(mask, 1 | 2 | (1 << 3) | (1 << 25))
             watcher._clicks = Mock()
             for kind in (1, 3, 25):

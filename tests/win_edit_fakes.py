@@ -27,6 +27,7 @@ class Document:
     def __init__(self, text="Left old right", start=5, end=8):
         self.text, self.start, self.end = text, start, end
         self.IsPassword, self.writable, self.identity = False, True, [1, 2]
+        self.FrameworkId = "Win32"
         self.Element = SimpleNamespace(GetCurrentPropertyValueEx=lambda prop, suppress: self.IsPassword)
 
     def GetParentControl(self):
