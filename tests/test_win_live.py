@@ -148,6 +148,38 @@ class Place(unittest.TestCase):
             self.assertEqual(len(self.edit.bounds(field, [self.span(field, "goes")])[0]), 1)
             self.assertIsNone(self.edit.bounds(field, [(units("we "), units("we 👨"), "👨")])[0])
 
+    def test_bounds_right_after_observe_reads_the_field_once(self):
+        document = LiveDocument("i thinks so ok")
+        with target(document):
+            real, calls = self.edit._inspect, []
+            with patch.object(self.edit, "_inspect", side_effect=lambda *a: calls.append(a) or real(*a)):
+                field = self.edit.observe()
+                self.edit.bounds(field, [self.span(field, "thinks")])
+            self.assertEqual(len(calls), 1)
+            with patch.object(self.edit.time, "monotonic", return_value=self.edit.time.monotonic() + 1), \
+                    patch.object(self.edit, "_inspect", side_effect=lambda *a: calls.append(a) or real(*a)):
+                self.edit.bounds(field, [self.span(field, "thinks")])  # a later call reads the field again
+            self.assertEqual(len(calls), 2)
+
+    def test_an_unchanged_field_is_not_placed_again(self):
+        """An idle field is polled twice a second: asking the provider for every span each time cost 10 % of a core."""
+        document = LiveDocument("i thinks so ok")
+        with target(document):
+            field = self.edit.observe()
+            first = self.edit.bounds(field, [self.span(field, "thinks")])
+            whole, placed = LiveRange.GetBoundingRectangles, []
+            def rects(self):
+                if (self.start, self.end) != (0, len(document.text)):
+                    placed.append(self)  # a span, not the whole document
+                return whole(self)
+            with patch.object(LiveRange, "GetBoundingRectangles", rects):
+                self.assertEqual(self.edit.bounds(field, [self.span(field, "thinks")]), first)
+                self.assertEqual(placed, [])
+                document.text = "i thinks so ok!"
+                field = self.edit.observe()
+                self.assertEqual(self.edit.bounds(field, [self.span(field, "thinks")]), first)
+                self.assertEqual(len(placed), 1)
+
     def test_changed_text_places_nothing_and_hidden_text_has_no_rectangles(self):
         document = LiveDocument("i thinks so ok")
         with target(document):

@@ -290,6 +290,7 @@ def observe():
         if not identity or identity[0] == os.getpid():
             return None  # checked before any UIA call reaches our own Tk windows
         found = _inspect(live.LIVE_MAX_DOC)
+        _observed[:] = time.monotonic(), found
         if not found or found[2] is None:
             return None
         context, document = found[0], found[1]
@@ -353,23 +354,35 @@ def _same_field(field, found):
                 and (found[0].app, found[0].window, found[0]._element) == (field.app, field.window, field.handle)
                 and found[0]._digest == field.digest)
 
+_placed = [None, {}]  # where the last field sat on screen, and its placed spans
+_observed = [0.0, None]  # when observe() last read the field, and what it read: bounds() right after reuses it
+
 def bounds(field, spans):
     """Screen rectangles per (start, end, expected) span of `field`: a list (empty when scrolled out of view), or
-    None when the span cannot be placed exactly. None for the whole call when the field changed."""
+    None when the span cannot be placed exactly. None for the whole call when the field changed. An idle field is
+    polled twice a second, so spans are placed again only once its text, scroll or position changes."""
     def place():
-        found = _inspect(live.LIVE_MAX_DOC)
+        at, found = _observed
+        _observed[:] = 0.0, None  # once: a second call must see a change made since
+        if time.monotonic() - at > 0.2 or not _same_field(field, found):
+            found = _inspect(live.LIVE_MAX_DOC)  # read-only here: select_range and replace always read afresh
         if not _same_field(field, found):
             return None
-        out = []
-        for start, end, expected in spans:
-            candidate = _range_at(found[3], found[1], start, end, expected)
-            try:
-                out.append(None if candidate is None else
-                           [(r.left, r.top, r.right, r.bottom) for r in candidate.GetBoundingRectangles()])
-            except COMError:  # Notepad fails on a number inside a Hebrew line
-                out.append(None)
-        return out
+        where = (field.handle, field.digest, tuple((r.left, r.top, r.right, r.bottom)
+                                                   for r in found[3].GetBoundingRectangles()))
+        if _placed[0] != where:
+            _placed[:] = where, {}
+        done = _placed[1]
+        return [done[s] if s in done else done.setdefault(s, _place(found, *s)) for s in spans]
     return _run(place)
+
+def _place(found, start, end, expected):
+    candidate = _range_at(found[3], found[1], start, end, expected)
+    try:
+        return None if candidate is None else [(r.left, r.top, r.right, r.bottom)
+                                               for r in candidate.GetBoundingRectangles()]
+    except COMError:  # Notepad fails on a number inside a Hebrew line
+        return None
 
 def _collapse(span):
     caret = span.Clone()
