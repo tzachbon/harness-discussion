@@ -10,6 +10,7 @@ from .bar_parts import _cocoa_y
 
 STRIP = 2
 REMOVED = AppKit.NSColor.systemRedColor()
+CHECKING = AppKit.NSColor.systemGrayColor().colorWithAlphaComponent_(0.6)
 
 def _panel(color, ignores_mouse):
     style = AppKit.NSWindowStyleMaskBorderless | AppKit.NSWindowStyleMaskNonactivatingPanel
@@ -19,7 +20,7 @@ def _panel(color, ignores_mouse):
     p.setFloatingPanel_(True)
     p.setHidesOnDeactivate_(False)
     p.setHasShadow_(False)
-    p.setOpaque_(True)
+    p.setOpaque_(color.alphaComponent() >= 1)
     p.setBackgroundColor_(color)
     p.setIgnoresMouseEvents_(ignores_mouse)
     p.setCollectionBehavior_(AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces
@@ -29,7 +30,7 @@ def _panel(color, ignores_mouse):
 
 class Marks:
     def __init__(self):
-        self._strips, self._words, self._badge_at = [], {}, None
+        self._strips, self._checks, self._words, self._badge_at = [], [], {}, None
         self.badge = _panel(AppKit.NSColor.controlAccentColor(), False)
         self.count = ui.label("", size=11, bold=True)
         self.count.setTextColor_(AppKit.NSColor.whiteColor())
@@ -41,17 +42,30 @@ class Marks:
             self._strips.append(_panel(REMOVED, True))
         return self._strips[i]
 
-    def show(self, strips, badge):
-        """strips: [(key, (left, top, right, bottom))] of each underlined line of text. badge: (x, y, count) or None,
-        with x the right edge it hangs from."""
-        self._words = {}
-        for i, (key, (left, top, right, bottom)) in enumerate(strips):
-            self._words.setdefault(key, []).append((left, top, right, bottom))
-            p = self._strip(i)
+    def _check(self, i):
+        while len(self._checks) <= i:
+            self._checks.append(_panel(CHECKING, True))
+        return self._checks[i]
+
+    @staticmethod
+    def _place(pool, rects):
+        for p, (left, top, right, bottom) in zip(pool, rects):
             p.setFrame_display_(((left, _cocoa_y(bottom + 1)), (max(1, right - left), STRIP)), True)
             p.orderFrontRegardless()
-        for p in self._strips[len(strips):]:
+        for p in pool[len(rects):]:
             p.orderOut_(None)
+
+    def show(self, strips, badge, checking=()):
+        """strips: [(key, (left, top, right, bottom))] of each underlined line of text. badge: (x, y, count) or None,
+        with x the right edge it hangs from. checking: (left, top, right, bottom) of each line being checked."""
+        self._words = {}
+        for i, (key, rect) in enumerate(strips):
+            self._words.setdefault(key, []).append(rect)
+            self._strip(i)
+        for i in range(len(checking)):
+            self._check(i)
+        self._place(self._strips, [rect for _, rect in strips])
+        self._place(self._checks, list(checking))
         if badge:
             x, y, count = badge
             self.count.setStringValue_(str(count))

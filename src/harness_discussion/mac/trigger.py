@@ -104,17 +104,18 @@ def key_name(code):
 
 class HotKey:
     """Watches key-downs for one shortcut. In another app it can't swallow the key, so that app sees it too.
-    With `on_release`, it also reports when the key or one of its modifiers comes up, for hold shortcuts."""
+    With `on_release`, it also reports when the key or one of its modifiers comes up, for hold shortcuts.
+    `press` watches a keyed shortcut on the event tap instead, which also sees keys macOS reserves, such as ⌘`."""
 
-    def __init__(self, spec, on_hotkey, on_release=None, *, on_activity=None, on_cancel=None):
+    def __init__(self, spec, on_hotkey, on_release=None, *, on_activity=None, on_cancel=None, press=False):
         self.keys, self.on_hotkey = hotkeys.parse(spec), on_hotkey  # parsed, so modifier order doesn't matter
         self.on_release, self._tap, self._spoiled = on_release, False, False
         self._hold, self._closed = None, False
-        if on_release is not None:
+        if on_release is not None or press:
             options = {"on_activity": on_activity} if on_activity is not None else {}
             if on_cancel is not None:
                 options["on_cancel"] = on_cancel
-            self._hold = NativeHold(spec, on_hotkey, on_release, **options)
+            self._hold = NativeHold(spec, on_hotkey, on_release or (lambda: None), press=press, **options)
             return
         mask = AppKit.NSEventMaskKeyDown
         if self.keys[1] is None:
@@ -173,14 +174,14 @@ class HotKey:
 class NativeHold:
     """Observe input and binding health independently of the AppKit main loop."""
 
-    def __init__(self, spec, on_down, on_up, *, on_activity=None, on_cancel=None):
+    def __init__(self, spec, on_down, on_up, *, on_activity=None, on_cancel=None, press=False):
         mods, key = hotkeys.parse(spec)
         primary = (next(code for code, name in KEY_CODES.items() if name == key)
                    if key in KEY_CODES.values() else int(key[4:]) if key else None)
         keymap = {code: name for code, (name, _) in MOD_CODES.items()}
         if primary is not None:
             keymap[primary] = primary
-        self.tracker = HeldShortcut(mods, primary, keymap, on_down, on_up)
+        self.tracker = HeldShortcut(mods, primary, keymap, on_down, on_up, press=press)
         self.on_activity, self.on_cancel = on_activity, on_cancel
         self._closed = False
         self._tap = self._source = self._loop = None

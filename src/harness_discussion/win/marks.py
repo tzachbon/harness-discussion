@@ -16,10 +16,11 @@ from .toast import floating
 CLICK_THROUGH = 0x08000000 | 0x80 | 0x8 | 0x80000 | 0x20
 _alpha = _bind(ctypes.windll.user32, "SetLayeredWindowAttributes", wt.BOOL, wt.HWND, wt.DWORD, wt.BYTE, wt.DWORD)
 STRIP = 2  # px tall at any scale: the process is per-monitor DPI aware, so this is physical pixels
+CHECKING = "#9aa0a6"
 
 class Marks:
     def __init__(self, root):
-        self._root, self._strips, self._words = root, [], {}
+        self._root, self._strips, self._checks, self._words = root, [], [], {}
         self._badge_at = None
         _, text = fonts(root)
         self.badge = floating(root)
@@ -27,9 +28,9 @@ class Marks:
                               cursor="hand2")
         self.count.pack()
 
-    def _strip(self, i):
-        while len(self._strips) <= i:
-            w = tk.Toplevel(self._root, bg=REMOVED_FG)
+    def _grow(self, pool, i, color):
+        while len(pool) <= i:
+            w = tk.Toplevel(self._root, bg=color)
             w.overrideredirect(True)
             w.attributes("-topmost", True)
             w.withdraw()
@@ -37,20 +38,31 @@ class Marks:
             hwnd = _get_parent(w.winfo_id())
             _set_style(hwnd, -20, _get_style(hwnd, -20) | CLICK_THROUGH)
             _alpha(hwnd, 0, 255, 2)  # LWA_ALPHA: a layered window paints only once it has attributes
-            self._strips.append(w)
-        return self._strips[i]
+            pool.append(w)
+        return pool[i]
 
-    def show(self, strips, badge):
-        """strips: [(key, (left, top, right, bottom))] of each underlined line of text. badge: (x, y, count) or None,
-        with x the right edge it hangs from."""
-        self._words = {}
-        for i, (key, (left, top, right, bottom)) in enumerate(strips):
-            self._words.setdefault(key, []).append((left, top, right, bottom))
-            w = self._strip(i)
+    def _strip(self, i):
+        return self._grow(self._strips, i, REMOVED_FG)
+
+    @staticmethod
+    def _place(pool, rects):
+        for w, (left, top, right, bottom) in zip(pool, rects):
             w.geometry(f"{max(1, right - left)}x{STRIP}+{left}+{bottom - 1}")
             w.deiconify()
-        for w in self._strips[len(strips):]:
+        for w in pool[len(rects):]:
             w.withdraw()
+
+    def show(self, strips, badge, checking=()):
+        """strips: [(key, (left, top, right, bottom))] of each underlined line of text. badge: (x, y, count) or None,
+        with x the right edge it hangs from. checking: (left, top, right, bottom) of each line being checked."""
+        self._words = {}
+        for i, (key, rect) in enumerate(strips):
+            self._words.setdefault(key, []).append(rect)
+            self._strip(i)
+        for i in range(len(checking)):
+            self._grow(self._checks, i, CHECKING)
+        self._place(self._strips, [rect for _, rect in strips])
+        self._place(self._checks, list(checking))
         if badge:
             x, y, count = badge
             self.count.configure(text=str(count))
@@ -77,6 +89,6 @@ class Marks:
         return None
 
     def destroy(self):
-        for w in (*self._strips, self.badge):
+        for w in (*self._strips, *self._checks, self.badge):
             w.destroy()
-        self._strips = []
+        self._strips, self._checks = [], []
