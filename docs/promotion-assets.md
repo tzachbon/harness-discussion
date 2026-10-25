@@ -1,5 +1,15 @@
 # Promotion asset provenance
 
+## Mac screenshots and clips (`shots/`)
+
+`packaging/capture_site_mac.py` makes every file in `shots/` from the production AppKit windows: the bar (`mac.popup.Popup`), its caption, the writer toast and Review window, Settings on Voices, and the Get started tour. Retake them on a Mac with `uv run python packaging/capture_site_mac.py`, or name scenes: `reading`, `rewriting`, `settings`, `onboarding`. It needs ffmpeg on `PATH` and no Screen Recording permission.
+
+The script grabs only its own windows with `CGWindowListCreateImageFromArray`, so nothing else on the screen can appear, and the window server draws the shadows. Stills keep a transparent background. Clips are grabbed 30 times a second inside a plain `#1c1c1f` panel and encoded as silent H.264 MP4, with the last frame saved as the poster. Pixels are the main display's: 1× on a 1× display. The site shows each file at its pixel size and only shrinks it to fit narrow screens.
+
+The Notes window is a stand-in document with sample text, and its selection is drawn in the system selection color so the script never takes focus. Callbacks do nothing. Source statuses are fixtures: Cursor, Codex, and macOS ready, Kokoro not downloaded. The rewrite result is `tour_copy.sample_fix`, not a model's output, and playback is scripted with no audio. Captions use the Settings → Captions background option so they read over white.
+
+## Windows images
+
 These files document the current Windows selection and playback UI at reference commit `777d50d83ca471d7645e84e5f9a44faebebdabdf`. The native component pixels come from owned sample windows, with no personal desktop content, network calls, sign-in, or clipboard mutation. Button callbacks are no-ops, and visible source statuses are synthetic fixtures, not detected account state.
 
 | File | Intrinsic size | Source and role |
