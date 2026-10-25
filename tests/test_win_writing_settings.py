@@ -339,7 +339,7 @@ class WritingSettingsUi(unittest.TestCase):
 
     def test_check_as_i_type_asks_first_and_lists_apps_it_is_off_in(self):
         from harness_discussion.win import writing_page
-        cfg = dict(settings.DEFAULTS, writer=True, live_off_apps=["slack.exe"])
+        cfg = dict(settings.DEFAULTS, writer=True, live_check=False, live_off_apps=["slack.exe"])
         w = self.make_window(cfg)
         with patch.object(writing_page.messagebox, "askokcancel", return_value=False) as ask:
             w.live_check.invoke()

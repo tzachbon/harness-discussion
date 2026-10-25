@@ -39,7 +39,8 @@ class WritingPage:
                                           variable=self.live_on, command=self._live_changed)
         self.live_check.pack(anchor="w", pady=(12, 0))
         ttk.Label(card, text="When you pause, underlines the default mode's changes to the line you are typing. "
-                  "Never in password fields.", style="Sub.Card.TLabel", wraplength=440).pack(anchor="w", pady=(4, 0))
+                  "The rewrite shortcut with nothing selected applies them all. Never in password fields.",
+                  style="Sub.Card.TLabel", wraplength=440).pack(anchor="w", pady=(4, 0))
         self.live_off_frame = tk.Frame(card, bg=CARD)
         self.live_off_frame.pack(fill="x")
         self._show_live_off()

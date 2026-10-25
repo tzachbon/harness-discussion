@@ -32,8 +32,8 @@ DEFAULTS = {"sources": [[n, True] for n in DEFAULT_SOURCES], "voices": {}, "spee
             # Writer: rewrite in place. Sources follow the voice order; models and modes are chosen in Settings.
             "writer": False, "writer_sources": [["Cursor", True], ["Codex", True], ["Local", True]],
             "writer_models": {}, "modes": [], "default_mode": "Fix errors",
-            # Check as you type: off until the user opts in; apps listed by name are never checked.
-            "live_check": False, "live_off_apps": [],
+            # Check as you type: on with the Writer; apps listed by name are never checked.
+            "live_check": True, "live_off_apps": [],
             "rewrite_hotkey": hotkeys.REWRITE, "dictate_hotkey": hotkeys.DICTATE,
             "stt_sources": [["Cursor", True], ["Codex", True]], "dictate_polish": True,
             "dictate_mode": "Clean dictation"}

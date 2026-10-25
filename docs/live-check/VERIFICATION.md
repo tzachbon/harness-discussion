@@ -7,7 +7,8 @@ draft (issue #99, Definition of Done 1–3 and 5). CI covers DoD 4.
 
 1. Quit the installed Harness Discussion first; only one copy runs at a time.
 2. In a checkout of `feat/live-check`: `uv sync`, then `uv run harness-discussion`.
-3. Settings → Writing: Writer on, **Default mode** = Fix errors, then turn on **Check as I type** and confirm.
+3. Settings → Writing: Writer on and **Default mode** = Fix errors. **Check as I type** is on by default; if it is
+   off, turn it on and confirm.
 4. Open the log in a second window. Windows: `%APPDATA%\harness-discussion\harness-discussion.log`.
    Mac: `~/Library/Application Support/harness-discussion/harness-discussion.log`.
 5. Open [`spikes/fixtures/live/page.html`](../../spikes/fixtures/live/page.html) from disk in each browser below.
@@ -26,6 +27,10 @@ never press Enter.
 | c | **Apply** changes only that word or span; the rest of the line is unchanged. (Badge: Review's **Replace** changes only that line.) |
 | d | **Undo** on the toast restores the original line. |
 | e | Pasting elsewhere afterwards still gives the line you copied: the clipboard was kept. |
+
+Apply all: with underlines on two lines and nothing selected, press the rewrite shortcut (Ctrl+Shift+E, ⌥⌘E). Both
+lines are fixed, no new `live check` line is logged, and the toast says how many changes were applied. Record it in
+the Mode column of the en cell.
 
 ## Windows
 

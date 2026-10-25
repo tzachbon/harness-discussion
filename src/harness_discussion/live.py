@@ -126,12 +126,17 @@ def changes(core: str, new: str) -> list[tuple[int, str, str]]:
 def applied(cache: Cache, mode, suggestion: Suggestion) -> None:
     """After `suggestion` was applied, its edited line keeps the same rewrite, so its other suggestions stay
     and it is not checked again."""
-    core, offset, old, new = suggestion.key
+    core = suggestion.key[0]
     rewrite = cache.get(core, mode)
-    if rewrite is None:
-        return
-    edited = text_at(core, 0, offset) + new + text_at(core, offset + units(old), units(core))
-    cache.put(edited, mode, rewrite)
+    if rewrite is not None:
+        cache.put(fixed(core, [suggestion]), mode, rewrite)
+
+def fixed(core: str, found) -> str:
+    """`core` with each of its suggestions in `found` applied, the rightmost first so the offsets hold."""
+    for s in sorted(found, key=lambda s: s.key[1], reverse=True):
+        _, offset, old, new = s.key
+        core = text_at(core, 0, offset) + new + text_at(core, offset + units(old), units(core))
+    return core
 
 
 def suggestions(text: str, cache: Cache, dismissed, mode) -> list[Suggestion]:

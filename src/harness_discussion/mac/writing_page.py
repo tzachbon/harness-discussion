@@ -31,7 +31,8 @@ class WritingPage:
                           self.cfg["writer"], self._writer_changed, WIDTH)
         live, self.live_switch = ui.option(
             "Check as I type", "When you pause, underlines the default mode's changes to the line you are typing. "
-            "Never in password fields.", self.cfg.get("live_check", False), self._live_changed, WIDTH)
+            "The rewrite shortcut with nothing selected applies them all. Never in password fields.",
+            self.cfg.get("live_check", settings.DEFAULTS["live_check"]), self._live_changed, WIDTH)
         self.live_switch.setEnabled_(self.cfg["writer"])
         self.live_off_list = ui.stack([], spacing=6)
         self.default_popup = _popup(self._default_picked)

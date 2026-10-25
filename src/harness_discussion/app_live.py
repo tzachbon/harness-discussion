@@ -1,5 +1,6 @@
 """Check as you type: after a pause, the line at the caret goes through the Writer with the default mode, and each
-change is underlined in the field. A click shows the suggestion with Apply, Dismiss, Review, and More.
+change is underlined in the field. A click shows the suggestion with Apply, Dismiss, Review, and More. The rewrite
+shortcut with nothing selected applies every underlined change.
 
 `App` is core.App with this part; the platform entry points start it. A poll thread reads the field through `host.edit.observe()` (never the clipboard or keys) and asks for the
 rectangles of every suggestion; the main thread draws them through `host.make_marks()`. Suggestions are derived
@@ -11,6 +12,7 @@ import threading
 import time
 
 from . import core, live, writer
+from .app_writer import UNDO_KEYS
 
 log = logging.getLogger("harness_discussion")
 
@@ -41,6 +43,8 @@ class Live:
             super()._handle(kind, *args)
 
     def rewrite_selection(self, mode_name=None, prev=None):
+        if mode_name is None and prev is None and self._live_apply_all():
+            return  # the shortcut, with nothing selected, applied the underlined changes
         self.live_cancel()  # a manual rewrite wins: a check in flight must not hold the source it needs
         super().rewrite_selection(mode_name, prev)
 
@@ -229,6 +233,41 @@ class Live:
         live.applied(self.live_cache, mode, s)
         self._last_edit = (ctx, s.old, s.new, mode.name)
         self._toast("Applied", [("Undo", self.undo_last)])
+
+    def _live_apply_all(self):
+        """The rewrite shortcut with nothing selected: every underlined change, one guarded paste per line, top
+        first. False when text is selected or nothing is underlined, so the Writer rewrites as before."""
+        if not (self.live_ready and self._live_on()):
+            return False
+        mode, field = self._find_mode(None), self.edit.observe()
+        if field is None or field.caret[0] != field.caret[1] or field.app_name in self.cfg.get("live_off_apps", ()):
+            return False
+        found = live.suggestions(field.text, self.live_cache, self._live_dismissed, mode)
+        if not found:
+            return False
+        done, count = [], 0  # (ctx, line, fixed line) per pasted line
+        while found:
+            at, core = found[0].start - found[0].key[1], found[0].key[0]
+            these = [s for s in found if s.start - s.key[1] == at]
+            new = live.fixed(core, these)
+            ctx = self._live_paste(field, at, at + live.units(core), core, new)
+            if ctx is None:
+                break
+            self.live_cache.put(new, mode, new)  # nothing left to underline, and never checked again
+            done.append((ctx, core, new))
+            count += len(these)
+            field = self.edit.observe()
+            if field is None or live.text_at(field.text, at, at + live.units(new)) != new:
+                break  # the paste can't be seen yet: stop rather than paste the next line on a guess
+            found = live.suggestions(field.text, self.live_cache, self._live_dismissed, mode)
+        if not done:
+            self._toast("The text changed. Nothing was applied.")
+        elif len(done) == 1:  # Undo restores one paste; the app's own undo steps back through several
+            self._last_edit = (*done[0], mode.name)
+            self._toast("Applied" if count == 1 else f"Applied {count} changes", [("Undo", self.undo_last)])
+        else:
+            self._toast(f"Applied {count} changes. Use {UNDO_KEYS} to undo.")
+        return True
 
     def _live_review(self, field):
         """The caret line's original and rewrite in the Review panel. Replace swaps the whole line, guarded."""
