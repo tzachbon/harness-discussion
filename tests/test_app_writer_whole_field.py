@@ -43,6 +43,14 @@ class WholeField(unittest.TestCase):
         self.assertIsNone(app.edit.selected)
         self.assertEqual(app.writer_sources[0].texts, [])
 
+    def test_the_bar_rewrites_what_it_captured_never_the_whole_field(self):
+        app = _App()
+        app.host.edit = app.edit = FieldEdit("hi there")
+        app.edit.ctx = Context("hi there", 1, 2, True, False)
+        app.rewrite_from_bar("hi there", "Fix errors")
+        self.assertIsNone(app.edit.selected)
+        self.assertEqual(app.toast_.shown[-1][0], "Rewriting · Fix errors")
+
     def test_a_selection_in_the_field_is_rewritten_as_before(self):
         app = _App()
         app.host.edit = app.edit = FieldEdit("hi there, ok", caret=(0, 8))

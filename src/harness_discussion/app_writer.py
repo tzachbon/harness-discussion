@@ -180,7 +180,7 @@ class Writer(Dictation):
         if (not (self.writer_ready and self.cfg["writer"]) or self.rewriting
                 or self._recorder is not None or self._dictation_job is not None or self._writer_closed):
             return
-        whole = prev is None and self._select_whole_field()
+        whole = mode_name is None and prev is None and self._select_whole_field()  # the shortcut, not the bar
         if whole is None:
             return
         mode = self._find_mode(mode_name)

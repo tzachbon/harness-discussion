@@ -18,11 +18,6 @@ from .toast import Toast
 from .trigger import HotKey, SelectionTrigger, top_left
 from .voice import MacVoiceEngine
 
-
-def _ignore():
-    pass
-
-
 class _Delegate(NSObject):
     def initWithHost_(self, host):
         self = objc.super(_Delegate, self).init()
@@ -200,11 +195,11 @@ class MacHost:
         if old:
             old.stop()
         if spec:
-            if on_release is None and hotkeys.parse(spec)[1] is not None:
-                on_release = _ignore  # the event tap a hold uses also sees keys macOS reserves, such as ⌘`
             options = {"on_activity": on_activity} if on_activity is not None else {}
             if on_cancel is not None:
                 options["on_cancel"] = on_cancel
+            if on_release is None and hotkeys.parse(spec)[1] is not None:
+                options["press"] = True  # the event tap a hold uses also sees keys macOS reserves, such as ⌘`
             self.shortcuts[name] = HotKey(spec, fn, on_release, **options)
 
     def mic_permission(self, then):

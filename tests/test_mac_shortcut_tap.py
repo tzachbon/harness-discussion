@@ -6,6 +6,7 @@ import types
 import unittest
 from unittest.mock import Mock, patch
 
+from harness_discussion.held_shortcut import HeldShortcut
 from tests import test_mac_hold_native as hold
 
 
@@ -28,10 +29,23 @@ class ShortcutHook(unittest.TestCase):
         fired = Mock()
         with patch.object(native_host, "HotKey") as hook:
             host.set_shortcut("rewrite", "<cmd>+<key_50>", fired)  # ⌘`, which macOS also binds
-            hook.assert_called_once_with("<cmd>+<key_50>", fired, native_host._ignore)
+            hook.assert_called_once_with("<cmd>+<key_50>", fired, None, press=True)
             hook.reset_mock()
             host.set_shortcut("rewrite", "<ctrl>+<alt>", fired)
             hook.assert_called_once_with("<ctrl>+<alt>", fired, None)
+
+
+class PressRearm(unittest.TestCase):
+    def test_a_press_shortcut_fires_again_when_its_key_is_tapped_with_the_modifiers_held(self):
+        keys, fired = {55: "cmd", 50: 50}, []
+        for press, expected in ((True, ["down", "down"]), (False, ["down"])):
+            with self.subTest(press=press):
+                fired.clear()
+                hold = HeldShortcut({"cmd"}, 50, keys, lambda: fired.append("down"), lambda: None, press=press)
+                hold.event(55, "cmd", True)
+                for down in (True, False, True):
+                    hold.event(50, 50, down)
+                self.assertEqual(fired, expected)  # a hold still needs every key up before it fires again
 
 
 if __name__ == "__main__":
