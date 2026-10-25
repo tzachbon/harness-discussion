@@ -9,7 +9,7 @@ import time
 from ctypes import wintypes
 
 from .. import settings
-from ..app_live import App
+from ..app_tour import App
 from ..core import log
 from .host import TkHost
 

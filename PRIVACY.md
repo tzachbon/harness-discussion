@@ -26,6 +26,10 @@ The optional speech-to-text server (Settings → Speech-to-text, off by default)
 
 Password fields are never read or rewritten. The log records the engine, timing, and errors, never the text.
 
+## The Get Started tour
+
+The tour uses the same sources as the features it shows, and each step names the source it uses. Playing the voice sample and reading the practice sentence send that text to the first ready voice. Rewriting the sample, dictating the practice line, and pausing in the last step's box send that text or recording to the first ready writing or speech source. With no source ready, the tour shows sample results that never leave your computer. Practice doesn't change your saved settings unless you turn on a Keep switch or change a shortcut. New installs start with Writing and Check as I type on. Check as I type sends a line you type in any app to the first ready writing source after you pause; turn it off in Settings → Writing.
+
 ## Downloads and update checks
 
 - Kokoro downloads from GitHub, and the Summarize model from GitHub and Hugging Face, only when you ask in Settings.

@@ -87,7 +87,8 @@ class Watcher:
         stale = is_stale(self.app.cfg.get("ax_granted_build"), build)
         log.info("accessibility missing (stale: %s)", stale)
         host.set_permission_missing(True)
-        self.show_guide(stale)
+        if not getattr(self.app, "tour_pending", lambda: False)():
+            self.show_guide(stale)  # the tour's first step asks instead, and shows the guide when it closes
 
     def show_guide(self, stale=None):
         if stale is None:
