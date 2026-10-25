@@ -256,6 +256,21 @@ class MarksTest(unittest.TestCase):
         self.assertEqual(len(self.marks._strips), 3)
         self.assertEqual([w.state() for w in self.marks._strips], ["normal", "withdrawn", "withdrawn"])
 
+    def test_checking_strips_are_grey_click_through_and_never_hit(self):
+        from harness_discussion.win.captions import _get_parent, _get_style
+        self.marks.show([("a", (10, 20, 50, 38))], None, checking=[(0, 60, 200, 78)])
+        self.root.update_idletasks()
+        grey = self.marks._checks[0]
+        self.assertEqual(grey.geometry(), "200x2+0+77")
+        self.assertEqual(grey.cget("bg"), self.marks_module.CHECKING)
+        self.assertEqual(_get_style(_get_parent(grey.winfo_id()), -20) & self.marks_module.CLICK_THROUGH,
+                         self.marks_module.CLICK_THROUGH)
+        self.assertIsNone(self.marks.hit(100, 70))
+        self.assertEqual(self.marks._strips[0].state(), "normal")
+        self.marks.show([], None)
+        self.root.update_idletasks()
+        self.assertEqual(grey.state(), "withdrawn")
+
     def test_hit_finds_the_word_or_the_badge(self):
         self.marks.show([("a", (10, 20, 50, 38)), ("a", (0, 40, 30, 58))], (400, 100, 3))
         self.root.update_idletasks()

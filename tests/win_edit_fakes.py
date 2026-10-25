@@ -10,7 +10,8 @@ UNSUPPORTED = object()
 @contextmanager
 def native_host(window):
     from harness_discussion.win import selection
-    client = SimpleNamespace(IUIAutomation=SimpleNamespace(CheckNotSupported=lambda value: value is UNSUPPORTED))
+    client = SimpleNamespace(IUIAutomation=SimpleNamespace(CheckNotSupported=lambda value: value is UNSUPPORTED,
+                                                            CreatePropertyCondition=lambda *args: args))
     native_class = lambda hwnd, buf, size: setattr(buf, "value", "Chrome_RenderWidgetHostHWND") or 27
     with patch.object(selection.uia, "GetForegroundWindow", return_value=42), \
             patch.object(selection.uia, "GetAncestor", return_value=42), \
