@@ -157,6 +157,14 @@ class SandboxTest(FlowTest):
         self.assertTrue(self.last_saved()["writer"])
         self.assertFalse(self.app.sandboxed("writer"))
 
+    def test_the_review_step_keeps_the_rewritten_box_text(self):
+        self.app.open()
+        self.app.tour.box = SimpleNamespace(text=lambda: "Fixed text.")
+        self.app.tour_go(3)
+        self.app._last_edit = (app_practice.practice.PracticeCtx("x", 1, -1, True, False), "x", "Fixed text.", "Fix")
+        self.app.tour_next()
+        self.assertEqual(self.app.tour.shown[-1]["box"], {"text": "Fixed text.", "select": None})
+
     def test_closing_restores_the_remaining_practice_values(self):
         self.app.cfg.update(writer=False, live_check=False)
         self.app.tour_go(6)  # both keys sandboxed

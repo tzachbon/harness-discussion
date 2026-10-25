@@ -22,7 +22,7 @@ from tests.test_win_writer_ui import click, labels
 def state(cfg, **kw):
     s = dict(mac=False, trusted=True, stale=False, cfg=cfg, progress={}, statuses={}, writer_statuses={},
              stt_statuses={}, sandboxed=set(), voice_source=None, writer_source=None, stt_source=None,
-             has_practice_edit=False, sample_used=set())
+             has_practice_edit=False, review_text=None, sample_used=set())
     return SimpleNamespace(**{**s, **kw})
 
 

@@ -67,7 +67,7 @@ class _App:
 def state(app, **over):
     base = dict(mac=True, trusted=True, stale=False, cfg=app.cfg, progress={}, statuses={}, writer_statuses={},
                 stt_statuses={}, sandboxed=set(), voice_source="Cursor", writer_source="Cursor", stt_source="Local",
-                has_practice_edit=False, sample_used=set())
+                has_practice_edit=False, review_text=None, sample_used=set())
     base.update(over)
     return SimpleNamespace(**base)
 
@@ -110,14 +110,16 @@ class TourWindowTest(_TourCase):
         for step, over in ((None, {}), ("welcome", {"trusted": False, "stale": True}),
                            ("voice", {"statuses": {"Codex": "signed_out"}, "progress": {"voice": "tried"}}),
                            ("read", {}), ("rewrite", {"writer_source": None, "sandboxed": {"writer"}}),
-                           ("review", {"has_practice_edit": True}), ("dictate", {"trusted": False, "stt_source": None}),
+                           ("review", {"has_practice_edit": True, "review_text": "Fixed text."}), ("dictate", {"trusted": False, "stt_source": None}),
                            ("live", {"sandboxed": {"live_check"}})):
             with self.subTest(step=step):
                 v = view(self.app, step, **over)
                 self.t.show(v)
                 self.t.refresh(v)
                 self.assertEqual(self.t.box is not None, v["box"] is not None)
-                self.assertEqual(v["box"] is not None, step in tour.PRACTICE_STEPS and step != "review")
+                self.assertEqual(v["box"] is not None, step in tour.PRACTICE_STEPS)
+                if step == "review":
+                    self.assertEqual(self.t.box.text(), "Fixed text.")  # Review's Replace edits it
 
     def test_keep_live_asks_first(self):
         self.t.show(view(self.app, "live", sandboxed={"writer", "live_check"}))

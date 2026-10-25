@@ -18,7 +18,7 @@ def state(**over):
     base = dict(mac=True, trusted=True, stale=False, cfg=dict(MAC_CFG),
                 progress={}, statuses={}, writer_statuses={}, stt_statuses={}, sandboxed=set(),
                 voice_source="Cursor", writer_source="Cursor", stt_source="Local",
-                has_practice_edit=False, sample_used=set())
+                has_practice_edit=False, review_text=None, sample_used=set())
     base.update(over)
     return SimpleNamespace(**base)
 
@@ -216,9 +216,9 @@ class ViewTest(unittest.TestCase):
         self.assertEqual(v["status"], ("✓ You played it from the bar.", True))
 
     def test_the_review_step_follows_the_last_practice_edit(self):
-        s = state(has_practice_edit=True)
+        s = state(has_practice_edit=True, review_text="Fixed text.")
         v = tour_view.view(4, s)
-        self.assertIsNone(v["box"])
+        self.assertEqual(v["box"], {"text": "Fixed text.", "select": None})  # Review's Replace edits this box
         self.assertEqual(v["rows"], [{"name": "Click Review on the toast, or", "sub": None, "pill": None,
                                       "ok": True, "actions": [("Open Review", ("review", None))]}])
         v = tour_view.view(4, state(has_practice_edit=False))

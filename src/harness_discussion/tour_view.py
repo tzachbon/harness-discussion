@@ -109,7 +109,8 @@ def _rewrite(v, s, tried):
 
 
 def _review(v, s, tried):
-    if s.has_practice_edit:
+    if s.has_practice_edit and s.review_text is not None:
+        v["box"] = {"text": s.review_text, "select": None}
         v["rows"].append(_row("Click Review on the toast, or", ok=True,
                               actions=[("Open Review", ("review", None))]))
     else:

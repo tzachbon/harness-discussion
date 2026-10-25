@@ -11,6 +11,7 @@ class Tour:
     tour, _tour_index, _tour_dismissed, _tour_back_to_done = None, 0, False, False
     _sandbox = {}  # key -> saved value, while the tour has the setting on for practice; replaced per App in open_tour
     _sample_used = ()
+    _review_text = None  # the box's text when the tour left Rewrite or Review
 
     def _handle(self, kind, *args):
         if kind == "settings" and args:  # ("settings", True): only core's first-run welcome, new installs only
@@ -52,6 +53,9 @@ class Tour:
         return tour.STEPS[self._tour_index] if self.tour and self._tour_index < len(tour.STEPS) else None
 
     def tour_go(self, index):
+        box = self.tour_box()
+        if box is not None and self.tour_step() in ("rewrite", "review"):
+            self._review_text = box.text()  # Review shows it again, so its Replace finds the rewritten words
         self._tour_index = index
         step = self.tour_step()
         if step in ("rewrite", "review", "dictate", "live"):
@@ -168,6 +172,7 @@ class Tour:
                                writer_source=self.tour_writer_source(), stt_source=self.tour_stt_source(),
                                has_practice_edit=self._last_edit is not None
                                and isinstance(self._last_edit[0], practice.PracticeCtx),
+                               review_text=self._review_text,
                                sample_used=self._sample_used)
 
     def _ax_state(self):
