@@ -247,6 +247,15 @@ class WhenItChecks(unittest.TestCase):
             self.app.tick(at)
         self.assertEqual(self.app.source.texts, [])
 
+    def test_the_caret_moving_off_the_typed_line_before_a_poll_sends_nothing(self):
+        self.field.text = "first line was not typed\nsecond line is typed no"
+        self.app.tick(0)
+        self.field.text += "w"
+        self.field.at = live.units("first line")  # typed on the second line, then moved up before the next poll
+        for at in range(1, 6):
+            self.app.tick(at)
+        self.assertEqual(self.app.source.texts, [])
+
     def test_a_rewrite_starting_during_the_poll_stops_the_check(self):
         observe = self.field.observe
 

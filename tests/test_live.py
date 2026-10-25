@@ -67,6 +67,12 @@ class Suggestions(unittest.TestCase):
         self.assertEqual([(s.old, s.new) for s in found], [("think", "I think")])
         self.assertEqual(found[0].start, 0)
 
+    def test_insertions_around_one_word_are_one_change(self):
+        cache = cached(("think we go", "I think that we go"))
+        found = live.suggestions("think we go", cache, set(), MODE)
+        self.assertEqual([(s.old, s.new) for s in found], [("think", "I think that")])
+        self.assertEqual(live.fixed("think we go", found), "I think that we go")
+
     def test_deletion(self):
         cache = cached(("it is is fine now", "it is fine now"))
         found = live.suggestions("it is is fine now", cache, set(), MODE)

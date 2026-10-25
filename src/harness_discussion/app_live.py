@@ -57,7 +57,7 @@ class Live:
             hasattr(self.edit, f) for f in ("observe", "bounds", "select_range")) and hasattr(self.host, "make_marks")
         self.live_cache, self._live_dismissed = live.Cache(), set()
         self._live_cancel, self._live_checking = threading.Event(), None  # the line being checked, or None
-        self._live_seen = None  # (app, window, digest) of the last poll, and when it first looked like that
+        self._live_seen, self._live_text = None, ""  # (app, window, handle, digest) and text of the last poll
         self._live_changed_at = 0.0
         self._live_typed = None  # (app, window, handle, line start) of the line last typed in, while it is focused
         self._live_view, self._live_posted = None, None  # what the last live_marks event drew
@@ -105,10 +105,11 @@ class Live:
         start, end = live.paragraph_at(field.text, field.caret[0])
         if seen != self._live_seen:
             if self._live_seen is not None and seen[:3] == self._live_seen[:3]:  # typed in: the text changed
-                self._live_typed = (*seen[:3], start)
+                a, b = live.edited(self._live_text, field.text)
+                self._live_typed = (*seen[:3], start) if a <= end and start <= b else None  # not if the caret left
             elif self._live_typed is not None and self._live_typed[:3] != seen[:3]:
                 self._live_typed = None  # another field: a line is sent only after typing in it
-            self._live_seen, self._live_changed_at = seen, now
+            self._live_seen, self._live_text, self._live_changed_at = seen, field.text, now
         mode = self._find_mode(None)
         found = live.suggestions(field.text, self.live_cache, self._live_dismissed, mode)[:live.MAX_SUGGESTIONS]
         rects = self.edit.bounds(field, [(s.start, s.end, s.old) for s in found]) if found else []

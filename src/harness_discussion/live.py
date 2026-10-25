@@ -4,6 +4,7 @@ rewrites. A suggestion is derived from the current text on every poll, so it nev
 Offsets are UTF-16 code units of the field's text as the platform reports it: Windows folds line breaks to "\\n",
 macOS keeps the raw "\\r\\n" or "\\r", so all three end a line here.
 """
+import os
 import re
 import threading
 from collections import OrderedDict, namedtuple
@@ -50,6 +51,12 @@ def paragraph_at(text: str, caret: int) -> tuple[int, int]:
             break
     return start, end
 
+
+def edited(old: str, new: str) -> tuple[int, int]:
+    """[start, end) in UTF-16 units of the part of `new` that differs from `old`."""
+    same = len(os.path.commonprefix([old, new]))
+    tail = len(os.path.commonprefix([old[same:][::-1], new[same:][::-1]]))
+    return units(new[:same]), units(new[:len(new) - tail])
 
 def checkable(line: str) -> bool:
     core = line.strip()
@@ -120,7 +127,15 @@ def changes(core: str, new: str) -> list[tuple[int, str, str]]:
         elif changed:
             out.append((at, a, b))
         at += units(a)
-    return out
+    merged = []
+    for offset, old, new in out:
+        if merged and offset < merged[-1][0] + units(merged[-1][1]):  # two changes took in the same word: one
+            o, a, b = merged.pop()
+            shared = text_at(core, offset, o + units(a))
+            merged.append((o, a + old[len(shared):], b[:len(b) - len(shared)] + new))
+        else:
+            merged.append((offset, old, new))
+    return merged
 
 
 def applied(cache: Cache, mode, suggestion: Suggestion) -> None:
