@@ -199,6 +199,8 @@ class CaptureSafety(unittest.TestCase):
                               True if case == "password" else UNSUPPORTED if case.endswith("unsupported") else False)
                 bridge = pane(46, window, password=False)
                 bridge.ClassName = selection.WINUI_BRIDGE
+                bridge.GetPattern = Mock(return_value=None)
+                bridge.GetRuntimeId.return_value = [7]
                 host = pane(45, bridge)
                 browser = pane(44, window if case.startswith("unvouched") else host)
                 document.IsPassword = case == "inner password"
