@@ -15,7 +15,7 @@ import wave
 
 import av
 
-from harness_discussion import stt, stt_server
+from harness_discussion import stt, stt_server, writer
 from harness_discussion.codex_rt import AppServer
 
 from stt_helpers import FakePeer, multipart, receive, wav, words
@@ -57,6 +57,14 @@ class Module(unittest.TestCase):
             decode.assert_not_called()
         finally:
             stt._busy.release()
+
+    def test_cancel_before_or_during_lock_acquisition_never_decodes(self):
+        for checks in ([True, True], [False, True]):
+            with self.subTest(checks=checks), patch.object(stt, "decode_audio") as decode:
+                with self.assertRaises(writer.Cancelled):
+                    stt.transcribe(wav(), cancelled=MagicMock(side_effect=checks))
+                decode.assert_not_called()
+                self.assertFalse(stt._busy.locked())
 
     def test_backend_failure_reaps_and_releases(self):
         with patch.object(stt, "AppServer") as server, patch.object(stt, "_receive", side_effect=RuntimeError("failed")):
