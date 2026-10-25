@@ -77,7 +77,8 @@ class PracticeField(Box):
     def _set(self, start, end, new):
         tv, rng = self.text_view, (start, end - start)
         if tv.shouldChangeTextInRange_replacementString_(rng, new):
-            tv.textStorage().replaceCharactersInRange_withString_(rng, new)
+            text = AppKit.NSAttributedString.alloc().initWithString_attributes_(new, tv.typingAttributes())
+            tv.textStorage().replaceCharactersInRange_withAttributedString_(rng, text)
             tv.didChangeText()
         tv.setSelectedRange_((start + live.units(new), 0))
 
