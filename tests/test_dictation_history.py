@@ -54,5 +54,7 @@ class HistoryTest(DictationCase):
         for _ in range(history.LIMIT + 2):
             history.add("x")
         self.assertEqual(len(history.load()), history.LIMIT)
+        open(self.path + ".tmp", "w").close()  # left by a save that failed mid-write
         history.clear()
         self.assertEqual(history.load(), [])
+        self.assertFalse(os.path.exists(self.path + ".tmp"))

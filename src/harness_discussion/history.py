@@ -43,11 +43,13 @@ def finish(at, text, keep=lambda: True) -> None:
         _save([{**i, "text": text} if i.get("at") == at else i for i in load()])
 
 def clear() -> None:
+    """Deletes the history and any temp file a failed save left behind, which also holds transcripts."""
     with _lock:
-        try:
-            os.remove(PATH)
-        except FileNotFoundError:
-            pass
+        for path in (PATH, PATH + ".tmp"):
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                pass
 
 def rows() -> list:
     """[(preview, text, original)] newest first. original is the raw transcript when tidy changed it, else None."""
