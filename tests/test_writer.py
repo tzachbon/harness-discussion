@@ -47,6 +47,19 @@ class ModesTest(unittest.TestCase):
         for mode in writer.BUILTIN_MODES:
             self.assertLessEqual(len(writer.system_prompt(mode, short=True).split()), 170, mode.name)
 
+    def test_clean_dictation_prompts_cover_spoken_structure_without_changing_facts(self):
+        mode = writer.find_mode("Clean dictation", writer.BUILTIN_MODES)
+        for short in (False, True):
+            prompt = writer.system_prompt(mode, short=short)
+            self.assertIn("numbered list", prompt)
+            self.assertIn("1, 2, 3", prompt)
+            self.assertIn("factual numbers", prompt)
+            self.assertIn("self-corrections", prompt)
+            self.assertNotIn("names, numbers", prompt)
+        self.assertIn("list markers and list formatting are exceptions", writer.system_prompt(mode))
+        self.assertIn("task numbering overrides list markers", writer.system_prompt(mode, short=True))
+        self.assertFalse(mode.styled)
+
     def test_override_keeps_style_but_uses_its_own_words_on_the_short_tier(self):
         long = "Sound like me. " + "word " * 300
         mode = writer.find_mode("Message", writer.all_modes([{"name": "Message", "instructions": long}]))

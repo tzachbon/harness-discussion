@@ -163,7 +163,7 @@ class PopupSettings(unittest.TestCase):
         label.event_generate("<ButtonPress-1>", x=2, y=2)
         label.event_generate("<ButtonRelease-1>", x=2, y=2)
         self.assertTrue(popup.playing and popup.loading)
-        self.assertEqual(label["fg"], win_popup.ACCENT)
+        self.assertEqual(label["fg"], win_popup.HUD_ACCENT)
         app._handle(*app.events.get(timeout=5))  # the summary, from the worker thread
         for _ in range(2):  # speech events, then the caption they schedule
             while not app.events.empty():

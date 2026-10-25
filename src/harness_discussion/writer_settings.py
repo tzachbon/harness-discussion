@@ -78,7 +78,7 @@ def delete_mode(custom, name):
     return [dict(m) for m in custom if m.get("name") != name]
 
 
-def default_mode(default, custom):
-    """The default mode, or the first mode when the saved one was deleted or renamed."""
+def default_mode(default, custom, fallback="Fix errors"):
+    """The selected mode, or its fallback when the saved one was deleted or renamed."""
     names = [m.name for m in writer.all_modes(custom)]
-    return default if default in names else names[0]
+    return default if default in names else fallback

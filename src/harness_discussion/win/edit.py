@@ -65,19 +65,9 @@ def _inspect():
         return None
     app, window = identity
     focus = uia.GetFocusedControl()
-    ancestors, node = [], focus
-    for _ in range(32):
-        if node is None:
-            break
-        password = selection.password_state(node)
-        if password is None:
-            return None
-        if password:
-            return Context("", app, window, False, True), "", None
-        ancestors.append(node)
-        node = node.GetParentControl()
-    else:
-        return None
+    ancestors = selection._safe_controls(focus, window)
+    if ancestors is selection.PASSWORD:
+        return Context("", app, window, False, True), "", None
     if not ancestors:
         return None
     element = tuple(focus.GetRuntimeId())

@@ -13,6 +13,22 @@ from unittest.mock import Mock, patch
 
 from harness_discussion.win import clipboard
 
+UNSUPPORTED = object()
+
+
+@contextmanager
+def native_host(window):
+    from harness_discussion.win import selection
+    client = SimpleNamespace(IUIAutomation=SimpleNamespace(CheckNotSupported=lambda value: value is UNSUPPORTED))
+    native_class = lambda hwnd, buf, size: setattr(buf, "value", "Chrome_RenderWidgetHostHWND") or 27
+    with patch.object(selection.uia, "GetForegroundWindow", return_value=42), \
+            patch.object(selection.uia, "GetAncestor", return_value=42), \
+            patch.object(selection.uia, "ControlFromHandle", return_value=window), \
+            patch.object(selection.uia, "ControlsAreSame", side_effect=lambda left, right: left is right), \
+            patch.object(selection.u32, "GetClassNameW", side_effect=native_class), \
+            patch.object(selection.automation._AutomationClient, "instance", return_value=client):
+        yield
+
 
 class Document:
     """A deterministic UIA provider, including independent selection and document state."""
@@ -384,6 +400,151 @@ print("clean shutdown")
             key.assert_not_called()
             snap.assert_not_called()
         document.GetPattern.assert_not_called()
+
+    def test_chromium_window_default_does_not_hide_safe_selected_text(self):
+        from harness_discussion.win import edit, selection
+        for kind in (selection.uia.ControlType.WindowControl, selection.uia.ControlType.PaneControl):
+            with self.subTest(kind=kind):
+                document = Document()
+                password = Mock(return_value=UNSUPPORTED)
+                window = SimpleNamespace(ControlType=kind, NativeWindowHandle=42,
+                                         Element=SimpleNamespace(GetCurrentPropertyValueEx=password),
+                                         GetParentControl=lambda: None, GetPattern=Mock(return_value=None))
+                document.GetParentControl = lambda: window
+                with target(document) as (_, key, snap, _), native_host(window):
+                    self.assertEqual(selection.read(False), "old")
+                    context = edit.capture(False)
+                    self.assertIsNotNone(context)
+                    self.assertEqual(context.text, "old")
+                    key.assert_not_called()
+                    snap.assert_not_called()
+                window.GetPattern.assert_not_called()
+
+    def test_unknown_inner_container_still_blocks_every_text_read(self):
+        from harness_discussion.win import edit, selection
+        document = Document()
+        window = Mock(ControlType=selection.uia.ControlType.PaneControl, NativeWindowHandle=43)
+        window.Element.GetCurrentPropertyValueEx.return_value = UNSUPPORTED
+        document.GetParentControl = lambda: window
+        document.GetPattern = Mock(wraps=document.GetPattern)
+        with target(document), native_host(window):
+            self.assertEqual(selection.read(False), "")
+            self.assertIsNone(edit.capture(False))
+        document.GetPattern.assert_not_called()
+
+    def test_default_password_metadata_is_only_used_for_window_ancestors(self):
+        from harness_discussion.win import edit, selection
+        for kind, ancestor, value in (
+                (selection.uia.ControlType.DocumentControl, True, UNSUPPORTED),
+                (selection.uia.ControlType.EditControl, True, UNSUPPORTED),
+                (selection.uia.ControlType.TextControl, True, UNSUPPORTED),
+                (selection.uia.ControlType.WindowControl, False, UNSUPPORTED),
+                (selection.uia.ControlType.WindowControl, True, True),
+                (selection.uia.ControlType.WindowControl, True, object())):
+            with self.subTest(kind=kind, ancestor=ancestor, value=value):
+                document = Document()
+                window = Mock(ControlType=kind, NativeWindowHandle=42)
+                window.Element.GetCurrentPropertyValueEx.return_value = value
+                window.GetParentControl.return_value = None
+                document.GetParentControl = lambda: window
+                focused = document if ancestor else window
+                document.GetPattern = Mock(wraps=document.GetPattern)
+                with target(focused), native_host(window):
+                    self.assertEqual(selection.read(False), "")
+                    captured = edit.capture(False)
+                    if value is True:
+                        self.assertIsInstance(captured, edit.Context)
+                        self.assertTrue(captured.secure)
+                        self.assertEqual(captured.text, "")
+                    else:
+                        self.assertIsNone(captured)
+                document.GetPattern.assert_not_called()
+                window.GetPattern.assert_not_called()
+
+    def test_host_boundary_requires_exact_native_identity(self):
+        from harness_discussion.win import edit, selection
+        document = Document()
+        window = Mock(ControlType=selection.uia.ControlType.WindowControl, NativeWindowHandle=42)
+        window.Element.GetCurrentPropertyValueEx.return_value = UNSUPPORTED
+        document.GetParentControl = lambda: window
+        document.GetPattern = Mock(wraps=document.GetPattern)
+        with target(document), native_host(window), \
+                patch.object(selection.uia, "ControlFromHandle", return_value=object()):
+            self.assertEqual(selection.read(False), "")
+            self.assertIsNone(edit.capture(False))
+        document.GetPattern.assert_not_called()
+
+    def test_native_chromium_renderer_is_skipped_but_outer_password_is_checked(self):
+        from harness_discussion.win import edit, selection
+        for secure in (False, True):
+            with self.subTest(secure=secure):
+                document = Document()
+                window = Mock(ControlType=selection.uia.ControlType.WindowControl, NativeWindowHandle=42)
+                window.Element.GetCurrentPropertyValueEx.return_value = True if secure else UNSUPPORTED
+                window.GetParentControl.return_value = None
+                renderer = Mock(ControlType=selection.uia.ControlType.PaneControl, NativeWindowHandle=43,
+                                ClassName="Chrome_RenderWidgetHostHWND")
+                renderer.Element.GetCurrentPropertyValueEx.return_value = UNSUPPORTED
+                renderer.GetParentControl.return_value = window
+                document.GetParentControl = lambda: renderer
+                document.GetPattern = Mock(wraps=document.GetPattern)
+                with target(document), native_host(window), \
+                        patch.object(selection.uia, "ControlFromHandle", side_effect=lambda hwnd: window if hwnd == 42 else renderer):
+                    self.assertEqual(selection.read(False), "" if secure else "old")
+                    context = edit.capture(False)
+                    self.assertIsNotNone(context)
+                    self.assertEqual(context.secure, secure)
+                    self.assertEqual(context.text, "" if secure else "old")
+                renderer.GetPattern.assert_not_called()
+                window.GetPattern.assert_not_called()
+                if secure:
+                    document.GetPattern.assert_not_called()
+
+    def test_renderer_exception_requires_its_native_class_and_verified_outer_root(self):
+        from harness_discussion.win import edit, selection
+        for case in ("missing root", "malformed root", "root error", "UIA class", "native class", "wrong root"):
+            with self.subTest(case=case):
+                document = Document()
+                window = Mock(ControlType=selection.uia.ControlType.WindowControl, NativeWindowHandle=42)
+                window.Element.GetCurrentPropertyValueEx.return_value = UNSUPPORTED
+                window.GetParentControl.return_value = None
+                renderer = Mock(ControlType=selection.uia.ControlType.PaneControl, NativeWindowHandle=43,
+                                ClassName="Chrome_RenderWidgetHostHWND")
+                renderer.Element.GetCurrentPropertyValueEx.return_value = UNSUPPORTED
+                renderer.GetParentControl.return_value = window
+                document.GetParentControl = lambda: renderer
+                document.GetPattern = Mock(wraps=document.GetPattern)
+                if case == "missing root":
+                    renderer.GetParentControl.return_value = None
+                elif case == "malformed root":
+                    window.Element.GetCurrentPropertyValueEx.return_value = object()
+                elif case == "root error":
+                    window.Element.GetCurrentPropertyValueEx.side_effect = OSError("provider failed")
+                elif case == "UIA class":
+                    renderer.ClassName = "UnverifiedPane"
+                with target(document), native_host(window), ExitStack() as stack:
+                    stack.enter_context(patch.object(selection.uia, "ControlFromHandle",
+                                                     side_effect=lambda hwnd: window if hwnd == 42 else renderer))
+                    if case == "native class":
+                        stack.enter_context(patch.object(selection.u32, "GetClassNameW", return_value=0))
+                    elif case == "wrong root":
+                        stack.enter_context(patch.object(selection.uia, "GetAncestor", return_value=99))
+                    self.assertEqual(selection.read(False), "")
+                    self.assertIsNone(edit.capture(False))
+                document.GetPattern.assert_not_called()
+                renderer.GetPattern.assert_not_called()
+                window.GetPattern.assert_not_called()
+
+    def test_empty_child_text_pattern_does_not_hide_parent_selection(self):
+        from harness_discussion.win import selection
+        for collapsed in (True, False):
+            with self.subTest(collapsed=collapsed):
+                child, parent = Document("child", 0, 0), Document("selected parent", 0, 15)
+                if not collapsed:
+                    child.GetSelection = lambda: []
+                child.GetParentControl = lambda: parent
+                with target(child):
+                    self.assertEqual(selection.read(False), "selected parent")
 
     def test_worker_keeps_its_mta_apartment_between_operations(self):
         code = '''

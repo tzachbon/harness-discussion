@@ -4,11 +4,12 @@ from copy import deepcopy
 from tkinter import ttk
 
 from .. import settings, writer
+from .. import writer_settings as ws
 from .sources_ui import CARD
 
 PLAN_DEFAULTS = {k: settings.DEFAULTS[k] for k in ("writer", "writer_sources", "writer_models", "modes",
                                                    "default_mode", "rewrite_hotkey", "dictate_hotkey", "stt_sources",
-                                                   "dictate_polish")}
+                                                   "dictate_polish", "dictate_mode")}
 LOCAL_MODEL = "Qwen3-4B"  # fixed: Local has no model or effort choice
 FIXES = {"missing": "Install…", "signed_out": "Sign in…", "expired": "Sign in…", "not_downloaded": "Download…"}
 
@@ -43,10 +44,18 @@ class WritingPage:
         self.dictation_rows = {name: self._writer_row(frame, name, "stt_sources")
                                for name, _ in self.cfg["stt_sources"]}
         self.polish_on = tk.BooleanVar(self.win, self.cfg["dictate_polish"])
-        self.polish_check = ttk.Checkbutton(card, text="Tidy dictation with the default mode",
+        self.polish_check = ttk.Checkbutton(card, text="Tidy dictation after transcribing",
                                             style="Card.TCheckbutton", variable=self.polish_on,
-                                            command=lambda: self._set("dictate_polish", self.polish_on.get()))
+                                            command=self._polish_changed)
         self.polish_check.pack(anchor="w", pady=(8, 0))
+        row = tk.Frame(card, bg=CARD)
+        row.pack(fill="x", pady=(8, 0))
+        ttk.Label(row, text="Dictation mode", style="Card.TLabel", width=14).pack(side="left")
+        self.dictate_mode = ttk.Combobox(row, state="readonly", width=24)
+        self.dictate_mode.bind("<<ComboboxSelected>>", lambda _e: self._set("dictate_mode", self.dictate_mode.get()))
+        self.dictate_mode.pack(side="left")
+        ttk.Label(card, text="Create or edit a custom prompt in Modes above, then select it here.",
+                  style="Sub.Card.TLabel", wraplength=440).pack(anchor="w", pady=(6, 0))
         self.mic_status = ttk.Label(card, style="Sub.Card.TLabel")
         self.mic_status.pack(anchor="w", pady=(8, 0))
         self._shortcut_row(card, "dictate_hotkey", "Hold to record, release to type the text at the caret.")
@@ -121,14 +130,30 @@ class WritingPage:
         self._set("modes", custom)
         if renamed and self.cfg["default_mode"] == self._editing:
             self._set("default_mode", name)
+        if renamed and self.cfg["dictate_mode"] == self._editing:
+            self._set("dictate_mode", name)
         self._edit_mode(name)
+        self._refresh_dictation_mode()
 
     def _delete_mode(self):
         self._set("modes", [{"name": m.name, "instructions": m.instructions}
                             for m in self._modes() if not m.builtin and m.name != self._editing])
         if self.cfg["default_mode"] not in [m.name for m in self._modes()]:
             self._set("default_mode", writer.BUILTIN_MODES[0].name)
+        name = ws.default_mode(self.cfg["dictate_mode"], self.cfg["modes"], "Clean dictation")
+        if name != self.cfg["dictate_mode"]:
+            self._set("dictate_mode", name)
         self._edit_mode(self._editing)
+        self._refresh_dictation_mode()
+
+    def _polish_changed(self):
+        self._set("dictate_polish", self.polish_on.get())
+        self._refresh_dictation_mode()
+
+    def _refresh_dictation_mode(self):
+        self.dictate_mode.configure(values=[m.name for m in self._modes()],
+                                   state="readonly" if self.cfg["dictate_polish"] else "disabled")
+        self.dictate_mode.set(ws.default_mode(self.cfg["dictate_mode"], self.cfg["modes"], "Clean dictation"))
 
     def _writer_row(self, f, name, key="writer_sources"):
         on = tk.BooleanVar(self.win)
@@ -194,6 +219,7 @@ class WritingPage:
         self._show_rows("writer_sources", self.writer_rows, ("toggle", "status", "model", "effort", "up", "down", "fix"))
         self._show_rows("stt_sources", self.dictation_rows, ("toggle", "up", "down"))  # no STT status is supplied
         self.mic_status["text"] = f"Microphone: {self.dictate_status()}"
+        self._refresh_dictation_mode()
 
     def _writer_toggled(self, name, key):
         rows = self.writer_rows if key == "writer_sources" else self.dictation_rows

@@ -33,7 +33,8 @@ DEFAULTS = {"sources": [[n, True] for n in DEFAULT_SOURCES], "voices": {}, "spee
             "writer": False, "writer_sources": [["Cursor", True], ["Codex", True], ["Local", True]],
             "writer_models": {}, "modes": [], "default_mode": "Fix errors",
             "rewrite_hotkey": hotkeys.REWRITE, "dictate_hotkey": hotkeys.DICTATE,
-            "stt_sources": [["Cursor", True], ["Codex", True]], "dictate_polish": True}
+            "stt_sources": [["Cursor", True], ["Codex", True]], "dictate_polish": True,
+            "dictate_mode": "Clean dictation"}
 WRITER_SOURCES, STT_SOURCES = ("Cursor", "Codex", "Local"), ("Cursor", "Codex")
 SPEEDS = (0.5, 2.0)
 SPEED_PRESETS = (0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)  # the popup's speed menu
@@ -114,8 +115,9 @@ def load(path=PATH) -> dict:
                           for name, choice in models.items() if name in WRITER_SOURCES and isinstance(choice, dict)}
     if not isinstance(s["modes"], list):
         s["modes"] = []
-    if not isinstance(s["default_mode"], str) or not s["default_mode"].strip():
-        s["default_mode"] = DEFAULTS["default_mode"]
+    for key in ("default_mode", "dictate_mode"):
+        if not isinstance(s[key], str) or not s[key].strip():
+            s[key] = DEFAULTS[key]
     return s
 
 

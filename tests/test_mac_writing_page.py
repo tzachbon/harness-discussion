@@ -57,7 +57,7 @@ class WritingSettingsTest(unittest.TestCase):
         self.assertEqual(self.win.mic_status.stringValue(), "Asks the first time you dictate")
 
     def test_dictation_has_the_polish_switch(self):
-        self.assertEqual(self.win.polish_switch.accessibilityLabel(), "Tidy dictation with the default mode")
+        self.assertEqual(self.win.polish_switch.accessibilityLabel(), "Tidy dictation after transcribing")
         self.click(self.win.polish_switch)
         self.assertEqual(self.changes[-1][0], "dictate_polish")
 
@@ -82,11 +82,34 @@ class WritingSettingsTest(unittest.TestCase):
         w.mode_text.setStringValue_("Short and casual.")
         w._save_mode()
         self.assertEqual(self.changes[-1], ("modes", [{"name": "Slack", "instructions": "Short and casual."}]))
-        w.default_popup.selectItemAtIndex_(4)
+        w.default_popup.selectItemWithTitle_("Slack")
         self.click(w.default_popup)
         self.assertEqual(self.changes[-1], ("default_mode", "Slack"))
         w._delete_mode()
         self.assertEqual(self.changes[-2:], [("modes", []), ("default_mode", "Fix errors")])
+
+    def test_dictation_mode_is_independent_and_tracks_custom_mode_rename_and_delete(self):
+        w = self.win
+        self.assertEqual(w.dictate_popup.titleOfSelectedItem(), "Clean dictation")
+        w._add_mode()
+        w.mode_name.setStringValue_("Spoken steps")
+        w.mode_text.setStringValue_("Make a numbered list.")
+        w._save_mode()
+        w.dictate_popup.selectItemWithTitle_("Spoken steps")
+        self.click(w.dictate_popup)
+        self.assertEqual(self.changes[-1], ("dictate_mode", "Spoken steps"))
+        self.assertEqual(w.default_popup.titleOfSelectedItem(), "Fix errors")
+        w.mode_name.setStringValue_("My steps")
+        w._save_mode()
+        self.assertEqual(w.dictate_popup.titleOfSelectedItem(), "My steps")
+        self.assertEqual(w.cfg["dictate_mode"], "My steps")
+        w._delete_mode()
+        self.assertEqual(w.dictate_popup.titleOfSelectedItem(), "Clean dictation")
+        self.assertEqual(w.cfg["dictate_mode"], "Clean dictation")
+        w._polish_changed(False)
+        self.assertFalse(w.dictate_popup.isEnabled())
+        w._polish_changed(True)
+        self.assertTrue(w.dictate_popup.isEnabled())
 
     def test_a_status_refresh_keeps_an_unsaved_mode_draft(self):
         w = self.win

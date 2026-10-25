@@ -146,7 +146,8 @@ class WritingSettingsUi(unittest.TestCase):
 
     def test_custom_modes_add_rename_override_and_delete(self):
         w = self.make_window()
-        self.assertEqual(list(w.default_mode["values"]), ["Fix errors", "Message", "Email", "Improve writing"])
+        self.assertEqual(list(w.default_mode["values"]),
+                         ["Fix errors", "Message", "Email", "Improve writing", "Clean dictation"])
         self.pick(w.default_mode, "Email")
         self.assertEqual(self.changes[-1], ("default_mode", "Email"))
         self.pick(w.mode_pick, "Fix errors")
@@ -269,6 +270,25 @@ class WritingSettingsUi(unittest.TestCase):
         mic[0] = "Allowed"
         w.refresh_writing()
         self.assertEqual(w.mic_status["text"], "Microphone: Allowed")
+
+    def test_dictation_mode_is_independent_and_tracks_custom_mode_rename_and_delete(self):
+        w = self.make_window()
+        self.assertEqual(w.dictate_mode.get(), "Clean dictation")
+        w.mode_new.invoke()
+        self.edit_mode(w, "Spoken steps", "Make a numbered list.")
+        self.pick(w.dictate_mode, "Spoken steps")
+        self.assertEqual(self.changes[-1], ("dictate_mode", "Spoken steps"))
+        self.assertEqual(w.default_mode.get(), "Fix errors")
+        self.edit_mode(w, "My steps", "Make a numbered list.")
+        self.assertEqual(w.dictate_mode.get(), "My steps")
+        self.assertEqual(w.cfg["dictate_mode"], "My steps")
+        w.mode_delete.invoke()
+        self.assertEqual(w.dictate_mode.get(), "Clean dictation")
+        self.assertEqual(w.cfg["dictate_mode"], "Clean dictation")
+        w.polish_check.invoke()
+        self.assertTrue(w.dictate_mode.instate(["disabled"]))
+        w.polish_check.invoke()
+        self.assertFalse(w.dictate_mode.instate(["disabled"]))
 
 
 if __name__ == "__main__":

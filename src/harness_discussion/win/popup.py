@@ -19,6 +19,9 @@ IDLE_HIDE_MS = 4000
 # Windows 11 light flyout colors
 BG, HOVER, PRESSED, FG, ACCENT, DIVIDER = "#f9f9f9", "#ededed", "#e4e4e4", "#1b1b1b", "#005fb8", "#e0e0e0"
 SUBTLE = "#5f5f5f"
+# Selection-bar HUD colors are separate from the light review and toast surfaces.
+HUD_BG, HUD_HOVER, HUD_PRESSED = "#262629", "#414145", "#535359"
+HUD_FG, HUD_MUTED, HUD_CHIP, HUD_ACCENT = "#ffffff", "#b8b8bf", "#3b3b40", "#64b5ff"
 PLAY, PAUSE, STOP, CHEVRON, CLOSE, SETTINGS = "\ue768", "\ue769", "\ue71a", "\ue70d", "\ue8bb", "\ue713"
 SPARKLE, SPARKLE_FONT = "✦", ("Segoe UI Symbol", 11)  # neither icon font has a sparkle on Windows 10
 PREVIOUS, NEXT = "\ue892", "\ue893"
@@ -83,6 +86,61 @@ class _FlatButton(tk.Frame):
             self.command()
 
 
+class _BarButton(tk.Canvas):
+    """A rounded HUD control with the same click behavior as the light flyout buttons."""
+
+    def __init__(self, master, command, *labels, primary=False, chip=False, minimum=0):
+        super().__init__(master, bg=HUD_BG, bd=0, highlightthickness=0, cursor="hand2")
+        self.command, self.parts, self._windows = command, [self], []
+        self._height = round(self.winfo_fpixels("30p" if primary else "26p"))
+        self._padding = round(self.winfo_fpixels("7p" if chip or primary else "4p"))
+        self._minimum = max(minimum, self._height)
+        self._normal = "#0a84ff" if primary else HUD_CHIP if chip else HUD_BG
+        self._hover = "#3498ff" if primary else HUD_HOVER
+        self._pressed = "#006bd6" if primary else HUD_PRESSED
+        self._surface = [self.create_rectangle(0, 0, 0, 0, fill=self._normal, outline=""),
+                         self.create_oval(0, 0, 0, 0, fill=self._normal, outline=""),
+                         self.create_oval(0, 0, 0, 0, fill=self._normal, outline="")]
+        for text, font, fg in labels:
+            label = tk.Label(self, text=text, font=font, fg=fg, bg=self._normal, padx=0, pady=0)
+            self.parts.append(label)
+            self._windows.append(self.create_window(0, 0, window=label))
+            label.bind("<Configure>", self._measure)
+        for widget in self.parts:
+            widget.bind("<Enter>", lambda _e: self._fill(self._hover))
+            widget.bind("<Leave>", lambda _e: self._fill(self._normal))
+            widget.bind("<ButtonPress-1>", lambda _e: self._fill(self._pressed))
+            widget.bind("<ButtonRelease-1>", self._release)
+        self.bind("<Configure>", self._draw)
+        self._measure()
+
+    def _measure(self, _event=None):
+        widths = [label.winfo_reqwidth() for label in self.parts[1:]]
+        width = max(self._minimum, sum(widths) + 2 * self._padding)
+        self.configure(width=width, height=self._height)
+        x = (width - sum(widths)) / 2
+        for item, size in zip(self._windows, widths):
+            self.coords(item, x + size / 2, self._height / 2)
+            x += size
+
+    def _draw(self, event):
+        w, h, r = event.width, event.height, event.height / 2
+        self.coords(self._surface[0], r, 0, w-r, h)
+        self.coords(self._surface[1], 0, 0, h, h)
+        self.coords(self._surface[2], w-h, 0, w, h)
+
+    def _fill(self, color):
+        for item in self._surface:
+            self.itemconfigure(item, fill=color)
+        for label in self.parts[1:]:
+            label.configure(bg=color)
+
+    def _release(self, event):
+        self._fill(self._hover)
+        if self.winfo_containing(event.x_root, event.y_root) in self.parts:
+            self.command()
+
+
 class Popup:
     def __init__(self, root, speed, *, on_play, on_stop, on_pause, on_resume, on_lang, on_speed, on_settings,
                  on_source, sources, on_skip, on_summarize=lambda text, tag: None, on_rewrite=None,
@@ -105,33 +163,37 @@ class Popup:
         self.speed = tk.DoubleVar(master=root, value=speed)
         self.source = tk.StringVar(master=root, value="")
         icons, text = fonts(root)
-        w = self.win = tk.Toplevel(root, bg=BG)
+        w = self.win = tk.Toplevel(root, bg=HUD_BG)
         w.overrideredirect(True)
         w.attributes("-topmost", True)
-        self.btn = _FlatButton(w, self._toggle, (PLAY, (icons, 11), ACCENT))
+        self.btn = _BarButton(w, self._toggle, (PLAY, (icons, 11), HUD_FG), primary=True)
         self.btn.pack(side="left", padx=("2p", 0), pady="2p")
         self._text_font = text
-        self.ai_btn = _FlatButton(w, self._summarize, (SPARKLE, SPARKLE_FONT, FG))
+        self.ai_btn = _BarButton(w, self._summarize, (SPARKLE, SPARKLE_FONT, HUD_FG))
         self.ai_btn.pack(side="left", padx=0, pady="2p")
-        self.stop_btn = _FlatButton(w, self._stop, (STOP, (icons, 11), FG))  # packed while reading
-        self.back_btn = _FlatButton(w, lambda: on_skip(-1), (PREVIOUS, (icons, 11), FG))  # these two as well
-        self.next_btn = _FlatButton(w, lambda: on_skip(1), (NEXT, (icons, 11), FG))
-        self.spinner = tk.Canvas(w, bg=BG, highlightthickness=0)  # shown until speech starts
+        self.stop_btn = _BarButton(w, self._stop, (STOP, (icons, 11), HUD_FG))  # packed while reading
+        self.back_btn = _BarButton(w, lambda: on_skip(-1), (PREVIOUS, (icons, 11), HUD_MUTED))
+        self.next_btn = _BarButton(w, lambda: on_skip(1), (NEXT, (icons, 11), HUD_MUTED))
+        self.spinner = tk.Canvas(w, bg=HUD_BG, bd=0, highlightthickness=0)  # shown until speech starts
         self._spin_angle, self._spin_job, self.loading = 0, None, False
-        self.divider = tk.Frame(w, bg=DIVIDER, width=1)
+        self.divider = tk.Frame(w, bg="#55555b", width=1, height="18p")
         self.divider.pack(side="left", fill="y", pady="5p", padx="2p")
         self.lang_btn = _FlatButton(w, lambda: self._post_menu(self.lang_btn, self.menu),
                                     ("Auto", (text, 10), FG),
                                     (CHEVRON, (icons, 7), FG))
         self.lang_btn.pack(side="left", padx=0, pady="2p")
-        self.speed_btn = _FlatButton(w, lambda: self._post_menu(self.speed_btn, self.speed_menu),
-                                     (settings.speed_label(speed), (text, 10), FG), (CHEVRON, (icons, 7), FG))
+        self.speed_btn = _BarButton(w, lambda: self._post_menu(self.speed_btn, self.speed_menu),
+                                     (settings.speed_label(speed), (text, 10), HUD_FG),
+                                     (CHEVRON, (icons, 7), HUD_MUTED), chip=True,
+                                     minimum=round(w.winfo_fpixels("52p")))
         self.speed_btn.pack(side="left", padx=0, pady="2p")
-        self.source_btn = _FlatButton(w, self._source_menu, ("", (text, 10), FG), (CHEVRON, (icons, 7), FG))
+        self.source_btn = _BarButton(w, self._source_menu, ("Voice", (text, 10), HUD_FG),
+                                     (CHEVRON, (icons, 7), HUD_MUTED), chip=True,
+                                     minimum=round(w.winfo_fpixels("88p")))
         self.source_btn.pack(side="left", padx=0, pady="2p")
         self.settings_btn = _FlatButton(w, self._open_settings, (SETTINGS, (icons, 11), FG))
         self.settings_btn.pack(side="left", padx=0, pady="2p")
-        self.close_btn = _FlatButton(w, self.close, (CLOSE, (icons, 7), SUBTLE))
+        self.close_btn = _BarButton(w, self.close, (CLOSE, (icons, 8), HUD_MUTED))
         self.close_btn.pack(side="left", padx=(0, "2p"), pady="2p")
         self.menu = tk.Menu(w, tearoff=0, postcommand=self._menu_posted)
         for tag, label in [("", "Auto")] + [(t, v[0]) for t, v in lang.LANGS.items()]:
@@ -142,16 +204,19 @@ class Popup:
             self.speed_menu.add_radiobutton(label=settings.speed_label(preset), value=preset,
                                             variable=self.speed, command=self._speed_changed)
         self.sources_menu = tk.Menu(w, tearoff=0, postcommand=self._menu_posted)
-        self.more_btn = _FlatButton(w, self._overflow_menu, ("…", (text, 12), FG))
+        self.more_btn = _BarButton(w, self._overflow_menu, ("\ue712", (icons, 11), HUD_MUTED))
         self.overflow = tk.Menu(w, tearoff=0, postcommand=self._menu_posted)
-        self.rewrite_btn = _FlatButton(w, lambda: self._rewrite(),
-                                      ("✎ Rewrite", (text, 10, "bold"), ACCENT))
-        self.mode_btn = _FlatButton(w, self.show_modes, ("Mode", (text, 10), FG), (CHEVRON, (icons, 7), FG))
+        self.rewrite_btn = _BarButton(w, lambda: self._rewrite(),
+                                      ("✎ Rewrite", (text, 10, "bold"), HUD_FG), primary=True)
+        self.mode_btn = _BarButton(w, self.show_modes, (CHEVRON, (icons, 8), HUD_MUTED))
         self.mode_menu = tk.Menu(w, tearoff=0, postcommand=self._menu_posted)
         self._icons = {}
         w.bind("<Enter>", lambda _e: self._cancel_hide())
         w.bind("<Leave>", lambda _e: self.schedule_hide())
         w.bind("<Destroy>", self._destroyed, add="+")
+        self._bar_size = None
+        w.bind("<Configure>", self._round_bar, add="+")
+        self._layout()
         w.withdraw()
         w.update_idletasks()
         hwnd = _get_parent(w.winfo_id())
@@ -159,6 +224,25 @@ class Popup:
         _set_style(hwnd, GWL_EXSTYLE, ex | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST)
         round_corners(hwnd)
         self.caption = CaptionSurface(w, text, self._caption_placement)
+
+    def _round_bar(self, event):
+        if event.widget is not self.win or (event.width, event.height) == self._bar_size:
+            return
+        self._bar_size = event.width, event.height
+        gdi, user = ctypes.windll.gdi32, ctypes.windll.user32
+        gdi.CreateRoundRectRgn.argtypes = [ctypes.c_int] * 6
+        gdi.CreateRoundRectRgn.restype = wintypes.HRGN
+        user.SetWindowRgn.argtypes = [wintypes.HWND, wintypes.HRGN, wintypes.BOOL]
+        region = gdi.CreateRoundRectRgn(0, 0, event.width + 1, event.height + 1, event.height, event.height)
+        if region and not user.SetWindowRgn(_get_parent(self.win.winfo_id()), region, True):
+            gdi.DeleteObject.argtypes = [wintypes.HGDIOBJ]
+            gdi.DeleteObject(region)  # Windows owns the region after a successful SetWindowRgn.
+        if self._visible:
+            x, y = self.win.winfo_x(), self.win.winfo_y()
+            area = work_area(x, y)
+            left = max(area.left, min(x, area.right - event.width))
+            if left != x:
+                self.win.geometry(f"+{left}+{y}")
 
     def show(self, text, x, y, editable=False):
         self.text = text
@@ -231,7 +315,7 @@ class Popup:
         self.loading = loading
         if loading:
             b = self.btn
-            self.spinner.configure(width=b.winfo_width(), height=b.winfo_height())
+            self.spinner.configure(width=b.winfo_reqwidth(), height=b.winfo_reqheight())
             self._layout()
             self._spin()
         else:
@@ -247,7 +331,7 @@ class Popup:
         x, y, r = int(c["width"]) / 2, int(c["height"]) / 2, size * 0.28
         c.delete("all")
         c.create_arc(x - r, y - r, x + r, y + r, start=self._spin_angle, extent=270, style="arc",
-                     outline=ACCENT, width=max(2, round(size / 14)))
+                     outline=HUD_ACCENT, width=max(2, round(size / 14)))
         self._spin_angle = (self._spin_angle - 24) % 360
         self._spin_job = self.win.after(40, self._spin)
 
@@ -271,7 +355,7 @@ class Popup:
         self._highlight(True)
 
     def _highlight(self, on):
-        self.ai_btn.parts[1]["fg"] = ACCENT if on else FG
+        self.ai_btn.parts[1]["fg"] = HUD_ACCENT if on else HUD_FG
 
     def set_summarize_progress(self, fraction):
         """0..1 while the model downloads, shown as a percentage on ✦; None after."""
@@ -335,15 +419,15 @@ class Popup:
                        self.rewrite_btn, self.mode_btn):
             widget.pack_forget()
         primary = self.spinner if self.loading else self.btn
-        controls = ([primary, self.back_btn, self.next_btn, self.stop_btn, self.more_btn]
-                    if self.playing else [primary, self.ai_btn, self.more_btn])
+        controls = ([primary, self.back_btn, self.next_btn, self.stop_btn]
+                    if self.playing else [primary, self.ai_btn])
         if not self.playing and self.writer_enabled and self.editable:
             self.rewrite_btn.parts[1]["text"] = "✎ " + ("Rewriting…" if self.rewriting else self._current_mode())
-            controls = [self.rewrite_btn, self.mode_btn, primary, self.more_btn]
-        if not self.escape_wired:
-            controls.append(self.close_btn)
-        for widget in controls:
-            widget.pack(side="left", padx="2p", pady="2p")
+            controls = [self.rewrite_btn, self.mode_btn, self.divider, primary, self.ai_btn]
+        controls += [self.source_btn, self.speed_btn, self.more_btn, self.close_btn]
+        for index, widget in enumerate(controls):
+            widget.pack(side="left", padx=("6p" if index == 0 else "2p",
+                                           "6p" if index == len(controls) - 1 else "2p"), pady="6p")
 
     def _overflow_menu(self):
         self._source_menu(post=False)
@@ -446,7 +530,7 @@ class Popup:
 
     def set_source(self, name):
         self.source.set(name)
-        self.source_btn.parts[1]["text"] = name
+        self.source_btn.parts[1].configure(text=name, image=self._icon(name), compound="left")
 
     def _source_menu(self, post=True):
         """Built on each click: the ready sources change as statuses refresh and Settings reorders."""

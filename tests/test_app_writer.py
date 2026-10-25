@@ -58,13 +58,14 @@ class FakeToast:
 
 class Source:
     def __init__(self, name, reply="Hi there.", status="ready"):
-        self.name, self.reply, self._status, self.texts = name, reply, status, []
+        self.name, self.reply, self._status, self.texts, self.prompts = name, reply, status, [], []
 
     def status(self):
         return self._status
 
     def rewrite(self, system, text, model, effort, cancelled):
         self.texts.append(text)
+        self.prompts.append(system)
         if isinstance(self.reply, Exception):
             raise self.reply
         return self.reply
@@ -87,7 +88,7 @@ class _App(app_summarize.Summaries, app_writer.Writer):
         self.cfg = {"writer": True, "writer_sources": [["Cursor", True], ["Codex", True], ["Local", True]],
                     "stt_sources": [["Codex", True], ["Cursor", True]],
                     "writer_models": {}, "modes": [], "default_mode": "Fix errors", "clipboard_fallback": True,
-                    "dictate_polish": True}
+                    "dictate_polish": True, "dictate_mode": "Clean dictation"}
         self.popup = SimpleNamespace(visible=False, hidden=0, rewriting=False, mode=None,
                                      set_rewriting=lambda on: setattr(self.popup, "rewriting", on),
                                      set_last_mode=lambda m: setattr(self.popup, "mode", m),
@@ -135,7 +136,51 @@ class DictationTest(unittest.TestCase):
         self.assertEqual(self.app.host.edit.pasted, ["Hi there."])
         self.assertEqual(self.app.host.edit.ctxs, [CTX])  # typed only into the field captured at key down
         self.assertEqual(self.app.writer_sources[0].texts, [writer.wrap("i thinks so")])
-        self.assertEqual(self.app.toast_.shown[-1][0], "Dictated · Fix errors · Cursor")
+        self.assertEqual(self.app.toast_.shown[-1][0], "Dictated · Clean dictation · Cursor")
+
+    def test_dictation_uses_its_custom_prompt_independently_of_the_writing_default(self):
+        self.app.cfg.update(default_mode="Email", dictate_mode="My dictation",
+                            modes=[{"name": "My dictation", "instructions": "Turn spoken steps into a numbered list."}])
+        self.hold(2)
+        self.app.drain()
+        mode = writer.find_mode("My dictation", writer.all_modes(self.app.cfg["modes"]))
+        self.assertEqual(self.app.writer_sources[0].prompts, [writer.system_prompt(mode)])
+        self.assertEqual(self.app.toast_.shown[-1][0], "Dictated · My dictation · Cursor")
+        self.assertEqual(self.app.cfg["default_mode"], "Email")
+
+    def test_missing_dictation_mode_uses_clean_dictation_instead_of_the_writing_default(self):
+        self.app.cfg.update(default_mode="Email", dictate_mode="Deleted")
+        self.hold(2)
+        self.app.drain()
+        self.assertEqual(self.app.toast_.shown[-1][0], "Dictated · Clean dictation · Cursor")
+
+    def test_spoken_steps_are_passed_to_cleanup_and_the_numbered_reply_is_typed_intact(self):
+        transcript = "Um, first check the logs, second restart the app, fourth, no, third notify the team."
+        numbered = "1. Check the logs.\n2. Restart the app.\n3. Notify the team."
+        self.app.stt_sources[0].transcribe = lambda audio, language="": transcript
+        self.app.writer_sources[0].reply = numbered
+        self.hold(2)
+        self.app.drain()
+        self.assertEqual(self.app.writer_sources[0].texts, [writer.wrap(transcript)])
+        self.assertEqual(self.app.host.edit.pasted, [numbered])
+        prompt = self.app.writer_sources[0].prompts[0]
+        self.assertIn("number the actual items consecutively", prompt)
+
+    def test_writing_still_uses_its_own_default(self):
+        self.app.cfg.update(default_mode="Email", dictate_mode="Clean dictation")
+        self.app.rewrite_selection()
+        self.app.drain()
+        self.assertEqual(self.app.writer_sources[0].prompts,
+                         [writer.system_prompt(writer.find_mode("Email", writer.BUILTIN_MODES))])
+
+    def test_cancel_on_the_transcribing_toast_types_nothing(self):
+        self.hold(2)
+        self.assertEqual(self.app.toast_.shown[-1][0], "Transcribing · Clean dictation")
+        self.app.toast_.action("Cancel")()
+        self.assertFalse(self.app.rewriting)
+        self.app.drain()
+        self.assertEqual(self.app.host.edit.pasted, [])
+        self.assertFalse(self.app.toast_.visible)
 
     def test_each_dictation_logs_its_timings_but_never_its_text(self):
         with self.assertLogs("harness_discussion", level="INFO") as logs:
@@ -296,11 +341,21 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(app.host.edit.pasted, [])
         self.assertFalse(app.toast_.visible)
 
+    def test_cancel_on_the_rewriting_toast_drops_the_late_result(self):
+        app = _App()
+        app.rewrite_selection()
+        app.toast_.action("Cancel")()
+        self.assertFalse(app.rewriting or app.popup.rewriting)
+        app.drain()
+        self.assertEqual(app.host.edit.pasted, [])
+        self.assertFalse(app.toast_.visible)
+        app.toast_.action("Cancel")()  # a stale click does nothing
+
     def test_a_double_press_opens_the_mode_menu_and_a_single_press_rewrites(self):
         app = _App()
         app._rewrite_hotkey()
         app._rewrite_hotkey()
-        self.assertEqual(app.picks[0][:2], (["Fix errors", "Message", "Email", "Improve writing"], "Fix errors"))
+        self.assertEqual(app.picks[0][:2], ([m.name for m in writer.BUILTIN_MODES], "Fix errors"))
         for timer in app.timers:
             timer()
         self.assertTrue(app.events.empty())  # the first press's timer was cancelled by the second

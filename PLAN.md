@@ -50,7 +50,7 @@ Out of scope: code signing (SmartScreen will warn on first run, documented), aut
 
 | Row | Result |
 | --- | --- |
-| P1 | Light popup with DWM rounded corners and a shadow, verified by screenshot (`docs/popup.png`). Still no-activate. |
+| P1 | Light popup with DWM rounded corners and a shadow, originally verified by screenshot. Current `docs/popup.png` promotional imagery supersedes that historical light-toolbar evidence. Still no-activate. |
 | P2 | 11 unit tests pass. They cover null, list, NaN, string-boolean, and unknown-engine settings, plus the Run-key round trip. Saves are atomic (`os.replace`). |
 | P3 | The Settings window opens from the tray and on first run. A second launch also opens it (named event `select-to-tts-show-settings`). The startup checkbox in the installed app wrote `"<install dir>\SelectToTTS.exe"` to the Run key. |
 | P4 | Windows voice: 11.4 s at 1×, 7.2 s at 1.5×. Edge MP3: 9.1 s at 1× vs 6.1 s at 1.5×. Codex: 0.75× read verified, and Stop during slowed playback is immediate. |

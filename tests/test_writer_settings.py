@@ -59,6 +59,7 @@ class ModeTest(unittest.TestCase):
     def test_the_default_falls_back_when_its_mode_is_gone(self):
         self.assertEqual(ws.default_mode("Slack", []), "Fix errors")
         self.assertEqual(ws.default_mode("Slack", [{"name": "Slack", "instructions": "x"}]), "Slack")
+        self.assertEqual(ws.default_mode("Deleted", [], "Clean dictation"), "Clean dictation")
 
 
 class RoundTripTest(unittest.TestCase):
@@ -68,15 +69,29 @@ class RoundTripTest(unittest.TestCase):
         s["stt_sources"] = ws.move(s["stt_sources"], "Cursor", -1)
         s["writer_models"] = ws.set_model({}, "Codex", "gpt-5", "medium", MODELS)
         s["modes"], s["default_mode"], _ = ws.save_mode(ws.add_mode([])[0], "New mode", "Slack", "Casual.")
+        s["dictate_mode"] = "Slack"
+        s["default_mode"] = "Email"
         s["rewrite_hotkey"], s["dictate_hotkey"] = "<cmd>+<shift>+r", "<ctrl>+<alt>+<f5>"
         with tempfile.TemporaryDirectory() as folder:
             path = str(Path(folder) / "settings.json")
             settings.save(s, path)
             loaded = settings.load(path)
             self.assertEqual(json.loads(Path(path).read_text(encoding="utf-8"))["modes"], s["modes"])
-        for key in ("writer_sources", "stt_sources", "writer_models", "modes", "default_mode",
+        for key in ("writer_sources", "stt_sources", "writer_models", "modes", "default_mode", "dictate_mode",
                     "rewrite_hotkey", "dictate_hotkey"):
             self.assertEqual(loaded[key], s[key], key)
+
+    def test_missing_or_invalid_dictation_mode_gets_its_own_default(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "settings.json"
+            for value in (None, [], 3, "", "  "):
+                path.write_text(json.dumps({"dictate_mode": value, "default_mode": "Email"}), encoding="utf-8")
+                self.assertEqual(settings.load(str(path))["dictate_mode"], "Clean dictation")
+            path.write_text('{"default_mode": "Email", "dictate_polish": false}', encoding="utf-8")
+            loaded = settings.load(str(path))
+            self.assertEqual(loaded["dictate_mode"], "Clean dictation")
+            self.assertEqual(loaded["default_mode"], "Email")
+            self.assertFalse(loaded["dictate_polish"])
 
 
 if __name__ == "__main__":

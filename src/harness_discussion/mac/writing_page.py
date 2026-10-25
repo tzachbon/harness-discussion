@@ -68,13 +68,22 @@ class WritingPage:
         mic = ui.stack([ui.stack([ui.label("Microphone", 13), self.mic_status], spacing=1), _spacer(),
                         ui.button("Open Settings", self.app.host.open_mic_settings)], vertical=False)
         mic.widthAnchor().constraintEqualToConstant_(WIDTH).setActive_(True)
-        polish, self.polish_switch = ui.option("Tidy dictation with the default mode", "Off types exactly what was heard, sooner.",
-                              self.cfg["dictate_polish"], lambda v: self._set("dictate_polish", v), WIDTH)
-        return [_card([self.stt_list]), _card([polish]),
+        polish, self.polish_switch = ui.option("Tidy dictation after transcribing", "Off types exactly what was heard, sooner.",
+                              self.cfg["dictate_polish"], self._polish_changed, WIDTH)
+        self.dictate_popup = _popup(lambda i: self._set("dictate_mode", self._mode_list()[i].name))
+        self.dictate_popup.setAccessibilityLabel_("Dictation mode")
+        mode = ui.stack([ui.label("Dictation mode", 13), _spacer(), self.dictate_popup], vertical=False)
+        mode.widthAnchor().constraintEqualToConstant_(WIDTH).setActive_(True)
+        return [_card([self.stt_list]), _card([polish, _divider(), mode]),
+                _note("Create or edit a custom prompt in Writing → Modes, then select it here."),
                 _card([self._shortcut_row("dictate_hotkey"), _divider(), mic]),
                 _note("Hold the shortcut and speak. Release to transcribe and type at the cursor, tidied with the "
-                      "default mode when that is on. A short tap does nothing. The audio goes to the first ready "
+                      "dictation mode when that is on. A short tap does nothing. The audio goes to the first ready "
                       "source and is not saved.")]
+
+    def _polish_changed(self, on):
+        self._set("dictate_polish", on)
+        self.dictate_popup.setEnabled_(on)
 
     def _writer_row(self, name, stt):
         """(switch, dot, status, fix, model, effort, (up, down), row) for one writer or speech-to-text source."""
@@ -171,6 +180,9 @@ class WritingPage:
         names = [m.name for m in self._mode_list()]
         default = ws.default_mode(self.cfg["default_mode"], self.cfg["modes"])
         _fill(self.default_popup, names, names.index(default))
+        dictate = ws.default_mode(self.cfg["dictate_mode"], self.cfg["modes"], "Clean dictation")
+        _fill(self.dictate_popup, names, names.index(dictate))
+        self.dictate_popup.setEnabled_(self.cfg["dictate_polish"])
         if self._editing not in names:
             self._editing = default
         _fill(self.mode_popup, names, names.index(self._editing))
@@ -197,6 +209,9 @@ class WritingPage:
         default = ws.default_mode(self.cfg["default_mode"], modes)
         if default != self.cfg["default_mode"]:
             self._set("default_mode", default)
+        dictate = ws.default_mode(self.cfg["dictate_mode"], modes, "Clean dictation")
+        if dictate != self.cfg["dictate_mode"]:
+            self._set("dictate_mode", dictate)
         self._editing = editing
         self._refresh_modes(reload=True)
 
@@ -212,6 +227,8 @@ class WritingPage:
             return
         if self.cfg["default_mode"] == old:
             self._set("default_mode", name)
+        if self.cfg["dictate_mode"] == old:
+            self._set("dictate_mode", name)
         self._set_modes(modes, name)
         self.mode_status.setStringValue_("Saved.")
 

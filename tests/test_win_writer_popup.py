@@ -1,5 +1,6 @@
 """Windows Writer bar layouts and the actions retained in overflow."""
 import gc
+import ctypes
 import sys
 import unittest
 
@@ -7,6 +8,7 @@ if sys.platform != "win32":
     raise unittest.SkipTest("Windows only")
 
 import tkinter as tk
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from harness_discussion.win import popup as win_popup
@@ -57,15 +59,16 @@ class WriterBar(unittest.TestCase):
         del root
         gc.collect()
 
-    def test_close_button_disappears_only_after_escape_starts(self):
+    def test_close_button_stays_available_with_the_escape_shortcut(self):
         self.assertIn(self.bar.close_btn, self.bar.win.pack_slaves())
         escape = EscapeDouble.instances[0]
         self.assertFalse(escape.active)
         self.bar.show("Selected text", 140, 140)
         self.root.update()
         self.assertTrue(escape.active)
-        self.assertNotIn(self.bar.close_btn, self.bar.win.pack_slaves())
-        self.assertEqual(self.bar.win.pack_slaves(), [self.bar.btn, self.bar.ai_btn, self.bar.more_btn])
+        self.assertIn(self.bar.close_btn, self.bar.win.pack_slaves())
+        self.assertEqual(self.bar.win.pack_slaves(), [self.bar.btn, self.bar.ai_btn, self.bar.source_btn,
+                         self.bar.speed_btn, self.bar.more_btn, self.bar.close_btn])
 
     def test_popup_escape_is_active_only_for_the_visible_lifetime(self):
         escape = EscapeDouble.instances[0]
@@ -83,6 +86,44 @@ class WriterBar(unittest.TestCase):
         self.assertFalse(self.bar.visible)
         self.assertFalse(escape.active)
         self.assertFalse(escape.suppress())
+
+    def test_showing_the_bar_preserves_the_source_window_and_selection(self):
+        field = tk.Entry(self.root)
+        field.pack()
+        field.insert(0, "Keep this selection")
+        self.root.deiconify()
+        field.focus_force()
+        field.selection_range(0, "end")
+        self.root.update()
+        get_foreground = ctypes.windll.user32.GetForegroundWindow
+        get_foreground.restype = ctypes.c_void_p
+        foreground = get_foreground()
+        self.bar.show("Keep this selection", 140, 140)
+        self.root.update()
+        self.assertEqual(get_foreground(), foreground)
+        self.assertTrue(field.selection_present())
+
+    def test_playback_controls_stay_inside_the_screen_when_the_bar_expands(self):
+        area = SimpleNamespace(left=0, top=0, right=600, bottom=800)
+        with patch.object(win_popup, "work_area", return_value=area):
+            self.bar.show("Selected text", 590, 400)
+            self.root.update()
+            self.bar.set_playing(True)
+            self.root.update()
+            self.assertLessEqual(self.bar.win.winfo_x() + self.bar.win.winfo_width(), area.right)
+            self.assertGreaterEqual(self.bar.win.winfo_x(), area.left)
+
+    def test_a_wider_voice_label_stays_inside_the_screen_after_resizing(self):
+        area = SimpleNamespace(left=0, top=0, right=600, bottom=800)
+        with patch.object(win_popup, "work_area", return_value=area):
+            self.bar.show("Selected text", 590, 400)
+            self.root.update()
+            width = self.bar.win.winfo_width()
+            self.bar.set_source("A much longer voice source")
+            self.root.update()
+            self.assertGreater(self.bar.win.winfo_width(), width)
+            self.assertLessEqual(self.bar.win.winfo_x() + self.bar.win.winfo_width(), area.right)
+            self.assertGreaterEqual(self.bar.win.winfo_x(), area.left)
 
     def test_popup_escape_stops_when_the_window_is_destroyed(self):
         escape = EscapeDouble.instances[0]
@@ -179,11 +220,12 @@ class WriterBar(unittest.TestCase):
         self.bar.mode_menu.invoke("Email")
         self.assertEqual(self.calls, ["Email"])
 
-    def test_reading_layout_keeps_only_play_summary_and_overflow(self):
+    def test_reading_layout_exposes_voice_and_speed_like_the_mac_bar(self):
         self.bar.show("Selected text", 140, 140)
         self.root.update()
         self.assertEqual(self.bar.win.pack_slaves(),
-                         [self.bar.btn, self.bar.ai_btn, self.bar.more_btn])
+                         [self.bar.btn, self.bar.ai_btn, self.bar.source_btn,
+                          self.bar.speed_btn, self.bar.more_btn, self.bar.close_btn])
 
     def test_writing_and_playing_layouts_restore_the_selected_mode(self):
         self.bar.configure_writer(self.calls.append, lambda: BUILTIN_MODES, lambda: "Message")
@@ -192,7 +234,9 @@ class WriterBar(unittest.TestCase):
         self.root.update()
         left = self.bar.win.winfo_x()
         self.assertEqual(self.bar.win.pack_slaves(),
-                         [self.bar.rewrite_btn, self.bar.mode_btn, self.bar.btn, self.bar.more_btn])
+                         [self.bar.rewrite_btn, self.bar.mode_btn, self.bar.divider, self.bar.btn,
+                          self.bar.ai_btn, self.bar.source_btn, self.bar.speed_btn,
+                          self.bar.more_btn, self.bar.close_btn])
         self.bar.rewrite_btn.command()
         self.assertEqual(self.calls, ["Message"])
         self.bar.set_playing(True)
@@ -201,12 +245,14 @@ class WriterBar(unittest.TestCase):
         self.bar.next_btn.command()
         self.assertEqual(self.calls, ["Message", ("skip", -1), ("skip", 1)])
         self.assertEqual(self.bar.win.pack_slaves(),
-                         [self.bar.btn, self.bar.back_btn, self.bar.next_btn, self.bar.stop_btn, self.bar.more_btn])
+                         [self.bar.btn, self.bar.back_btn, self.bar.next_btn, self.bar.stop_btn,
+                          self.bar.source_btn, self.bar.speed_btn, self.bar.more_btn, self.bar.close_btn])
         self.assertEqual(self.bar.win.winfo_x(), left)
         self.bar.set_playing(False)
         self.assertIn(self.bar.rewrite_btn, self.bar.win.pack_slaves())
         self.bar.set_writer(False)
-        self.assertEqual(self.bar.win.pack_slaves(), [self.bar.btn, self.bar.ai_btn, self.bar.more_btn])
+        self.assertEqual(self.bar.win.pack_slaves(), [self.bar.btn, self.bar.ai_btn, self.bar.source_btn,
+                         self.bar.speed_btn, self.bar.more_btn, self.bar.close_btn])
 
     def test_overflow_keeps_voice_language_speed_summary_rewrite_and_settings(self):
         self.bar.configure_writer(self.calls.append, lambda: BUILTIN_MODES, lambda: "Fix errors")
