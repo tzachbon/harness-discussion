@@ -3,6 +3,7 @@
 No microphone, persistent audio, or API key. Codex owns ChatGPT authentication.
 """
 import asyncio
+import atexit
 from fractions import Fraction
 import io
 import json
@@ -29,6 +30,7 @@ SKEW = 1.0  # Seconds Codex fragment end_ms may run ahead of the sent stream (0.
 DIAG_LOG = Path(settings.LOCAL_DIR) / "stt-diagnostics.log"
 _busy = threading.Lock()
 _diag_lock = threading.Lock()
+_spare, _spare_lock = None, threading.Lock()  # one Codex process started while the user speaks
 
 
 class BusyError(RuntimeError):
@@ -255,6 +257,43 @@ def _write_diag(record):
         pass  # Diagnostics must never fail a transcription.
 
 
+def prewarm():
+    """Start Codex during recording, so the transcription skips its cold start. At most one spare."""
+    global _spare
+    with _spare_lock:
+        if _spare is not None and _spare.alive:
+            return
+    try:
+        srv = AppServer()
+    except Exception:
+        return  # The transcription starts its own and reports the failure.
+    with _spare_lock:
+        if _spare is None or not _spare.alive:
+            _spare, srv = srv, None
+    if srv is not None:
+        srv.close()
+
+def _take():
+    """(server, warm): the prewarmed spare if it is still running, otherwise a fresh one."""
+    global _spare
+    with _spare_lock:
+        srv, _spare = _spare, None
+    if srv is not None and srv.alive:
+        return srv, True
+    if srv is not None:
+        srv.close()  # reap the exited spare's pipes
+    return AppServer(), False
+
+@atexit.register
+def _close_spare():
+    with _spare_lock:
+        srv = _spare
+    if srv is not None:
+        try:
+            srv.close()
+        except Exception:
+            pass
+
 def _run(audio, language, prompt, diag):
     pcm = decode_audio(audio)
     diag["audio_ms"] = len(pcm) * 1000 // (RATE * 2)
@@ -263,7 +302,7 @@ def _run(audio, language, prompt, diag):
     srv = None
     try:
         try:
-            srv = AppServer()
+            srv, diag["warm"] = _take()
         except Exception as error:
             raise SttError("backend_start_failed", "backend_start") from error
         _mark(diag, "backend_ready")
