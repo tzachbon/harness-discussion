@@ -23,8 +23,12 @@ class Summaries:
         """The popup's ✦ button."""
         if self._summarize_progress is not None:
             return
+        status = summarize.status()  # the model can be removed or moved while the app runs
+        if status != self._summarize_status:
+            self._summarize_status = status
+            self._refresh_summarize()
         if self._summarize_status == "unsupported":
-            self.host.notify("Summarize isn't available on this computer.")
+            self._say("Summarize isn't available on this computer.")
             return
         if self._summarize_status != "ready":
             if self.host.confirm("Download the Summarize model?",
@@ -104,7 +108,7 @@ class Summaries:
         if isinstance(result, Exception):
             self.stop()
             log.info("summary failed: %s", type(result).__name__)
-            self.host.notify(f"Could not summarize. {self._summary_error(result)}")
+            self._say(f"Could not summarize. {self._summary_error(result)}")
             return
         paused = self.popup.paused
         self.play(result, lang_tag)
@@ -118,7 +122,14 @@ class Summaries:
             log.info("summarize download failed: %s", type(err).__name__)
             reason = ("Check your connection and try again." if isinstance(err, OSError)
                       else self._summary_error(err))
-            self.host.notify(f"Could not download the Summarize model. {reason}")
+            self._say(f"Could not download the Summarize model. {reason}")
+
+    def _say(self, message):
+        """The Writer's toast by the bar when there is one: on macOS a notify only changes the menu bar menu."""
+        if getattr(self, "toast", None):
+            self._toast(message)
+        else:
+            self.host.notify(message)
 
     @staticmethod
     def _summary_error(err):
