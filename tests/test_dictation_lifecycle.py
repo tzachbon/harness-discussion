@@ -98,6 +98,38 @@ class LifecycleTest(unittest.TestCase):
         self.assertEqual(devices.streams, [])
         self.assertFalse(app.rewriting)
 
+    def test_recording_errors_log_the_stage_without_private_exception_details(self):
+        for stage in ("permission", "target capture", "start", "stop"):
+            with self.subTest(stage=stage):
+                app, devices = self.make_app()
+                private = "private device or editor details"
+                if stage == "permission":
+                    app.mic_ok = False
+                elif stage == "target capture":
+                    app.edit.capture = Mock(side_effect=RuntimeError(private))
+                with self.assertLogs("harness_discussion", level="INFO") as logs:
+                    if stage == "start":
+                        with patch.object(RECORDER, "start", side_effect=RuntimeError(private)):
+                            app._dictate_down()
+                            app.drain("recording_done")
+                    elif stage == "stop":
+                        self.start(app)
+                        stop = app._recorder.recorder.stop
+                        def fail_stop():
+                            stop()
+                            raise RuntimeError(private)
+                        app._recorder.recorder.stop = fail_stop
+                        app._dictate_up()
+                        app.drain("recording_done")
+                    else:
+                        app._dictate_down()
+                        app.drain("recording_done")
+                self.assertIn("failed during " + stage, "\n".join(logs.output))
+                self.assertNotIn(private, "\n".join(logs.output))
+                self.assertNotIn(private, repr(app.toast_.shown))
+                self.assertIsNone(app._recorder)
+                app.stt_sources[0].transcribe.assert_not_called()
+
     def test_duplicate_down_during_start_and_stop_never_opens_another_device(self):
         for phase in ("start", "stop"):
             with self.subTest(phase=phase):

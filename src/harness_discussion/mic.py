@@ -6,7 +6,7 @@ import threading
 import wave
 from array import array
 
-from . import stt
+from . import audio, stt
 
 RATE = stt.RATE
 MAX_SECONDS = stt.MAX_SECONDS
@@ -68,7 +68,21 @@ class Recorder:
                 samplerate=RATE, channels=1, dtype="int16", callback=cb, device=_input_device(self.device))
         self._chunks, self._size = [], 0
         self._power, self._samples = 0, 0
+        with audio._live_lock:
+            try:
+                self._open(factory)
+            except (audio.sd.PortAudioError, ValueError):
+                if self._factory is not None or audio._live:
+                    raise
+                audio.sd._terminate()
+                audio.sd._initialize()
+                self._open(factory)
+        if self._factory is None:
+            log.info("dictation microphone: %s", self.device or "System default")
+
+    def _open(self, factory):
         self._stream = factory(self._callback)
+        audio._live.add(self._stream)
         try:
             self._stream.start()
         except BaseException:
@@ -76,10 +90,10 @@ class Recorder:
             try:
                 stream.close()
             except Exception:
-                pass  # preserve the startup failure
+                pass  # preserve the startup failure and block resets of an unclosed stream
+            else:
+                audio._live.discard(stream)
             raise
-        if self._factory is None:
-            log.info("dictation microphone: %s", self.device or "System default")
 
     def _callback(self, data, frames, time_info, status):
         pcm = bytes(data)  # PortAudio passes a CFFI buffer, not Python bytes.
@@ -104,12 +118,14 @@ class Recorder:
 
     def stop(self) -> bytes:
         """The recording as WAV, or b"" when nothing was recorded."""
-        stream, self._stream = self._stream, None
-        if stream is not None:
-            try:
-                stream.stop()
-            finally:
-                stream.close()
+        with audio._live_lock:
+            stream, self._stream = self._stream, None
+            if stream is not None:
+                try:
+                    stream.stop()
+                finally:
+                    stream.close()
+                    audio._live.discard(stream)
         with self._lock:
             pcm = b"".join(self._chunks)
         return wav(pcm) if pcm else b""
