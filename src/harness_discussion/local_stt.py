@@ -111,7 +111,10 @@ class LocalStt:
             log.info("Local dictation warmup failed: %s", type(e).__name__)
 
     def transcribe(self, audio, language="", cancelled=lambda: False):
-        with self._lock:
+        while not self._lock.acquire(timeout=0.1):
+            if cancelled():
+                raise writer.Cancelled("The dictation was cancelled.")
+        try:
             if cancelled():
                 raise writer.Cancelled("The dictation was cancelled.")
             self._load()
@@ -126,8 +129,12 @@ class LocalStt:
                 log.info("Local dictation GPU failed; retrying on CPU")
                 self._model = _load_model(force_cpu=True)
                 return self._transcript(audio, language, cancelled)
+        finally:
+            self._lock.release()
 
     def _transcript(self, audio, language, cancelled):
+        if cancelled():
+            raise writer.Cancelled("The dictation was cancelled.")
         # Preserve the container's sample rate. Whisper resamples it to 16 kHz itself.
         segments, _ = self._model.transcribe(io.BytesIO(audio), language=language or None, beam_size=1,
                                              condition_on_previous_text=False)
