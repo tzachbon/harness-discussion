@@ -264,7 +264,7 @@ class Dictation:
         at = self._anchor()
         sources = self._dictation_writers() if mode else []
         models, order, chain = self.cfg["writer_models"], self.cfg["stt_sources"], self.stt_sources
-        keep = self.cfg.get("dictation_history")
+        keep = lambda: self.cfg.get("dictation_history")  # read live: turning it off mid-dictation saves nothing
         self._toast("Transcribing", [("×", lambda: self.cancel_rewrite() if rid == self._rewrite_id else None)],
                     busy=True, at=at)
         self._dictation_after(session, TRANSCRIBE_TIMEOUT_S, "transcribing")
@@ -276,7 +276,7 @@ class Dictation:
                 stt_s = time.monotonic() - released
                 if cancel.is_set():
                     raise writer.Cancelled("The dictation was cancelled.")
-                kept = _keep(text) if keep else None
+                kept = _keep(text, keep)
                 if mode:
                     started = time.monotonic()
                     try:
@@ -284,7 +284,7 @@ class Dictation:
                     finally:
                         rewrite_s = time.monotonic() - started
                     if kept is not None:
-                        _keep_tidied(kept, text)
+                        _keep_tidied(kept, text, keep)
                     result = (text, stt_name, source)
                 else:
                     result = (text, stt_name, None)
@@ -378,14 +378,14 @@ class Dictation:
                 if session.cancel.is_set() and self._recorder is None and self._dictation_job is None:
                     self.toast.hide()
 
-def _keep(raw):
+def _keep(raw, keep):
     try:
-        return history.add(raw)
+        return history.add(raw, keep)
     except OSError as e:  # history is a backup: never lose the dictation over it
         log.info("dictation history not saved: %s", type(e).__name__)
 
-def _keep_tidied(at, text):
+def _keep_tidied(at, text, keep):
     try:
-        history.finish(at, text)
+        history.finish(at, text, keep)
     except OSError as e:
         log.info("dictation history not saved: %s", type(e).__name__)

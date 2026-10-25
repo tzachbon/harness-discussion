@@ -26,15 +26,20 @@ def _save(items):
         json.dump(items[:LIMIT], f, ensure_ascii=False)
     os.replace(tmp, PATH)
 
-def add(raw) -> float:
-    """Saves the transcript before tidy runs. Returns its key for finish()."""
+def add(raw, keep=lambda: True):
+    """Saves the transcript before tidy runs. Returns its key for finish(), or None when keep() is off.
+    keep() is checked under the lock, so a save never lands after clear() for an opt-out."""
     at = time.time()
     with _lock:
+        if not keep():
+            return None
         _save([{"at": at, "raw": raw, "text": None}, *load()])
     return at
 
-def finish(at, text) -> None:
+def finish(at, text, keep=lambda: True) -> None:
     with _lock:
+        if not keep():
+            return
         _save([{**i, "text": text} if i.get("at") == at else i for i in load()])
 
 def clear() -> None:
@@ -53,12 +58,12 @@ def rows() -> list:
     return out
 
 def entries() -> list:
-    """[(label, text)] for a menu: each dictation, then its original when tidy changed it."""
+    """[(text, label)] for a menu, value first as mac host._fill takes it: each dictation, then its original."""
     out = []
     for preview, text, original in rows():
-        out.append((preview, text))
+        out.append((text, preview))
         if original is not None:
-            out.append(("    Original: " + _preview(original), original))
+            out.append((original, "    Original: " + _preview(original)))
     return out
 
 def _preview(text, n=50):

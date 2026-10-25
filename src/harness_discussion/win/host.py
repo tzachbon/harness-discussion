@@ -51,7 +51,7 @@ class TkHost:
     def _history_items(self):
         """Clicking one copies it. Copying runs on the Tk thread, which owns the clipboard."""
         call = lambda text: lambda: self.app.events.put(("call", lambda: self.copy_text(text)))
-        items = [pystray.MenuItem(label, call(text)) for label, text in history.entries()]
+        items = [pystray.MenuItem(label, call(text)) for text, label in history.entries()]
         if not items:
             return [pystray.MenuItem("No dictations yet", None, enabled=False)]
         return [*items, pystray.Menu.SEPARATOR, pystray.MenuItem("Clear", lambda: history.clear() or self.app.events.put(("call", self.app.history_changed)))]

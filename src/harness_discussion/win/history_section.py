@@ -26,6 +26,25 @@ class HistorySection:
             history.clear()  # off deletes what was saved
         self.on_history_changed()
 
+    def refresh_history(self):
+        """Each saved dictation with Copy, and Original when tidy changed it."""
+        for child in self.history_card.winfo_children():
+            child.destroy()
+        rows = history.rows() if self.cfg["dictation_history"] else []
+        for preview, text, original in rows:
+            row = tk.Frame(self.history_card, bg=CARD)
+            row.pack(fill="x", pady=(0, 6))
+            ttk.Label(row, text=preview, style="Card.TLabel", width=40).pack(side="left")
+            if original is not None:
+                ttk.Button(row, text="Original", command=lambda t=original: self.on_copy(t)).pack(side="right")
+            ttk.Button(row, text="Copy", command=lambda t=text: self.on_copy(t)).pack(side="right", padx=(6, 6))
+        if rows:
+            ttk.Button(self.history_card, text="Clear", command=self._clear_history).pack(anchor="e", pady=(6, 0))
+        else:
+            ttk.Label(self.history_card, text="No dictations yet." if self.cfg["dictation_history"]
+                      else "Turn on Keep recent dictations to save them here.",
+                      style="Sub.Card.TLabel").pack(anchor="w")
+
     def _clear_history(self):
         history.clear()
         self.on_history_changed()
