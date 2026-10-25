@@ -124,6 +124,19 @@ class LocalTest(unittest.TestCase):
             load.assert_not_called()
             fetch.assert_not_called()
 
+    def test_cancel_during_model_load_never_starts_inference(self):
+        self.install()
+        source, cancelled, engine = local_stt.LocalStt(), threading.Event(), Mock()
+        self.addCleanup(source.close)
+        def load():
+            cancelled.set()
+            return engine
+        with patch.object(local_stt, "_load_model", side_effect=load), patch.object(
+                local_stt.stt, "decode_audio", return_value=b"pcm"):
+            with self.assertRaises(writer.Cancelled):
+                source.transcribe(b"audio", cancelled=cancelled.is_set)
+        engine.transcribe.assert_not_called()
+
     def test_cancelled_queued_work_never_starts_inference(self):
         self.install()
         source = local_stt.LocalStt()
@@ -140,6 +153,8 @@ class LocalTest(unittest.TestCase):
             thread.start()
             self.assertTrue(waiting.wait(1))
             cancelled.set()
+            thread.join(2)
+            self.assertFalse(thread.is_alive(), "Cancel must not wait for another inference to finish")
         thread.join(2)
         self.assertFalse(thread.is_alive())
         self.assertIsInstance(errors[0], writer.Cancelled)

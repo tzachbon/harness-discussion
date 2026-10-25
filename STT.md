@@ -66,7 +66,10 @@ mean little or no input, which can reveal a muted or incorrectly routed virtual
 microphone. The selected device is saved for this app without changing the system
 default. If it is disconnected, choose another input in Settings.
 
-The recording and transcription pill has an **×** cancel button. Dictation
+The recording and transcription pill has an **×** cancel button. Cancelling
+during transcription lets you start another recording immediately and discards
+any late result. An in-progress native model call may finish its current segment
+in the background. Dictation
 finishes quietly after requesting insertion. It neither retries nor copies an
 unconfirmed paste. With no safe input target it shows **Copied to clipboard**
 after copying the result, or reports a clipboard failure with a manual Copy retry.
