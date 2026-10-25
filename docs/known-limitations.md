@@ -6,6 +6,6 @@
 - In testing, 5 of 16 long Codex reads had a fault: 2 lost the connection, 1 stopped early, and 2 said "Read it." aloud between pieces. Silence falls back automatically. An early stop does not.
 - When Codex reads first, each popup shown pre-starts a short Codex voice session.
 - Choosing a language from the menu moves keyboard focus away from the source app. The text is already captured.
-- Only mouse selections trigger the bar. Keyboard selections (Shift+arrows) don't.
+- On a Mac, ⇧+arrows, ⇧+Home/End, and ⌘A also show the bar. On Windows, only mouse selections do.
 - Kokoro's first sentence after the app starts takes about 2 seconds while the model loads.
 - Pausing the Windows voice takes effect after about a second, because SAPI keeps playing audio it has already buffered. Codex and Edge pause at once.
