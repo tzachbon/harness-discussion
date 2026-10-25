@@ -15,6 +15,8 @@ def _close_button(fn):
     b.setBezelStyle_(AppKit.NSBezelStyleRegularSquare)
     b.setBordered_(False)
     b.setImage_(ui.symbol("xmark", "Cancel"))
+    b.setImagePosition_(AppKit.NSImageOnly)
+    b.setAccessibilityLabel_("Cancel")
     b.setSymbolConfiguration_(AppKit.NSImageSymbolConfiguration.configurationWithPointSize_weight_(
         10, AppKit.NSFontWeightBold))
     b.setContentTintColor_(AppKit.NSColor.colorWithWhite_alpha_(1, 0.75))
@@ -54,6 +56,8 @@ class Toast:
         self.meter.setAccessibilityElement_(True)
         self.meter.setAccessibilityRole_(AppKit.NSAccessibilityLevelIndicatorRole)
         self.meter.setAccessibilityLabel_("Microphone input level")
+        self.meter.setAccessibilityMinValue_(0.0)
+        self.meter.setAccessibilityMaxValue_(1.0)
         self._wave = []
         for i in range(WAVE_BARS):
             bar = Quartz.CALayer.layer()
@@ -156,6 +160,7 @@ class Toast:
         self.win.setContentSize_(self.win.contentView().fittingSize())
 
     def _draw_wave(self):
+        self.meter.setAccessibilityValue_(round(self._envelope, 2))
         Quartz.CATransaction.begin()
         Quartz.CATransaction.setDisableActions_(True)  # each level jumps, as on Windows, instead of easing
         for i, (bar, value) in enumerate(zip(self._wave, self._levels)):
