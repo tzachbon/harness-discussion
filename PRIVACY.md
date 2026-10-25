@@ -16,7 +16,7 @@ The app sends the text you play to the first ready voice source in Settings → 
 
 *Prepare speech as soon as I select text* is off by default. When it is on, and Cursor or Edge reads first, the opening sentences are sent when the bar appears, before you press play.
 
-On Windows and Mac, Dictation tries Local first by default. Downloading Whisper Small (486 MB) is a separate action in Settings → Dictation. Local transcription runs on your computer. If it is unavailable or fails, enabled Cursor or Codex sources can receive the recording in the saved order. Dictation audio is not saved.
+On Windows and Mac, Dictation tries Local first by default. Downloading Whisper Small (486 MB) is a separate action in Settings → Dictation. Local transcription runs on your computer. If it is unavailable or fails, enabled Cursor or Codex sources can receive the recording in the saved order. Dictation audio is not saved. The last 10 transcripts, raw and tidied, are saved on your computer so you can copy them from Recent Dictations in the tray or menu bar. Turn off *Keep recent dictations* in Settings → Dictation to stop saving them and delete the saved ones.
 
 Tidy prefers the installed, enabled Local writing model by default. Otherwise it follows the Writing source order, which can send the transcript to Cursor or Codex. Turn off **Prefer local tidy for faster results** to always follow that order. For fully offline dictation, disable Cursor and Codex in both Writing and Dictation, and download both local models first. Local transcription by itself does not make cloud cleanup or fallback offline.
 

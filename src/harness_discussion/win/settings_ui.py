@@ -14,6 +14,7 @@ from .sources_ui import CARD, SourcesSection
 from .shortcut_row import ShortcutRow
 from .about_page import AboutSection
 from .summarize_page import SummarizePage
+from .history_section import HistorySection
 from .writing_page import WritingPage
 from .stt_page import build_page as stt_page
 
@@ -21,19 +22,21 @@ PAGE, BORDER, SUBTLE, SELECTED = "#f3f3f3", "#e5e5e5", "#5f5f5f", "#e6e6e6"
 PAGES = ("Voices", "Captions", "Reading", "Summarize", "Writing", "Dictation", "Speech to Text", "General")
 
 
-class SettingsWindow(SourcesSection, SummarizePage, ShortcutRow, WritingPage, AboutSection):
+class SettingsWindow(SourcesSection, SummarizePage, ShortcutRow, WritingPage, HistorySection, AboutSection):
     def __init__(self, root, cfg, icon, on_change, on_test, stt_state=lambda: None,
                  update_state=lambda: ("Ready to check.", False), on_update=lambda: None, engines=(),
                  statuses=dict, on_play=lambda name: None, welcome=False, on_fix=lambda name: None, summarizer=None,
                  on_record=lambda recording: None, writer_catalogs=dict, writer_statuses=dict,
                  on_writer_fix=lambda name, stt=False: None, dictate_status=lambda: "Not checked",
-                 stt_statuses=dict, on_mic_settings=lambda: None):
+                 stt_statuses=dict, on_mic_settings=lambda: None, on_copy=lambda text: None,
+                 on_history_changed=lambda: None):
         self.cfg, self.on_change, self.on_test, self._save_job, self._pending_key = cfg, on_change, on_test, None, None
         self.statuses, self.on_play, self._engines = statuses, on_play, {e.name: e for e in engines}
         self.on_fix, self.on_record = on_fix, on_record
         self.writer_catalogs, self.writer_statuses, self.on_writer_fix = writer_catalogs, writer_statuses, on_writer_fix
         self.dictate_status = dictate_status
         self.stt_statuses, self.on_mic_settings = stt_statuses, on_mic_settings
+        self.on_copy, self.on_history_changed = on_copy, on_history_changed
         self.stt_state = stt_state  # None when running, else why not
         self.update_state = update_state
         w = self.win = tk.Toplevel(root, bg=PAGE)

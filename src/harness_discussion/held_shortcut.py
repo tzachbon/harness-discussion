@@ -6,9 +6,11 @@ import time
 class HeldShortcut:
     INTERVAL = .05
 
-    def __init__(self, mods, primary, keymap, on_down, on_up, settle=0):
+    def __init__(self, mods, primary, keymap, on_down, on_up, settle=0, press=False):
+        """press: a press shortcut rearms once its key comes up, so tapping it twice with the modifiers held fires
+        twice. A hold rearms only after every key of the chord is up."""
         self.mods, self.primary, self.keymap = frozenset(mods), primary, keymap
-        self.on_down, self.on_up, self.settle = on_down, on_up, settle
+        self.on_down, self.on_up, self.settle, self.press = on_down, on_up, settle, press
         self.lock = threading.RLock()
         self.held, self._changed = {}, {}
         self.active, self._armed, self._blocked, self._closed = False, True, False, False
@@ -29,7 +31,8 @@ class HeldShortcut:
         if self.active and (not names >= self.mods or
                             (self.primary is not None and self.primary not in names)):
             self._end()
-        if not self._blocked and not any(self._required(name) for name in names):
+        if not self._blocked and (not any(self._required(name) for name in names)
+                                  or self.press and self.primary is not None and self.primary not in names):
             self._armed = True
 
     def _end(self):
@@ -50,6 +53,8 @@ class HeldShortcut:
             self.held[physical] = name
             if was_down or repeat or not self._armed or self._blocked or not self._required(name):
                 return
+            if self.press and name != self.primary:
+                return  # a press fires on its key, not on a modifier added while the key is held
             names = set(self.held.values())
             modifiers = names & {"ctrl", "alt", "shift", "cmd"}
             matches = (modifiers >= self.mods if self.primary is None else

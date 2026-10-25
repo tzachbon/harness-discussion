@@ -37,6 +37,7 @@ DEFAULTS = {"sources": [[n, True] for n in DEFAULT_SOURCES], "voices": {}, "spee
             "rewrite_hotkey": hotkeys.REWRITE, "dictate_hotkey": hotkeys.DICTATE,
             "stt_sources": [["Local", True], ["Cursor", True], ["Codex", True]], "dictate_polish": True,
             "dictate_mode": "Clean dictation", "dictate_local_tidy": True, "dictate_microphone": "",
+            "dictation_history": True,
             # About you: a short note sent with every rewrite and summary prompt, with today's date
             "about_me": "", "about_me_on": True, "about_me_uncapped": False}
 WRITER_SOURCES, STT_SOURCES = ("Cursor", "Codex", "Local"), ("Local", "Cursor", "Codex")
@@ -100,7 +101,7 @@ def load(path=PATH) -> dict:
     s["caption_background_opacity"] = (min(max(float(opacity), 0.0), 1.0)
                                         if ok else DEFAULTS["caption_background_opacity"])
     for key in ("clipboard_fallback", "stt_server", "prefetch", "caption_background", "auto_update", "dictate_polish",
-                "dictate_local_tidy"):
+                "dictate_local_tidy", "dictation_history"):
         if not isinstance(s[key], bool):
             s[key] = DEFAULTS[key]
     if not isinstance(s["ax_granted_build"], (str, type(None))):

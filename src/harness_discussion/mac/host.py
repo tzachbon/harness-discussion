@@ -5,7 +5,7 @@ import AppKit
 import objc
 from Foundation import NSObject
 
-from .. import icons, settings, updates
+from .. import history, hotkeys, icons, settings, updates
 from ..codex_rt import CodexEngine
 from ..cursor_tts import CursorEngine
 from ..kokoro_tts import KokoroEngine
@@ -17,7 +17,6 @@ from .settings_ui import SettingsWindow
 from .toast import Toast
 from .trigger import HotKey, SelectionTrigger, top_left
 from .voice import MacVoiceEngine
-
 
 class _Delegate(NSObject):
     def initWithHost_(self, host):
@@ -72,6 +71,9 @@ class MacHost:
         self.menu.addItem_(AppKit.NSMenuItem.separatorItem())
         self._add("Settings…", put("settings"), ",")
         self._add("Take the Tour", put("tour_replay"))
+        self.history_menu = self._submenu("Recent Dictations")
+        self.history_item = self.menu.itemArray()[-1]
+        self._copy_history = ui.target(lambda s: self.copy_text(str(s.representedObject())))
         self.permission_item = self._add("Permission needed…", lambda _s: self.watcher and self.watcher.show_guide())
         self.error_item = self._add("", None)
         self.menu.addItem_(AppKit.NSMenuItem.separatorItem())
@@ -134,6 +136,15 @@ class MacHost:
         self._fill(self.source_menu, ready + ([None] if ready and fixes else []) + fixes,
                    app.chain.order()[0].name, self._pick_source)
         self.listen_item.setState_(1 if self.trigger else 0)
+        self.history_item.setHidden_(not app.cfg.get("dictation_history", True))
+        self.history_menu.removeAllItems()
+        entries = history.entries()
+        self._fill(self.history_menu, entries, None, self._copy_history)
+        if entries:
+            self.history_menu.addItem_(AppKit.NSMenuItem.separatorItem())
+            self._add("Clear", lambda _s: history.clear() or app.history_changed(), menu=self.history_menu)
+        else:
+            self._add("No dictations yet", None, menu=self.history_menu)
 
     def set_permission_missing(self, missing):
         self._missing = missing
@@ -199,6 +210,8 @@ class MacHost:
             options = {"on_activity": on_activity} if on_activity is not None else {}
             if on_cancel is not None:
                 options["on_cancel"] = on_cancel
+            if on_release is None and hotkeys.parse(spec)[1] is not None:
+                options["press"] = True  # the event tap a hold uses also sees keys macOS reserves, such as ⌘`
             self.shortcuts[name] = HotKey(spec, fn, on_release, **options)
 
     def mic_permission(self, then):
