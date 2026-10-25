@@ -139,7 +139,7 @@ class WritingPage:
         from .settings_ui import _card
         self.history_list = ui.stack([], spacing=8)
         # one target each, made once: ui.target() keeps every target alive, so rebuilt rows must not add more
-        self._copy_target = ui.target(lambda s: self.app.host.copy_text(str(s.representedObject())))
+        self._copy_target = ui.target(lambda s: self.app.host.copy_text(str(s.cell().representedObject())))
         self._clear_target = ui.target(lambda _s: self._clear_history())
         self.refresh_history()
         return _card([self.history_list])
@@ -169,7 +169,7 @@ class WritingPage:
         """A Copy or Original button carrying its text, or Clear when text is None, on the shared targets."""
         b = AppKit.NSButton.buttonWithTitle_target_action_(
             title, self._clear_target if text is None else self._copy_target, "run:")
-        b.setRepresentedObject_(text)
+        b.cell().setRepresentedObject_(text)  # NSButton has no representedObject; its cell does
         return b
 
     def _history_toggled(self, on):

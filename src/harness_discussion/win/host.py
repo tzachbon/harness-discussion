@@ -43,7 +43,7 @@ class TkHost:
             pystray.MenuItem("Settings", put("settings"), default=True),
             pystray.MenuItem("Take the Tour", put("tour_replay")),
             pystray.MenuItem("Recent Dictations", pystray.Menu(self._history_items),
-                             visible=lambda _: self.app.cfg["dictation_history"]),
+                             visible=lambda _: self.app.cfg.get("dictation_history", True)),
             pystray.MenuItem(lambda _: f"Last voice source: {self.app.chain.last or '-'}", None, enabled=False),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quit", put("quit")))

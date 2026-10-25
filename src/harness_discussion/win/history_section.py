@@ -10,7 +10,7 @@ class HistorySection:
 
     def _history_section(self, page):
         card = self._card(page, "Recent dictations")
-        self.history_on = tk.BooleanVar(self.win, self.cfg["dictation_history"])
+        self.history_on = tk.BooleanVar(self.win, self.cfg.get("dictation_history", True))
         ttk.Checkbutton(card, text="Keep recent dictations", style="Card.TCheckbutton", variable=self.history_on,
                         command=self._history_toggled).pack(anchor="w")
         ttk.Label(card, text="The last 10, raw and tidied, below and under Recent Dictations in the tray menu. "
@@ -30,7 +30,7 @@ class HistorySection:
         """Each saved dictation with Copy, and Original when tidy changed it."""
         for child in self.history_card.winfo_children():
             child.destroy()
-        rows = history.rows() if self.cfg["dictation_history"] else []
+        rows = history.rows() if self.cfg.get("dictation_history", True) else []
         for preview, text, original in rows:
             row = tk.Frame(self.history_card, bg=CARD)
             row.pack(fill="x", pady=(0, 6))
@@ -41,7 +41,7 @@ class HistorySection:
         if rows:
             ttk.Button(self.history_card, text="Clear", command=self._clear_history).pack(anchor="e", pady=(6, 0))
         else:
-            ttk.Label(self.history_card, text="No dictations yet." if self.cfg["dictation_history"]
+            ttk.Label(self.history_card, text="No dictations yet." if self.cfg.get("dictation_history", True)
                       else "Turn on Keep recent dictations to save them here.",
                       style="Sub.Card.TLabel").pack(anchor="w")
 

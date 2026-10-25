@@ -136,7 +136,7 @@ class MacHost:
         self._fill(self.source_menu, ready + ([None] if ready and fixes else []) + fixes,
                    app.chain.order()[0].name, self._pick_source)
         self.listen_item.setState_(1 if self.trigger else 0)
-        self.history_item.setHidden_(not app.cfg["dictation_history"])
+        self.history_item.setHidden_(not app.cfg.get("dictation_history", True))
         self.history_menu.removeAllItems()
         entries = history.entries()
         self._fill(self.history_menu, entries, None, self._copy_history)
