@@ -4,29 +4,18 @@ import AppKit
 import Quartz
 
 from . import ui
-from .popup import _Button, _Hover, _cocoa_y, _screen_at, build_menu
+from .popup import _Button, _Hover, _cocoa_y, _icon_button, _screen_at, build_menu
 
 HIDE_S = 6.0
 WAVE_BARS, BAR, GAP, WAVE_H = 9, 2.5, 2.5, 16  # as Windows: rounded bars of the latest levels, newest on the right
 
 def _close_button(fn):
     """× as the system xmark, so it stays centered and crisp instead of a text glyph."""
-    b = _Button.alloc().init()
-    b.setBezelStyle_(AppKit.NSBezelStyleRegularSquare)
-    b.setBordered_(False)
-    b.setImage_(ui.symbol("xmark", "Cancel"))
-    b.setImagePosition_(AppKit.NSImageOnly)
-    b.setAccessibilityLabel_("Cancel")
+    b = _icon_button("xmark", "Cancel", fn, tint=AppKit.NSColor.colorWithWhite_alpha_(1, 0.75), size=22,
+                     fill=AppKit.NSColor.colorWithWhite_alpha_(1, 0.12))
     b.setSymbolConfiguration_(AppKit.NSImageSymbolConfiguration.configurationWithPointSize_weight_(
         10, AppKit.NSFontWeightBold))
-    b.setContentTintColor_(AppKit.NSColor.colorWithWhite_alpha_(1, 0.75))
-    b.setWantsLayer_(True)
-    b.layer().setCornerRadius_(11)
-    b.layer().setBackgroundColor_(ui.cg(AppKit.NSColor.colorWithWhite_alpha_(1, 0.12)))
-    b.setToolTip_("Cancel")
-    for anchor in (b.widthAnchor(), b.heightAnchor()):
-        anchor.constraintEqualToConstant_(22).setActive_(True)
-    return ui.bind(b, lambda s: fn(s))
+    return b
 
 
 def _action_button(title, fn):
@@ -104,6 +93,11 @@ class Toast:
     @property
     def visible(self):
         return bool(self.win.isVisible())
+
+    def contains(self, x, y):
+        f = self.win.frame()
+        top = _cocoa_y(f.origin.y + f.size.height)
+        return self.visible and f.origin.x <= x < f.origin.x + f.size.width and top <= y < top + f.size.height
 
     @property
     def message(self):

@@ -17,6 +17,7 @@ from .app_summarize import Summaries
 from .app_updates import Updates
 from .app_writer import Writer
 from .captions import Captions
+from .engines import causes as _causes
 from .sources import Sources
 
 log = logging.getLogger("harness_discussion")
@@ -28,16 +29,6 @@ SPEECH_KEYS = ("sources", "voices", "speed", "prefetch")  # captured for the ent
 # a third of the words, at most FIRST_WORDS, so a one-word first line doesn't end before the next piece is ready.
 PIECE_CHARS = 5000
 FIRST_WORDS = 30
-
-
-def _causes(err):
-    """"NoAudioError from HTTPError 401": type names and HTTP codes only, since messages could echo the text."""
-    names = []
-    while err is not None and len(names) < 5:
-        code = getattr(err, "code", None)
-        names.append(f"{type(err).__name__} {code}" if isinstance(code, int) else type(err).__name__)
-        err = err.__cause__ or err.__context__
-    return " from ".join(names)
 
 
 class App(Captions, Sources, Updates, Summaries, Skips, Writer):

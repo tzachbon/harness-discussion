@@ -15,6 +15,7 @@ from ..icons import icon_image
 from ..kokoro_tts import KokoroEngine
 from . import clipboard, edit, microphone, selection, uia_thread
 from .popup import Popup
+from .marks import Marks
 from .review import Review
 from .settings_ui import SettingsWindow
 from .toast import Toast
@@ -39,6 +40,7 @@ class TkHost:
         put = lambda *event: lambda: self.app.events.put(event)
         return pystray.Menu(
             pystray.MenuItem("Settings", put("settings"), default=True),
+            pystray.MenuItem("Take the Tour", put("tour_replay")),
             pystray.MenuItem(lambda _: f"Last voice source: {self.app.chain.last or '-'}", None, enabled=False),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quit", put("quit")))
@@ -63,6 +65,9 @@ class TkHost:
 
     def make_review(self):
         return Review(self.root)
+
+    def make_marks(self):
+        return Marks(self.root)
 
     def pick_mode(self, names, current, pick):
         if self._mode_menu:
@@ -96,6 +101,10 @@ class TkHost:
                               stt_statuses=lambda: a.stt_statuses,
                               dictate_status=self.mic_status, on_mic_settings=self.open_mic_settings,
                               on_record=self._record_shortcuts)
+
+    def make_tour(self, app):
+        from .tour import TourWindow
+        return TourWindow(self.root, app, on_record=self._record_shortcuts)  # pauses the shortcuts while Change… records
 
     def mic_status(self):
         return microphone.status()

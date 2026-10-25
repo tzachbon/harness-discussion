@@ -9,7 +9,8 @@ import time
 from ctypes import wintypes
 
 from .. import settings
-from ..core import App, log
+from ..app_tour import App
+from ..core import log
 from .host import TkHost
 
 k32 = ctypes.windll.kernel32

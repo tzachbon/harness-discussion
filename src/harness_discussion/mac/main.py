@@ -7,7 +7,8 @@ import sys
 import time
 
 from .. import settings
-from ..core import App, log
+from ..app_tour import App
+from ..core import log
 
 OLD_BUNDLE_ID = "com.tzachbon.codexspeak"  # Codex Speak, the app's earlier name
 
@@ -20,7 +21,8 @@ def _self_test():
     from ApplicationServices import AXIsProcessTrusted
 
     from .. import kokoro_tts
-    from . import guide, host, pasteboard, permission, popup, selection, settings_ui, startup, trigger, voice  # noqa: F401
+    from . import (guide, host, pasteboard, permission, popup, practice_field, selection, settings_ui,  # noqa: F401
+                   startup, tour, tour_steps, trigger, voice)
     kokoro_tts.self_test()
     AXIsProcessTrusted()
     carbon = ctypes.CDLL("/System/Library/Frameworks/Carbon.framework/Carbon")
