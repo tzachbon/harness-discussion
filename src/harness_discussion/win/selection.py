@@ -66,7 +66,7 @@ def _safe_controls(focus=None, foreground=None):
             if hosted is None and top and top != foreground and _class(top) == BROWSER:
                 hosted = top
             if hosted is not None and top == foreground:  # its WebView2 host, inside the foreground window
-                if not _native_host(node, foreground, names=(WEBVIEW_HOST,)):
+                if hwnd == foreground or not _native_host(node, foreground, names=(WEBVIEW_HOST,)):
                     return None
                 hosted = None
             elif not _native_host(node, foreground, hosted, (RENDERER, BROWSER) if hosted else (RENDERER,)):

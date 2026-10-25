@@ -187,7 +187,7 @@ class CaptureSafety(unittest.TestCase):
         from harness_discussion.win import edit, selection
         classes = {43: "Chrome_RenderWidgetHostHWND", 44: "Chrome_WidgetWin_1", 45: "Chrome_WidgetWin_0", 46: "Bridge"}
         roots = {42: 42, 43: 44, 44: 44, 45: 42, 46: 42}
-        for case in ("hosted", "password", "unvouched"):
+        for case in ("hosted", "password", "unvouched", "unvouched, window unsupported", "inner password", "no inner"):
             with self.subTest(case=case):
                 document = Document()
                 def pane(hwnd, parent, kind=selection.uia.ControlType.PaneControl, password=UNSUPPORTED):
@@ -195,11 +195,13 @@ class CaptureSafety(unittest.TestCase):
                     control.Element.GetCurrentPropertyValueEx.return_value = password
                     control.GetParentControl.return_value = parent
                     return control
-                window = pane(42, None, selection.uia.ControlType.WindowControl, case == "password")
+                window = pane(42, None, selection.uia.ControlType.WindowControl,
+                              True if case == "password" else UNSUPPORTED if case.endswith("unsupported") else False)
                 bridge = pane(46, window, password=False)
                 bridge.ClassName = selection.WINUI_BRIDGE
                 host = pane(45, bridge)
-                browser = pane(44, window if case == "unvouched" else host)
+                browser = pane(44, window if case.startswith("unvouched") else host)
+                document.IsPassword = case == "inner password"
                 renderer = pane(43, browser)
                 document.GetParentControl = lambda: renderer
                 document.GetPattern = Mock(wraps=document.GetPattern)
@@ -210,11 +212,12 @@ class CaptureSafety(unittest.TestCase):
                         patch.object(selection.uia, "GetAncestor", side_effect=lambda hwnd, flag: roots[hwnd]), \
                         patch.object(selection.u32, "GetClassNameW", side_effect=native_class), \
                         patch.object(selection.uia.Control, "CreateControlFromElement", return_value=document):
+                    bridge.Element.FindFirst.return_value = None if case == "no inner" else object()
                     context = edit.capture(False)
                     self.assertEqual(selection.read(False), "old" if case == "hosted" else "")
                 if case == "hosted":
                     self.assertEqual((context.text, context.secure), ("old", False))
-                elif case == "password":
+                elif case in ("password", "inner password"):
                     self.assertTrue(context.secure)
                 else:
                     self.assertIsNone(context)
