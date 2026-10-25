@@ -47,6 +47,16 @@ class PressRearm(unittest.TestCase):
                     hold.event(50, 50, down)
                 self.assertEqual(fired, expected)  # a hold still needs every key up before it fires again
 
+    def test_a_press_shortcut_never_fires_on_a_modifier_added_while_its_key_is_held(self):
+        fired = []
+        hold = HeldShortcut({"cmd"}, 50, {55: "cmd", 50: 50}, lambda: fired.append("down"), lambda: None, press=True)
+        hold.event(50, 50, True)
+        hold.event(55, "cmd", True)
+        self.assertEqual(fired, [])
+        hold.event(50, 50, False)
+        hold.event(50, 50, True)
+        self.assertEqual(fired, ["down"])
+
 
 if __name__ == "__main__":
     unittest.main()

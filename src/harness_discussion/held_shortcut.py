@@ -53,6 +53,8 @@ class HeldShortcut:
             self.held[physical] = name
             if was_down or repeat or not self._armed or self._blocked or not self._required(name):
                 return
+            if self.press and name != self.primary:
+                return  # a press fires on its key, not on a modifier added while the key is held
             names = set(self.held.values())
             modifiers = names & {"ctrl", "alt", "shift", "cmd"}
             matches = (modifiers >= self.mods if self.primary is None else

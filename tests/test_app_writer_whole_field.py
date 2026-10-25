@@ -3,7 +3,7 @@ import unittest
 
 from harness_discussion import live
 from harness_discussion.edit_logic import Context, Field
-from tests.test_app_writer import FakeEdit, _App
+from tests.test_app_writer import FakeEdit, Source, _App
 
 
 class FieldEdit(FakeEdit):
@@ -19,7 +19,8 @@ class FieldEdit(FakeEdit):
     def select_range(self, field, start, end, expected):
         if live.text_at(self.text, start, end) != expected:
             return None
-        self.selected, self.ctx = (start, end), Context(expected, 1, 2, True, False)
+        self.selected, self.caret = (start, end), (start, end)
+        self.ctx = Context(expected, 1, 2, True, False)
         return self.ctx
 
 
@@ -42,6 +43,22 @@ class WholeField(unittest.TestCase):
         self.assertFalse(app.rewriting)
         self.assertIsNone(app.edit.selected)
         self.assertEqual(app.writer_sources[0].texts, [])
+
+    def test_cancel_or_a_failure_puts_the_caret_back_unless_it_moved(self):
+        for how in ("cancel", "fail", "moved"):
+            with self.subTest(how=how):
+                app = _App([Source("Cursor", RuntimeError("x") if how == "fail" else "Hi there.")])
+                app.host.edit = app.edit = FieldEdit("hi there", caret=(3, 3))
+                app.rewrite_selection()
+                self.assertEqual(app.edit.selected, (0, 8))
+                if how == "moved":
+                    app.edit.caret = (5, 5)
+                    app.cancel_rewrite()
+                    self.assertEqual(app.edit.selected, (0, 8))
+                    continue
+                app.cancel_rewrite() if how == "cancel" else app.drain()
+                self.assertEqual(app.edit.selected, (3, 3))
+                self.assertEqual(app.edit.pasted, [])
 
     def test_the_bar_rewrites_what_it_captured_never_the_whole_field(self):
         app = _App()

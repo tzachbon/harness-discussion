@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 
-from . import dictation, edit_logic, hotkeys, live, local_stt, mic, sources, writer
+from . import dictation, edit_logic, hotkeys, local_stt, mic, sources, whole_field, writer
 from . import writer_settings as ws
 from .app_dictation import Dictation, _Recording, START_TIMEOUT_S, STOP_TIMEOUT_S, TRANSCRIBE_TIMEOUT_S
 from .llm_codex import CodexWriter
@@ -18,7 +18,6 @@ from .summarize import LocalWriter
 
 log = logging.getLogger("harness_discussion")
 DOUBLE_PRESS_S = 0.35
-WHOLE_FIELD_MAX = 4_000  # with nothing selected, a field up to this many UTF-16 units is rewritten whole
 UNDO_KEYS = "Cmd+Z" if sys.platform == "darwin" else "Ctrl+Z"
 
 
@@ -44,7 +43,7 @@ class Writer(Dictation):
         self.writer_ready = self.edit is not None
         self.writer_sources = [CursorWriter(), CodexWriter(), LocalWriter(self.summary_server)]
         self._rewrite_id, self._rewrite_cancel, self.rewriting = 0, threading.Event(), False
-        self._rewrite_whole = False  # the rewrite in flight selected the whole field itself
+        self._rewrite_whole = False  # (field, caret before) when the rewrite in flight selected the whole field itself
         self._last_edit = None  # (ctx, original, inserted, mode) of the latest in-place rewrite
         self._press_at, self._press_gen, self._escaped_at = 0.0, 0, 0.0
         self.toast = self.review = self._esc = None
@@ -214,17 +213,16 @@ class Writer(Dictation):
         threading.Thread(target=work, daemon=True).start()
 
     def _select_whole_field(self):
-        """With nothing selected in an editable field, selects all of it: True. False when there is a selection or
-        no readable field, so the selection flow runs as before. None, after a hint, when the field is too long."""
-        observe, select = getattr(self.edit, "observe", None), getattr(self.edit, "select_range", None)
-        field = observe() if observe and select else None
-        if field is None or field.caret[0] != field.caret[1] or not field.text.strip():
-            return False
-        if live.units(field.text) > WHOLE_FIELD_MAX:
-            self._toast(f"Select text to rewrite. This field has more than {WHOLE_FIELD_MAX:,} characters.",
+        whole = whole_field.select(self.edit)
+        if whole is None:
+            self._toast(f"Select text to rewrite. This field has more than {whole_field.MAX:,} characters.",
                         at=self._anchor())
-            return None
-        return select(field, 0, live.units(field.text), field.text) is not None
+        return whole
+
+    def _restore_caret(self):
+        whole, self._rewrite_whole = self._rewrite_whole, False
+        if whole:
+            whole_field.restore(self.edit, whole)
 
     def _set_rewriting(self, on):
         self.rewriting = on
@@ -237,9 +235,11 @@ class Writer(Dictation):
         self._set_rewriting(False)
         self._arm_summary_stop()
         if isinstance(result, writer.Cancelled):
+            self._restore_caret()
             self.toast.hide()
             return
         if isinstance(result, Exception):
+            self._restore_caret()
             message = str(result) if isinstance(result, writer.Error) else "Could not rewrite this text."
             log.info("rewrite failed: %s", type(result).__name__)
             self._toast(message, at=at)
@@ -256,11 +256,13 @@ class Writer(Dictation):
         if prev:
             placed = edit_logic.undo(self.edit, ctx, inserted, prev[2], self.edit.NEWLINE)
         elif not self.edit.same_context(ctx):
+            self._restore_caret()
             self._toast("Text changed. Copy the rewrite?", [("Copy", copy), ("Review", review_copy)], at=at)
             return
         else:
             placed = self.edit.replace(inserted, ctx)
         if not placed:
+            self._restore_caret()
             self._toast("Couldn't paste here.", [("Copy", copy), ("Review", review_copy)], at=at)
             return
         self._last_edit = (ctx, original, inserted, mode)
@@ -399,6 +401,7 @@ class Writer(Dictation):
         self._dictate_ctx = None
         self._set_rewriting(False)
         self._arm_summary_stop()
+        self._restore_caret()
         self.toast.hide()
 
     def _close_writer(self):
