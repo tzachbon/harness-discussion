@@ -17,7 +17,7 @@ import time
 import av
 from aiortc import AudioStreamTrack, RTCPeerConnection, RTCSessionDescription
 
-from . import settings
+from . import settings, writer
 from .codex_rt import AppServer, NO_STUN
 
 MODEL = "codex-realtime"
@@ -276,11 +276,12 @@ def _run(audio, language, prompt, diag):
                 diag["teardown_error"] = type(error).__name__
 
 
-def transcribe(audio: bytes, *, language: str = "", prompt: str = "") -> str:
+def transcribe(audio: bytes, *, language: str = "", prompt: str = "", cancelled=None) -> str:
     """Blocking, one-at-a-time STT. Hints are advisory, not guaranteed by Codex.
 
     Raises ValueError for invalid input, BusyError for concurrent work, and
     SttError for backend failures. May take clip duration + 30s.
+    With a cancellation callback, queue for the transport instead of raising BusyError.
     """
     diag = {"id": secrets.token_hex(6), "started": time.monotonic(), "stage": "decode",
             "marks": {}, "events": {}, "code": "ok"}
@@ -290,10 +291,21 @@ def transcribe(audio: bytes, *, language: str = "", prompt: str = "") -> str:
             raise ValueError("Expected audio bytes and string hints")
         if len(language) > 32 or len(prompt) > 2000:
             raise ValueError("Language or vocabulary hint is too long")
-        if not _busy.acquire(blocking=False):
-            raise BusyError("A transcription is already running")
-        acquired = True
+        if cancelled is None:
+            if not _busy.acquire(blocking=False):
+                raise BusyError("A transcription is already running")
+            acquired = True
+        else:
+            while not cancelled():
+                acquired = _busy.acquire(timeout=0.1)
+                if acquired:
+                    break
+            if cancelled():
+                raise writer.Cancelled("The dictation was cancelled.")
         return _run(audio, language, prompt, diag)
+    except writer.Cancelled:
+        diag["code"] = "cancelled"
+        raise
     except BusyError:
         diag["code"] = "busy"
         raise

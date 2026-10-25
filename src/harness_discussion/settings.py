@@ -35,9 +35,9 @@ DEFAULTS = {"sources": [[n, True] for n in DEFAULT_SOURCES], "voices": {}, "spee
             # Check as you type: on with the Writer; apps listed by name are never checked.
             "live_check": True, "live_off_apps": [],
             "rewrite_hotkey": hotkeys.REWRITE, "dictate_hotkey": hotkeys.DICTATE,
-            "stt_sources": [["Cursor", True], ["Codex", True]], "dictate_polish": True,
-            "dictate_mode": "Clean dictation"}
-WRITER_SOURCES, STT_SOURCES = ("Cursor", "Codex", "Local"), ("Cursor", "Codex")
+            "stt_sources": [["Local", True], ["Cursor", True], ["Codex", True]], "dictate_polish": True,
+            "dictate_mode": "Clean dictation", "dictate_local_tidy": True, "dictate_microphone": ""}
+WRITER_SOURCES, STT_SOURCES = ("Cursor", "Codex", "Local"), ("Local", "Cursor", "Codex")
 SPEEDS = (0.5, 2.0)
 SPEED_PRESETS = (0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)  # the popup's speed menu
 TASK = "Harness Discussion"  # the installer creates and removes it with `--startup on|off`
@@ -97,7 +97,8 @@ def load(path=PATH) -> dict:
         ok = False
     s["caption_background_opacity"] = (min(max(float(opacity), 0.0), 1.0)
                                         if ok else DEFAULTS["caption_background_opacity"])
-    for key in ("clipboard_fallback", "stt_server", "prefetch", "caption_background", "auto_update", "dictate_polish"):
+    for key in ("clipboard_fallback", "stt_server", "prefetch", "caption_background", "auto_update", "dictate_polish",
+                "dictate_local_tidy"):
         if not isinstance(s[key], bool):
             s[key] = DEFAULTS[key]
     if not isinstance(s["ax_granted_build"], (str, type(None))):
@@ -112,7 +113,13 @@ def load(path=PATH) -> dict:
         voice_order = [n for n, _ in s["sources"] if n in WRITER_SOURCES]
         s["writer_sources"] = [[n, True] for n in voice_order + [n for n in WRITER_SOURCES if n not in voice_order]]
     s["writer_sources"] = _ordered(s["writer_sources"], WRITER_SOURCES)
-    s["stt_sources"] = _ordered(s["stt_sources"], STT_SOURCES)
+    stt_items = s["stt_sources"] if isinstance(s["stt_sources"], list) else []
+    stt_order = _ordered(stt_items, STT_SOURCES)
+    if ["Local", True] not in stt_items and ["Local", False] not in stt_items:
+        stt_order = [["Local", True]] + [item for item in stt_order if item[0] != "Local"]
+    s["stt_sources"] = stt_order
+    if not isinstance(s["dictate_microphone"], str):
+        s["dictate_microphone"] = ""
     models = s["writer_models"] if isinstance(s["writer_models"], dict) else {}
     s["writer_models"] = {name: {k: v for k, v in choice.items() if k in ("model", "effort") and isinstance(v, str)}
                           for name, choice in models.items() if name in WRITER_SOURCES and isinstance(choice, dict)}

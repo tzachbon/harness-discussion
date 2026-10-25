@@ -63,6 +63,13 @@ class ModeTest(unittest.TestCase):
 
 
 class RoundTripTest(unittest.TestCase):
+    def test_microphone_name_survives_save_load_and_invalid_values_use_default(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "settings.json"
+            for value, expected in (("HyperX, MME", "HyperX, MME"), (None, ""), (2, ""), ([], "")):
+                path.write_text(json.dumps({"dictate_microphone": value}), encoding="utf-8")
+                self.assertEqual(settings.load(str(path))["dictate_microphone"], expected)
+
     def test_every_writer_key_survives_save_and_load(self):
         s = dict(settings.DEFAULTS)
         s["writer_sources"] = ws.toggle(ws.move(s["writer_sources"], "Local", -2), "Cursor", False)

@@ -59,11 +59,13 @@ class Skips:
             self.popup.close()
         elif self._hotkey_wait:
             self._hotkey_wait = None
-        else:
+        elif not self._selection_busy():
             wait = self._hotkey_wait = object()
             threading.Thread(target=self._hotkey_read, args=(wait, *self.host.pointer()), daemon=True).start()
 
     def _hotkey_read(self, wait, x, y):  # worker thread
+        if wait is not self._hotkey_wait or self._selection_busy():
+            return
         try:
             text = self.host.read_selection(self.cfg["clipboard_fallback"])
         except Exception:
@@ -71,7 +73,7 @@ class Skips:
         self.events.put(("hotkey_read", wait, text, x, y))
 
     def _hotkey_shown(self, wait, text, x, y):
-        if wait is not self._hotkey_wait:
+        if wait is not self._hotkey_wait or self._selection_busy():
             return  # cancelled by another press
         self._hotkey_wait = None
         if text and not self.popup.playing:

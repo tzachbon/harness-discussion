@@ -28,10 +28,14 @@ class Toast:
         self.on_hide = lambda: None
         self.label = ui.label("", 12)
         self.label.setTextColor_(AppKit.NSColor.whiteColor())
+        self.meter = ui.label("▯" * 8, 12, width=64)
+        self.meter.setTextColor_(AppKit.NSColor.systemGreenColor())
+        self.meter.setAccessibilityLabel_("Microphone input level")
+        self.meter.setHidden_(True)
         self.spinner = AppKit.NSProgressIndicator.alloc().init()
         self.spinner.setStyle_(AppKit.NSProgressIndicatorStyleSpinning)
         self.spinner.setControlSize_(AppKit.NSControlSizeSmall)
-        self.row = ui.stack([self.spinner, self.label], vertical=False, spacing=8)
+        self.row = ui.stack([self.spinner, self.meter, self.label], vertical=False, spacing=8)
         self.row.setEdgeInsets_((8, 14, 8, 10))
         effect = self.effect = AppKit.NSVisualEffectView.alloc().init()
         effect.setMaterial_(AppKit.NSVisualEffectMaterialHUDWindow)
@@ -91,6 +95,7 @@ class Toast:
             self.row.addArrangedSubview_(button)
             self.actions.append(button)
         self.label.setStringValue_(message)
+        self.meter.setHidden_(True)
         self.spinner.setHidden_(not busy)
         self.spinner.startAnimation_(None) if busy else self.spinner.stopAnimation_(None)
         p = self.win
@@ -108,6 +113,14 @@ class Toast:
         p.orderFrontRegardless()
         self._busy = busy
         self.schedule_hide()
+
+    def set_input_level(self, level):
+        count = round(max(0.0, min(1.0, level)) * 8)
+        self.meter.setStringValue_("▮" * count + "▯" * (8 - count))
+        self.meter.setHidden_(False)
+        self.spinner.stopAnimation_(None)
+        self.spinner.setHidden_(True)
+        self.win.setContentSize_(self.win.contentView().fittingSize())
 
     def _menu(self, button, entries):
         self.menu_open = True

@@ -1,8 +1,9 @@
 """The platform-free part of in-place editing: the context, guards, UTF-16 lengths, and the undo sequence.
 
 A platform module (`mac/edit.py`, `win/edit.py`) provides `capture(clipboard_fallback)`, `replace(text, ctx)`,
-`type_at_caret(text, ctx)`, and `select_back(n, ctx)`, each refusing when the target is no longer `ctx`'s, and
+`type_at_caret(text, ctx, *, cancelled)`, and `select_back(n, ctx)`, each refusing when the target is no longer `ctx`'s, and
 optionally `collapse()`.
+Dictation's optional `cancelled` predicate is checked after native validation, immediately before paste input.
 """
 from dataclasses import dataclass, field as _field
 
@@ -16,6 +17,7 @@ class Context:
     secure: bool
     field: object = _field(default=None, compare=False)  # the platform's focused-element handle, or None
     caret: object = _field(default=None, compare=False)  # (start, length) of the selection, or None
+    _digest: bytes | None = _field(default=None, compare=False, repr=False)
 
 
 @dataclass(frozen=True)

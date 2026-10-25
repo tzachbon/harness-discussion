@@ -3,6 +3,7 @@ import sys
 import unittest
 import ctypes
 import subprocess
+import threading
 
 if sys.platform != "win32":
     raise unittest.SkipTest("Windows only")
@@ -14,6 +15,130 @@ from unittest.mock import Mock, patch
 from tests.win_edit_fakes import UNSUPPORTED, Document, Range, clipboard, native_host, target
 
 class CaptureSafety(unittest.TestCase):
+    def test_dictation_activity_during_last_inspection_prevents_any_paste(self):
+        from harness_discussion.win import edit
+        document, activity = Document(), threading.Event()
+        with target(document) as (_, key, _, cleanup):
+            context = edit.capture(False)
+            inspect, reads = edit._inspect, []
+
+            def changed_after_read():
+                found = inspect()
+                reads.append(1)
+                if len(reads) == 2:
+                    document.start, document.end = 0, 4
+                    activity.set()
+                return found
+
+            with patch.object(edit, "_inspect", side_effect=changed_after_read):
+                self.assertFalse(edit.type_at_caret("new", context, cancelled=activity.is_set))
+            self.assertEqual(len(reads), 2)
+            self.assertEqual(document.text, "Left old right")
+            key.assert_not_called()
+            cleanup.assert_called_once_with(expected_sequence=11)
+
+
+    def test_held_keys_copy_dictation_without_attempting_input(self):
+        from tests.test_app_writer import _App
+        from harness_discussion.win import edit
+        chord = edit.keys.chord
+        for held in (0x11, 0x5B, ord("V")):
+            with self.subTest(held=held):
+                document, native = Document(), Mock()
+                native.GetAsyncKeyState.side_effect = lambda vk: 0x8000 if vk == held else 0
+                with target(document) as (_, _, _, cleanup), patch.object(edit.keys, "u32", native), \
+                        patch.object(edit.keys, "chord", chord):
+                    context = edit.capture(False)
+                    app = _App()
+                    app.edit, app._dictate_ctx = edit, context
+                    app.deliver(app._rewrite_id, None, ("synthetic result", "Local", None),
+                                  (10, 10, None), (0, .1, None, "Local"))
+                    self.assertFalse(context._insertion_attempted)
+                    self.assertIsNone(context._receipt)
+                    self.assertEqual(document.text, "Left old right")
+                    native.SendInput.assert_not_called()
+                    cleanup.assert_called_once_with(expected_sequence=11)
+                    self.assertEqual(app.copied, ["synthetic result"])
+                    self.assertEqual(app.toast_.shown[-1][0], "Copied to clipboard")
+
+    def test_partial_input_does_not_copy_dictation_or_retry(self):
+        from tests.test_app_writer import _App
+        from harness_discussion.win import edit
+        chord, native = edit.keys.chord, Mock()
+        native.GetAsyncKeyState.return_value = 0
+        native.SendInput.side_effect = [1, 1]
+        with target(Document()) as (_, _, _, cleanup), patch.object(edit.keys, "u32", native), \
+                patch.object(edit.keys, "chord", chord):
+            context = edit.capture(False)
+            app = _App()
+            app.edit, app._dictate_ctx = edit, context
+            app.deliver(app._rewrite_id, None, ("synthetic result", "Local", None),
+                          (10, 10, None), (0, .1, None, "Local"))
+            self.assertTrue(context._insertion_attempted)
+            self.assertIsNone(context._receipt)
+            self.assertEqual(app.copied, [])
+            self.assertFalse(app.toast_.visible)
+            cleanup.assert_called_once_with(expected_sequence=11)
+        first, cleanup = native.SendInput.call_args_list
+        self.assertEqual(first.args[0], 4)
+        self.assertEqual(cleanup.args[0], 1)
+        self.assertEqual(cleanup.args[1][0].ki.dwFlags, 2)
+
+    def test_unconfirmed_paste_is_distinguished_from_a_preflight_refusal(self):
+        from harness_discussion.win import edit
+        document = Document()
+        with target(document) as (_, key, _, _):
+            context = edit.capture(False)
+            def paste(vk):
+                document.text = "Left new right"
+                document.start = document.end = 8
+                document.identity = [9, 10]  # a reactive editor replaced its accessible field after input
+                return True
+            key.side_effect = paste
+            self.assertFalse(edit.type_at_caret("new", context))
+            self.assertEqual(document.text, "Left new right")
+            self.assertTrue(context._insertion_attempted)
+            self.assertIsNone(context._receipt)
+            key.assert_called_once_with(ord("V"))
+            self.assertFalse(edit.type_at_caret("again", context))
+            self.assertFalse(context._insertion_attempted)
+            self.assertEqual(key.call_count, 1)
+
+    def test_clipboard_cleanup_failure_does_not_hide_that_input_was_attempted(self):
+        from harness_discussion.win import edit
+        document = Document()
+        with target(document) as (_, key, _, cleanup):
+            context = edit.capture(False)
+            def paste(vk):
+                document.text = "Left new right"
+                document.start = document.end = 8
+                return True
+            key.side_effect = paste
+            cleanup.side_effect = OSError("clipboard busy")
+            self.assertFalse(edit.type_at_caret("new", context))
+            self.assertTrue(context._insertion_attempted)
+            self.assertIsNone(context._receipt)
+
+    def test_failed_key_request_is_still_an_attempt_but_not_a_verified_insertion(self):
+        from harness_discussion.win import edit
+        with target(Document()) as (_, key, _, _):
+            context = edit.capture(False)
+            self.assertFalse(edit.type_at_caret("new", context))
+            self.assertTrue(context._insertion_attempted)
+            self.assertIsNone(context._receipt)
+            key.assert_called_once_with(ord("V"))
+
+    def test_invalid_or_secure_reuse_resets_attempt_status_without_input(self):
+        from harness_discussion.win import edit
+        for text, secure in ((None, False), ("x\0y", False), ("new", True)):
+            with self.subTest(text=text, secure=secure), target(Document()) as (_, key, _, _):
+                context = edit.capture(False)
+                context._insertion_attempted = True
+                context.secure = secure
+                self.assertFalse(edit.type_at_caret(text, context))
+                self.assertFalse(context._insertion_attempted)
+                key.assert_not_called()
+
     def test_shared_undo_keeps_receipts_across_mode_and_repeated_review_replacements(self):
         from harness_discussion import edit_logic
         from harness_discussion.win import edit

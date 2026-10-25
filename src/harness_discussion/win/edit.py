@@ -40,6 +40,7 @@ class Context:
     _digest: bytes = b""
     _units: int = 0
     _receipt: tuple | None = field(default=None, repr=False, compare=False)
+    _insertion_attempted: bool = field(default=False, repr=False, compare=False)
 
 
 def _canonical(text):
@@ -145,8 +146,10 @@ def same_context(context):
     return bool(_run(check))
 
 
-def _replace(text, context):
+def _replace(text, context, cancelled):
     with clipboard.BORROW_LOCK:
+        if cancelled():
+            return False
         found = _inspect()
         if not found:
             return False
@@ -166,8 +169,9 @@ def _replace(text, context):
             verified, post = False, None
             try:
                 check = _inspect()
-                if (check and _matches(context, check[0]) and clipboard.sequence() == ours
-                        and keys.chord(ord("V"))):
+                if (check and _matches(context, check[0]) and clipboard.sequence() == ours and not cancelled()
+                        and keys.chord(ord("V"),
+                                       on_attempt=lambda: setattr(context, "_insertion_attempted", True))):
                     deadline = time.monotonic() + 1.0
                     while time.monotonic() < deadline:
                         result = _inspect()
@@ -192,16 +196,18 @@ def _replace(text, context):
             return verified
 
 
-def replace(text, ctx=None):
+def replace(text, ctx=None, *, cancelled=lambda: False):
     """True only after exact document/caret verification. False after input must never be retried automatically."""
+    if ctx is not None:
+        ctx._insertion_attempted = False
     if not isinstance(text, str) or "\0" in text or (ctx is not None and ctx.secure):
         return False
-    return bool(_run(_replace, text, ctx))
+    return bool(_run(_replace, text, ctx, cancelled))
 
 
-def type_at_caret(text, ctx=None):
+def type_at_caret(text, ctx=None, *, cancelled=lambda: False):
     """Insert at the unchanged caret, or replace its unchanged selection, like a normal paste."""
-    return replace(text, ctx)
+    return replace(text, ctx, cancelled=cancelled)
 
 
 def undo(ctx, original, inserted):

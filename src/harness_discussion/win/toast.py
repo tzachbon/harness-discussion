@@ -10,6 +10,7 @@ ACTIVITY_MS = 120
 ACTIONS = ("undo", "review", "mode", "copy")
 LEGACY_ACTIONS = ACTIONS[:3]
 ACTIVITY = ("◐", "◓", "◑", "◒")
+WAVE_BARS = 9
 
 
 def floating(root, **options):
@@ -51,6 +52,14 @@ class Toast:
         w = self.win = floating(root)
         self.spinner = tk.Label(w, bg=BG, fg=ACCENT, font=(icons, 10), padx=0, pady=0)
         self.label = tk.Label(w, bg=BG, fg=FG, font=(text, 10), padx=0, pady=0)
+        # Rounded bars of the last WAVE_BARS measured levels, newest on the right. Redrawn only by set_input_level.
+        bar, gap, self._wave_height = (w.winfo_fpixels(v) for v in ("2p", "2p", "14p"))
+        self.meter = tk.Canvas(w, bg=BG, highlightthickness=0, bd=0, height=round(self._wave_height),
+                               width=round(WAVE_BARS * (bar + gap) - gap))
+        self._wave_bar = bar
+        self._wave = [self.meter.create_line(i * (bar + gap) + bar / 2, 0, i * (bar + gap) + bar / 2, 0,
+                                             width=bar, capstyle="round", fill=ACCENT) for i in range(WAVE_BARS)]
+        self._levels, self._envelope = [0.0] * WAVE_BARS, 0.0
         self.spinner.pack(side="left", padx=("8p", "4p"), pady="4p")
         self.label.pack(side="left", padx=("8p", "4p"), pady="4p")
         self.divider = tk.Frame(w, bg=DIVIDER, width=1)
@@ -65,6 +74,8 @@ class Toast:
         """Show at (x, y), or the pointer. Shared actions are (title, fn) or (title, [(title, fn, checked)])."""
         self._close_menu()
         self._clear_shared_actions()
+        self.meter.pack_forget()
+        self._levels, self._envelope = [0.0] * WAVE_BARS, 0.0
         self.label["text"] = message
         if actions is None:
             actions = LEGACY_ACTIONS if self.on_action is not None else ()
@@ -107,6 +118,20 @@ class Toast:
             self.spinner.pack_forget()
             self._cancel_activity()
             self._schedule_hide()
+
+    def set_input_level(self, level):
+        self._cancel_activity()
+        self.spinner.pack_forget()
+        level = max(0.0, min(1.0, level))
+        # Fast attack, slower release, so syllables register at once and pauses settle instead of flicker.
+        self._envelope += (level - self._envelope) * (0.7 if level > self._envelope else 0.35)
+        self._levels = self._levels[1:] + [self._envelope]
+        middle, reach = self._wave_height / 2, (self._wave_height - self._wave_bar) / 2
+        for item, value in zip(self._wave, self._levels):
+            x = self.meter.coords(item)[0]
+            half = max(0.5, value * reach)  # silence is a row of calm dots
+            self.meter.coords(item, x, middle - half, x, middle + half)
+        self.meter.pack(side="left", before=self.label, padx=("8p", "4p"), pady="4p")
 
     def hide(self):
         was_visible = self.visible

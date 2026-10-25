@@ -7,6 +7,7 @@ from pynput import keyboard, mouse
 
 from .. import hotkeys
 from ..clicks import DRAG_PX, Clicks  # noqa: F401  DRAG_PX is part of this module's surface
+from ..held_shortcut import HeldShortcut
 
 MULTI_CLICK_S = ctypes.windll.user32.GetDoubleClickTime() / 1000
 
@@ -26,11 +27,12 @@ class SelectionTrigger:
         self._listener.stop()
 
     def _click(self, x, y, button, pressed):
-        if button != mouse.Button.left:
-            return
         if pressed:
-            self._clicks.down(x, y)
+            if button == mouse.Button.left:
+                self._clicks.down(x, y)
             self.on_press(x, y)
+            return
+        if button != mouse.Button.left:
             return
         if self._clicks.up(x, y, time.monotonic()):
             self.on_selection(x, y)
@@ -78,39 +80,78 @@ def _physical(key):
 
 class HotKey:
     """Fires once every key of the shortcut is up, so a borrowed Ctrl+C isn't sent as Ctrl+Alt+C.
-    With on_release, fires at key-down instead and calls on_release once the chord is all up,
+    With on_release, fires at key-down instead and ends on primary up or required modifier loss,
     for hold-to-act shortcuts like dictation."""
 
-    def __init__(self, spec, on_hotkey, on_release=None):
+    def __init__(self, spec, on_hotkey, on_release=None, *, on_activity=None, on_cancel=None):
         mods, key = hotkeys.parse(spec)
         self.on_hotkey, self.on_release, self._keys, self._held = on_hotkey, on_release, {*mods, *([vk(key)] if key else [])}, {}
-        self._pending, self._armed = False, True  # armed blocks auto-repeat and a re-press during a partial release
+        self._pending = False
+        self._lock, self._closed, self._hold = threading.RLock(), False, None
+        self.on_activity, self.on_cancel = on_activity, on_cancel
+        if on_release is not None:
+            keymap = {0xA0: "shift", 0xA1: "shift", 0xA2: "ctrl", 0xA3: "ctrl",
+                      0xA4: "alt", 0xA5: "alt", 0x5B: "cmd", 0x5C: "cmd"}
+            primary = vk(key) if key else None
+            if primary is not None:
+                keymap[primary] = primary
+            self._hold = HeldShortcut(mods, primary, keymap, on_hotkey, on_release, settle=.05)
+            self._lock = self._hold.lock
+            self._hold.seed({code: name for code, name in keymap.items() if self._key_down(code)})
         self._listener = keyboard.Listener(on_press=self._press, on_release=self._release)
-        self._listener.start()
+        try:
+            self._listener.start()
+            if self._hold:
+                self._hold.start_polling(self._key_down)
+        except BaseException:
+            self.stop()
+            raise
+
+    @staticmethod
+    def _key_down(code):
+        return bool(ctypes.windll.user32.GetAsyncKeyState(code) & 0x8000)
 
     def _press(self, key):
-        self._held[_physical(key)] = _name(key)
-        if not self._armed or set(self._held.values()) != self._keys:
-            return
-        if self.on_release is None:
-            self._pending = True
-            return
-        self._armed = False
-        self.on_hotkey()
+        with self._lock:
+            if self._closed:
+                return
+            if self._hold:
+                name = _name(key)
+                if _physical(key) == 27 and self.on_cancel is not None:
+                    self.on_cancel()
+                if self.on_activity is not None and not self._hold._required(name):
+                    self.on_activity()
+                self._hold.event(_physical(key), name, True)
+            else:
+                self._held[_physical(key)] = _name(key)
+                if set(self._held.values()) == self._keys:
+                    self._pending = True
 
     def _release(self, key):
-        self._held.pop(_physical(key), None)
-        if self._held:
-            return
-        if self._pending:
-            self._pending = False
-            self.on_hotkey()
-        elif not self._armed:
-            self._armed = True  # rearm only once everything is released
-            self.on_release()
+        with self._lock:
+            if self._closed:
+                return
+            if self._hold:
+                name = _name(key)
+                if self.on_activity is not None and name in MOD_KEYS and not self._hold._required(name):
+                    self.on_activity()
+                self._hold.event(_physical(key), name, False)
+            else:
+                self._held.pop(_physical(key), None)
+                if not self._held and self._pending:
+                    self._pending = False
+                    self.on_hotkey()
 
     def stop(self):
-        self._listener.stop()
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            try:
+                if self._hold:
+                    self._hold.stop()
+            finally:
+                self._listener.stop()
 
 
 class Escape:

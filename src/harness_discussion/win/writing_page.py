@@ -3,13 +3,14 @@ import tkinter as tk
 from copy import deepcopy
 from tkinter import messagebox, ttk
 
-from .. import settings, writer
+from .. import mic, settings, writer
 from .. import writer_settings as ws
 from .sources_ui import CARD
 
 PLAN_DEFAULTS = {k: settings.DEFAULTS[k] for k in ("writer", "writer_sources", "writer_models", "modes",
                                                    "default_mode", "rewrite_hotkey", "dictate_hotkey", "stt_sources",
-                                                   "dictate_polish", "dictate_mode")}
+                                                   "dictate_polish", "dictate_mode", "dictate_local_tidy",
+                                                   "dictate_microphone")}
 LOCAL_MODEL = "Qwen3-4B"  # fixed: Local has no model or effort choice
 FIXES = {"missing": "Install…", "signed_out": "Sign in…", "expired": "Sign in…", "not_downloaded": "Download…"}
 
@@ -108,6 +109,13 @@ class WritingPage:
                                             style="Card.TCheckbutton", variable=self.polish_on,
                                             command=self._polish_changed)
         self.polish_check.pack(anchor="w")
+        self.local_tidy_on = tk.BooleanVar(self.win, self.cfg["dictate_local_tidy"])
+        self.local_tidy_check = ttk.Checkbutton(card, text="Prefer local tidy for faster results",
+                style="Card.TCheckbutton", variable=self.local_tidy_on,
+                command=lambda: self._set("dictate_local_tidy", self.local_tidy_on.get()))
+        self.local_tidy_check.pack(anchor="w", pady=(6, 0))
+        ttk.Label(card, text="Uses Writing → Local when downloaded and enabled. Otherwise uses your writing sources.",
+                  style="Sub.Card.TLabel", wraplength=440).pack(anchor="w", pady=(4, 0))
         ttk.Label(card, text="Off types exactly what was heard, sooner.", style="Sub.Card.TLabel").pack(
             anchor="w", pady=(4, 0))
         row = tk.Frame(card, bg=CARD)
@@ -122,11 +130,25 @@ class WritingPage:
         self._shortcut_row(card, "dictate_hotkey", "Hold to record, release to type the text at the caret.")
         row = tk.Frame(card, bg=CARD)
         row.pack(fill="x", pady=(12, 0))
+        ttk.Label(row, text="Input device", style="Card.TLabel", width=14).pack(side="left")
+        self._mic_devices = ["", *mic.input_devices()]
+        chosen = self.cfg["dictate_microphone"]
+        if chosen not in self._mic_devices:
+            self._mic_devices.append(chosen)
+        self.microphone = ttk.Combobox(row, state="readonly", width=30,
+                                      values=["System default", *self._mic_devices[1:]])
+        self.microphone.current(self._mic_devices.index(chosen))
+        self.microphone.bind("<<ComboboxSelected>>", lambda _e: self._set(
+            "dictate_microphone", self._mic_devices[self.microphone.current()]))
+        self.microphone.pack(side="left")
+        row = tk.Frame(card, bg=CARD)
+        row.pack(fill="x", pady=(12, 0))
         self.mic_status = ttk.Label(row, style="Card.TLabel")
         self.mic_status.pack(side="left")
         ttk.Button(row, text="Microphone settings", command=self.on_mic_settings).pack(side="right")
         ttk.Label(card, text="A short tap does nothing. Release to transcribe, tidied with the dictation mode when "
-                  "that is on. The audio goes to the first ready source and is not saved.",
+                  "that is on. Local keeps audio on this PC. Enabled Cursor or Codex sources receive audio if "
+                  "earlier sources fail. Audio is not saved.",
                   style="Sub.Card.TLabel", wraplength=440).pack(anchor="w", pady=(8, 0))
         self.refresh_writing()
 
@@ -227,6 +249,8 @@ class WritingPage:
         self._refresh_dictation_mode()
 
     def _refresh_dictation_mode(self):
+        self.local_tidy_on.set(self.cfg["dictate_local_tidy"])
+        self.local_tidy_check.configure(state="normal" if self.cfg["dictate_polish"] else "disabled")
         self.dictate_mode.configure(values=[m.name for m in self._modes()],
                                    state="readonly" if self.cfg["dictate_polish"] else "disabled")
         self.dictate_mode.set(ws.default_mode(self.cfg["dictate_mode"], self.cfg["modes"], "Clean dictation"))
@@ -286,7 +310,8 @@ class WritingPage:
             row["up"]["state"] = "normal" if i else "disabled"
             row["down"]["state"] = "normal" if i < len(sources) - 1 else "disabled"
             row["status"]["text"] = status_text(statuses.get(name))
-            row["fix"]["text"] = FIXES.get(statuses.get(name), "")
+            row["fix"]["text"] = ("Download…" if name == "Local" and statuses.get(name) == "missing"
+                                    else FIXES.get(statuses.get(name), ""))
             if "fix" not in columns or not row["fix"]["text"]:
                 row["fix"].grid_remove()
 

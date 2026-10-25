@@ -39,7 +39,7 @@ class SummarizePage:
         state, progress = self.app.summarize_state()
         text, color, action = SUMMARY_STATES[state if progress is None else "downloading"]
         if progress is not None:
-            text = text.format(percent=int(progress * 100), size=summarize.SIZE_LABEL)
+            text = text.format(percent=int(progress * 100), size=summarize.download_size_label())
         self.summary_status.setStringValue_(text)
         self.summary_dot.setTextColor_(getattr(AppKit.NSColor, color)())
         self.summary_bar.setHidden_(progress is None)
