@@ -235,7 +235,7 @@ class WritingPage:
             model.configure(values=[LOCAL_MODEL if name == "Local" else "Models not loaded"], state="disabled")
             model.current(0)
         else:
-            model.configure(values=["Default"] + [m.get("label") or m["id"] for m in catalog], state="readonly")
+            model.configure(values=[ws.default_label(name)] + [m.get("label") or m["id"] for m in catalog], state="readonly")
             model.current(catalog.index(found) + 1 if found else 0)
         efforts = (found or {}).get("efforts") or []
         effort.configure(values=efforts, state="readonly" if efforts else "disabled")

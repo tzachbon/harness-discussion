@@ -163,8 +163,8 @@ class WritingSettingsUi(unittest.TestCase):
         self.assertTrue(w.writer_rows["Local"]["model"].instate(["disabled"]))
         catalogs.update(CATALOGS)
         w.refresh_writing()
-        self.assertEqual(list(model["values"]), ["Default", "GPT-5.5", "GPT-5.5 mini"])
-        self.assertEqual(model.get(), "Default")
+        self.assertEqual(list(model["values"]), ["Default (recommended)", "GPT-5.5", "GPT-5.5 mini"])
+        self.assertEqual(model.get(), "Default (recommended)")
         self.pick(model, "GPT-5.5")
         self.assertEqual(self.changes[-1], ("writer_models", {"Codex": {"model": "gpt-5.5", "effort": "medium"}}))
         self.assertEqual(list(effort["values"]), ["low", "medium", "high"])
@@ -173,7 +173,7 @@ class WritingSettingsUi(unittest.TestCase):
         self.pick(model, "GPT-5.5 mini")
         self.assertEqual(self.changes[-1], ("writer_models", {"Codex": {"model": "gpt-5.5-mini", "effort": None}}))
         self.assertTrue(effort.instate(["disabled"]))
-        self.pick(model, "Default")
+        self.pick(model, "Default (recommended)")
         self.assertEqual(self.changes[-1], ("writer_models", {}))
 
     def test_a_saved_model_shows_selected(self):
@@ -187,7 +187,7 @@ class WritingSettingsUi(unittest.TestCase):
                               {"id": "gpt-6-luna", "label": "", "efforts": []}]}
         w = self.make_window(writer_catalogs=lambda: catalogs)
         model = w.writer_rows["Codex"]["model"]
-        self.assertEqual(list(model["values"]), ["Default", "gpt-6.1-sol", "gpt-6-luna"])
+        self.assertEqual(list(model["values"]), ["Default (recommended)", "gpt-6.1-sol", "gpt-6-luna"])
         self.pick(model, "gpt-6.1-sol")
         self.assertEqual(self.changes[-1],
                          ("writer_models", {"Codex": {"model": "gpt-6.1-sol", "effort": None}}))
