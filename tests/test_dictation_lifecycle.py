@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from harness_discussion import app_writer, core, mic
+from harness_discussion import app_writer, audio, core, mic, settings, updates
 from harness_discussion.edit_logic import Context
 from tests.test_app_writer import _App
 
@@ -12,6 +12,45 @@ from tests.dictation_helpers import DictationCase, RECORDER
 
 
 class LifecycleTest(DictationCase):
+    def test_native_stop_timeout_releases_recording_and_update_wait_after_transcription(self):
+        app, _ = self.make_app()
+        stream = Mock()
+        stream.stop.side_effect = RuntimeError("native stop must not run on the recording worker")
+        pcm = b"\x01\x00" * mic.RATE
+        def open_stream(**kw):
+            stream.start.side_effect = lambda: kw["callback"](pcm, mic.RATE, None, None)
+            return stream
+        self.addCleanup(audio._live.discard, stream)
+        app._pending_update, app._closing, app._update_manual = object(), False, True
+        app._read_options, app.stt, app._draining_stt = None, None, []
+        app.chain = SimpleNamespace(busy=False)
+        app._update_status, app._try_update, app._handle = Mock(), Mock(), Mock()
+        with patch.object(mic, "Recorder", RECORDER), \
+                patch.object(audio.sd, "RawInputStream", side_effect=open_stream), \
+                patch.object(audio, "CLOSE_WAIT_S", 0.01), \
+                patch.object(settings, "save"), patch.object(updates, "install") as install:
+            self.start(app)
+            core.App._try_update(app)
+            install.assert_not_called()
+            with patch.object(mic.log, "warning") as warning:
+                app._dictate_up()
+                app.drain("recording_done")
+                self.assertIsNotNone(app._dictation_job)
+                app.drain("dictated")
+            warning.assert_called_once()
+            self.assertIsNone(app._recorder)
+            self.assertIsNone(app._dictation_job)
+            self.assertFalse(app._holding or app.rewriting)
+            app.stt_sources[0].transcribe.assert_called_once()
+            self.assertEqual(app.stt_sources[0].transcribe.call_args.args[0], mic.wav(pcm))
+            app.host.edit.type_at_caret.assert_called_once()
+            core.App._try_update(app)
+            install.assert_called_once_with(app._pending_update)
+            app._handle.assert_called_once_with("quit")
+        stream.stop.assert_not_called()
+        stream.close.assert_not_called()
+        self.assertIn(stream, audio._live)
+
     def test_duplicate_down_during_permission_keeps_one_hold(self):
         app, devices = self.make_app()
         answers = []
