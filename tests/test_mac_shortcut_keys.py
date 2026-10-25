@@ -56,12 +56,31 @@ class ShortcutKeyTest(unittest.TestCase):
     def test_a_keyboard_selection_shows_the_bar_at_the_text_or_else_the_pointer(self):
         t = object.__new__(trigger.SelectionTrigger)
         t.on_selection = mock.Mock()
-        with mock.patch.object(trigger.time, "sleep"), mock.patch.object(trigger, "callAfter", lambda fn: fn()), \
+        from harness_discussion.mac import selection
+        with mock.patch.object(trigger.time, "sleep"), mock.patch("PyObjCTools.AppHelper.callAfter", lambda fn: fn()), \
                 mock.patch.object(trigger, "top_left", return_value=(5, 6)):
             for bounds, point in (((30, 40), (30, 40)), (None, (5, 6))):
-                with mock.patch.object(trigger.selection, "bounds", return_value=bounds):
+                with mock.patch.object(selection, "bounds", return_value=bounds):
                     t._at_selection()
                 t.on_selection.assert_called_with(*point)
+
+    def test_without_text_bounds_the_bar_goes_to_the_field_then_the_window(self):
+        from harness_discussion.mac import selection
+        rect = mock.Mock(origin=mock.Mock(x=30, y=40), size=mock.Mock(width=0, height=0))  # an empty rect
+        attrs = {"app": {"AXFocusedUIElement": "field", "AXFocusedWindow": "window"},
+                 "field": {"AXSelectedTextRange": "span", "AXPosition": "field position"},
+                 "window": {"AXPosition": "window position"}}
+        points = {"field position": mock.Mock(x=7, y=8), "window position": mock.Mock(x=1, y=2)}
+        value = lambda v, kind, _: ((True, rect) if v == "rect" else (v in points, points.get(v)))
+        with mock.patch.object(selection, "_frontmost_pid", return_value=1), \
+                mock.patch.object(selection, "AXUIElementCreateApplication", return_value="app"), \
+                mock.patch.object(selection, "_attr", lambda e, name: attrs.get(e, {}).get(name)), \
+                mock.patch.object(selection, "AXUIElementCopyParameterizedAttributeValue",
+                                  return_value=(selection.kAXErrorSuccess, "rect")), \
+                mock.patch.object(selection, "AXValueGetValue", value):
+            self.assertEqual(selection.bounds(), (7, 8))
+            del attrs["field"]["AXPosition"]
+            self.assertEqual(selection.bounds(), (1, 2))
 
     def hotkey(self, spec, on_release=None):
         hk = object.__new__(trigger.HotKey)  # skips installing the system monitors

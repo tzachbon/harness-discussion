@@ -6,7 +6,7 @@ import AppKit
 from ApplicationServices import (AXUIElementCopyAttributeValue, AXUIElementCopyParameterizedAttributeValue,
                                  AXUIElementCreateApplication, AXUIElementCreateSystemWide,
                                  AXUIElementSetAttributeValue, AXUIElementSetMessagingTimeout, AXValueGetValue,
-                                 kAXErrorSuccess, kAXValueCGRectType)
+                                 kAXErrorSuccess, kAXValueCGPointType, kAXValueCGRectType)
 
 from .. import richtext
 from . import pasteboard, permission
@@ -67,19 +67,28 @@ def _in_web(element):
 
 
 def bounds():
-    """Top-left of the selected text in the frontmost app, top-left based like the pointer, or None."""
+    """Top-left of the selected text in the frontmost app, else of its focused field, else of its focused window.
+    Top-left based like the pointer. None when the app reports none of them."""
     pid = _frontmost_pid()
-    element = _attr(AXUIElementCreateApplication(pid), "AXFocusedUIElement") if pid else None
+    app = AXUIElementCreateApplication(pid) if pid else None
+    focused = _attr(app, "AXFocusedUIElement") if app else None
+    element = focused
     for _ in range(6):
         if element is None:
-            return None
+            break
         span = _attr(element, "AXSelectedTextRange")
         if span is not None:
             err, value = AXUIElementCopyParameterizedAttributeValue(element, "AXBoundsForRange", span, None)
             ok, rect = AXValueGetValue(value, kAXValueCGRectType, None) if err == kAXErrorSuccess else (False, None)
-            # some apps answer an empty rect, so the caller falls back to the pointer
-            return (rect.origin.x, rect.origin.y) if ok and rect.size.width and rect.size.height else None
+            if ok and rect.size.width and rect.size.height:  # some apps answer an empty rect
+                return rect.origin.x, rect.origin.y
+            break
         element = _attr(element, "AXParent")
+    for element in (focused, _attr(app, "AXFocusedWindow") if app else None):
+        position = _attr(element, "AXPosition") if element is not None else None
+        ok, point = AXValueGetValue(position, kAXValueCGPointType, None) if position is not None else (False, None)
+        if ok:
+            return point.x, point.y
     return None
 
 

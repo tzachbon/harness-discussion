@@ -9,12 +9,10 @@ import AppKit
 import CoreFoundation as CF
 import objc
 import Quartz
-from PyObjCTools.AppHelper import callAfter
 
 from .. import hotkeys
 from ..clicks import Clicks
 from ..held_shortcut import HeldShortcut
-from . import selection
 
 MASK = (AppKit.NSEventMaskLeftMouseDown | AppKit.NSEventMaskLeftMouseUp |
         AppKit.NSEventMaskRightMouseDown | AppKit.NSEventMaskOtherMouseDown)
@@ -73,7 +71,10 @@ class SelectionTrigger:
             threading.Thread(target=self._at_selection, daemon=True).start()  # Accessibility can block
 
     def _at_selection(self):
-        """Fires on the main thread at the selected text, or at the pointer when the app can't say where it is."""
+        """Fires on the main thread at the selected text, its field or its window. The pointer is the last resort,
+        as a pointer resting on the bar would make the core take the selection for a click on the bar."""
+        from PyObjCTools.AppHelper import callAfter  # here, so tests can load this module with stub frameworks
+        from . import selection
         time.sleep(0.08)  # let the app finish updating its selection
         point = selection.bounds()
         callAfter(lambda: self.on_selection(*(point or top_left(AppKit.NSEvent.mouseLocation()))))
