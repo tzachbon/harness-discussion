@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from harness_discussion import settings, tour, writer
+from harness_discussion import settings, summarize, tour, writer
 
 from tests.test_app_tour_flow import FlowTest
 from tests.test_practice import FakeBox
@@ -68,6 +68,26 @@ class AboutLimitTest(unittest.TestCase):
             with open(path, "w") as f:
                 json.dump({"about_me": "x" * 99999, "about_me_uncapped": True}, f)
             self.assertEqual(len(settings.load(path)["about_me"]), writer.ABOUT_MAX)
+
+class AboutContextBudgetTest(unittest.TestCase):
+    """A long About you note shares the local model's 8192-token context with the text."""
+
+    def test_summary_text_shrinks_by_the_note(self):
+        server, sent = summarize.Server(), []
+        server.complete = lambda system, user, *a: sent.append(user) or "Short."
+        note = "n" * 5000
+        server.summarize("t" * summarize.MAX_CHARS, "English", about=note)
+        self.assertEqual(sent[0], f"<text>\n{'t' * (summarize.MAX_CHARS - len(note))}\n</text>")
+
+    def test_local_rewrite_refuses_text_a_long_note_leaves_no_room_for(self):
+        sent = []
+        local = summarize.LocalWriter(type("S", (), {"complete": lambda self, *a, **k: sent.append(a) or "ok"})())
+        text = "t" * (summarize.MAX_CHARS // 2)
+        capped = writer.system_prompt(writer.BUILTIN_MODES[0], True, writer.about(
+            {"about_me": "n" * writer.ABOUT_CHARS, "about_me_on": True}))
+        self.assertEqual(local.rewrite(capped, text, None, None, lambda: False), "ok")  # a capped note costs nothing
+        with self.assertRaises(summarize.Error):
+            local.rewrite(capped + "n" * 5000, text, None, None, lambda: False)
 
 class AboutTourTest(FlowTest):
     def test_leaving_the_step_saves_the_box_and_marks_it_tried(self):
