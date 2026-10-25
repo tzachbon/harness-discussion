@@ -4,6 +4,8 @@ import objc
 
 from . import ui
 
+REWRITE_PAD = 12
+
 
 class _Button(AppKit.NSButton):
     def acceptsFirstMouse_(self, event):
@@ -113,14 +115,23 @@ def _rewrite_button(fn):
     b.layer().setCornerRadius_(15)
     b.layer().setBackgroundColor_(ui.cg(AppKit.NSColor.controlAccentColor()))
     b.heightAnchor().constraintEqualToConstant_(30).setActive_(True)  # as tall as ▶, so both follow the bar's curve
+    b.widthAnchor().constraintEqualToConstant_(0).setActive_(True)  # sized to each title by _set_rewrite_title
     return ui.bind(b, lambda _s: fn())
 
 
 def _set_rewrite_title(button, title):
+    """The drawn title, not its advance box, centered with the same padding on both sides."""
     font = AppKit.NSFont.systemFontOfSize_weight_(12, AppKit.NSFontWeightSemibold)
-    button.setAttributedTitle_(AppKit.NSAttributedString.alloc().initWithString_attributes_(
-        f"    ✎ {title}    ", {AppKit.NSFontAttributeName: font,
-                              AppKit.NSForegroundColorAttributeName: AppKit.NSColor.whiteColor()}))
+    text = AppKit.NSMutableAttributedString.alloc().initWithString_attributes_(
+        f"✎ {title}", {AppKit.NSFontAttributeName: font,
+                       AppKit.NSForegroundColorAttributeName: AppKit.NSColor.whiteColor()})
+    ink = text.boundingRectWithSize_options_((1e4, 1e4), AppKit.NSStringDrawingUsesDeviceMetrics)
+    left, right = ink.origin.x, text.size().width - ink.origin.x - ink.size.width
+    # a kern on the last glyph trims its trailing blank to match the leading one
+    text.addAttribute_value_range_(AppKit.NSKernAttributeName, left - right, (text.length() - 1, 1))
+    button.setAttributedTitle_(text)
+    width = next(c for c in button.constraints() if c.firstAttribute() == AppKit.NSLayoutAttributeWidth)
+    width.setConstant_(text.size().width + 2 * REWRITE_PAD)
 
 
 def _divider():
