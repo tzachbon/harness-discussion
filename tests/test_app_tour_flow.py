@@ -78,6 +78,9 @@ class _App(app_tour.Tour, app_practice.Practice, Base):
         self._read_id = 0
         self.host = SimpleNamespace(make_tour=FakeTour, after=lambda ms, fn: self.after_calls.append((ms, fn)))
 
+    def _ax_state(self):  # tests patch _mac() True on Windows too, where mac.permission can't import AppKit
+        return True, False
+
     def open(self, **cfg):  # the ("tour",) event start() queues, handled as pump would
         for key, value in cfg.items():
             self.cfg[key] = value
