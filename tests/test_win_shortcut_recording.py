@@ -12,11 +12,20 @@ from harness_discussion import hotkeys, settings
 from harness_discussion.win.shortcut_row import ShortcutRow
 
 
+class Keys:  # keycaps.Keys without Tk: what the row reads as
+    text = ""
+
+    def show(self, spec, after=""):
+        self.text = hotkeys.label(spec) + after if hotkeys.keys(spec) else "Off"
+
+    def say(self, text):
+        self.text = text
+
 class Recorder(ShortcutRow):
     def __init__(self):
         self.cfg = dict(settings.DEFAULTS)
         self.win, self.on_record = Mock(), Mock()
-        self.shortcuts = {key: {"label": {"text": ""}, "error": {"text": ""}} for key in hotkeys.SHORTCUTS}
+        self.shortcuts = {key: {"label": Keys(), "error": {"text": ""}} for key in hotkeys.SHORTCUTS}
 
     def _set(self, key, value):
         self.cfg[key] = value
@@ -90,7 +99,7 @@ class ShortcutRecording(unittest.TestCase):
         self.press(0x10)
         self.release(0x10)
         self.press(0x12)
-        self.assertEqual(self.row.shortcuts["hotkey"]["label"]["text"], "Ctrl+Alt…")
+        self.assertEqual(self.row.shortcuts["hotkey"]["label"].text, "Ctrl+Alt…")
         self.release(0x12)
         self.release(0x11)
         self.assertEqual(self.row.cfg["hotkey"], "<ctrl>+<alt>")
@@ -106,7 +115,7 @@ class ShortcutRecording(unittest.TestCase):
         self.row._record_hotkey("rewrite_hotkey")
         self.press(0x41)
         self.assertEqual(self.row.cfg["rewrite_hotkey"], "a")
-        self.assertEqual(self.row.shortcuts["hotkey"]["label"]["text"], hotkeys.label(old["hotkey"]))
+        self.assertEqual(self.row.shortcuts["hotkey"]["label"].text, hotkeys.label(old["hotkey"]))
 
     def test_modifier_only_duplicate_names_the_other_action(self):
         self.row.cfg["dictate_hotkey"] = "<ctrl>+<cmd>"

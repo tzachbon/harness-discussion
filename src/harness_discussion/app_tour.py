@@ -154,7 +154,7 @@ class Tour:
             if key in getattr(win, "shortcut_labels", {}):  # Mac
                 win._show_shortcut(key)
             elif key in getattr(win, "shortcuts", {}):  # Windows
-                win.shortcuts[key]["label"]["text"] = hotkeys.label(spec)
+                win.shortcuts[key]["label"].show(spec)
 
     def _try_update(self):
         if self._sandbox:  # it saves self.cfg before installing: wait until the tour closes

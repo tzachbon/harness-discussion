@@ -2,8 +2,9 @@
 import tkinter as tk
 from tkinter import messagebox
 
-from .. import hotkeys, writer_settings
+from .. import writer_settings
 from .bar_parts import HUD_BG as CARD, HUD_CHIP as CHIP, HUD_FG as FG, HUD_HOVER as HOVER, HUD_MUTED as MUTED
+from .keycaps import Keys
 from .practice_field import PracticeField
 from .shortcut_row import TITLES
 
@@ -89,7 +90,8 @@ def shortcuts(w, parent, v):
         row = tk.Frame(parent, bg=BG)
         row.pack(fill="x", pady=(0, "2p"))
         text(w, row, TITLES[key], fg=MUTED, wrap=0).pack(side="left")
-        label = text(w, row, hotkeys.label(w.cfg[key]), bold=True, wrap=0)
+        label = Keys(row, w.fonts[1], FG, CHIP, MUTED, bold=True)
+        label.show(w.cfg[key])
         label.pack(side="left", padx="8p")
         button(w, row, "Change…", lambda key=key: w._record_hotkey(key)).pack(side="left")
         if sub:

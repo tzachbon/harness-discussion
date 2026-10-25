@@ -12,14 +12,44 @@ from unittest.mock import patch
 from PIL import Image
 from harness_discussion import settings
 from harness_discussion.win import settings_ui
-from harness_discussion.win.trigger import key_name
 
 CATALOGS = {"Codex": [{"id": "gpt-5.5", "label": "GPT-5.5", "efforts": ["low", "medium", "high"],
                        "default_effort": "medium"},
                       {"id": "gpt-5.5-mini", "label": "GPT-5.5 mini", "efforts": [], "default_effort": None}]}
 
 
-class WritingSettingsUi(unittest.TestCase):
+class SettingsWindowCase(unittest.TestCase):
+    """A real Settings window on a hidden Tk root; changes it saves land in self.changes."""
+
+    def setUp(self):
+        win_key = patch("harness_discussion.win.shortcut_row.win_down", return_value=False)
+        win_key.start()
+        self.addCleanup(win_key.stop)
+        devices = patch("harness_discussion.win.writing_page.mic.input_devices", return_value=[])
+        devices.start()
+        self.addCleanup(devices.stop)
+        self.root = tk.Tk()
+        self.root.withdraw()
+        self.changes, self.window = [], None
+
+    def tearDown(self):
+        if self.window and self.window.alive:
+            self.window.close()
+        self.root.destroy()
+        self.window = self.root = None
+        gc.collect()  # Tk cycles must release their interpreter on its owning thread.
+
+    def make_window(self, cfg=None, **kw):
+        cfg = dict(settings.DEFAULTS) if cfg is None else cfg
+        with patch.object(settings_ui.settings, "startup_enabled", return_value=False), \
+                patch.object(settings_ui.SettingsWindow, "focus", lambda self: None), \
+                patch.object(settings_ui, "stt_connection", return_value=("", "")):
+            self.window = settings_ui.SettingsWindow(
+                self.root, cfg, Image.new("RGBA", (32, 32)), lambda *a: self.changes.append(a),
+                lambda _text: None, **kw)
+        return self.window
+
+class WritingSettingsUi(SettingsWindowCase):
     def test_recording_meter_is_replaced_by_transcription_activity(self):
         from harness_discussion.win.toast import Toast
         toast = Toast(self.root)
@@ -69,34 +99,6 @@ class WritingSettingsUi(unittest.TestCase):
         next(c for c in w.mic_status.master.winfo_children()
              if c.winfo_class() == "TButton" and c["text"] == "Microphone settings").invoke()
         self.assertEqual(opened, [True])
-
-    def setUp(self):
-        win_key = patch("harness_discussion.win.shortcut_row.win_down", return_value=False)
-        win_key.start()
-        self.addCleanup(win_key.stop)
-        devices = patch("harness_discussion.win.writing_page.mic.input_devices", return_value=[])
-        devices.start()
-        self.addCleanup(devices.stop)
-        self.root = tk.Tk()
-        self.root.withdraw()
-        self.changes, self.window = [], None
-
-    def tearDown(self):
-        if self.window and self.window.alive:
-            self.window.close()
-        self.root.destroy()
-        self.window = self.root = None
-        gc.collect()  # Tk cycles must release their interpreter on its owning thread.
-
-    def make_window(self, cfg=None, **kw):
-        cfg = dict(settings.DEFAULTS) if cfg is None else cfg
-        with patch.object(settings_ui.settings, "startup_enabled", return_value=False), \
-                patch.object(settings_ui.SettingsWindow, "focus", lambda self: None), \
-                patch.object(settings_ui, "stt_connection", return_value=("", "")):
-            self.window = settings_ui.SettingsWindow(
-                self.root, cfg, Image.new("RGBA", (32, 32)), lambda *a: self.changes.append(a),
-                lambda _text: None, **kw)
-        return self.window
 
     def test_writing_and_dictation_are_separate_pages_before_speech_to_text(self):
         w = self.make_window()
@@ -272,75 +274,6 @@ class WritingSettingsUi(unittest.TestCase):
         self.pick(w.mode_pick, "Custom")
         w.mode_delete.invoke()
         self.assertEqual([m["name"] for m in w.cfg["modes"]], ["New mode"])
-
-    def press(self, w, keycode, state):
-        w.win.event_generate("<KeyPress>", keycode=keycode, state=state, when="now")
-
-    def test_read_shortcut_still_records_and_reports_recording(self):
-        recording = []
-        w = self.make_window(on_record=recording.append)
-        w.nav[settings_ui.PAGES.index("Reading")].invoke()
-        self.assertEqual(w.hotkey_lbl["text"], "Ctrl+Alt+R")
-        w._record_hotkey()
-        self.assertEqual(w.hotkey_lbl["text"], "Press keys…")
-        self.press(w, ord("T"), 0x20004)  # Ctrl+Alt
-        self.assertEqual(self.changes[-1], ("hotkey", "<ctrl>+<alt>+t"))
-        self.assertEqual(w.hotkey_lbl["text"], "Ctrl+Alt+T")
-        self.assertEqual(recording, [True, False])
-
-    def test_any_key_records_alone_or_with_modifiers(self):
-        recording = []
-        w = self.make_window(on_record=recording.append)
-        w._record_hotkey()
-        self.press(w, 0x11, 0)  # Ctrl alone waits for the key
-        self.assertEqual(w.hotkey_lbl["text"], "Ctrl…")
-        self.press(w, 0xC0, 0x4)  # Ctrl+`
-        self.assertEqual(self.changes[-1], ("hotkey", "<ctrl>+<key_192>"))
-        self.assertEqual(w.hotkey_lbl["text"], "Ctrl+" + key_name(0xC0))
-        for keycode, state, spec in ((0x7C, 0, "<key_124>"), (ord("C"), 0x4, "<ctrl>+c"), (0x20, 0, "<key_32>")):
-            w._record_hotkey()
-            self.press(w, keycode, state)  # F13, Ctrl+C, and Space alone
-            self.assertEqual(self.changes[-1], ("hotkey", spec))
-        self.assertIsNone(w._recording)
-        self.assertEqual(recording[-1], False)
-        with patch("harness_discussion.win.shortcut_row.win_down", return_value=True):
-            w._record_hotkey()
-            self.press(w, 0x74, 0)  # Win+F5: Tk's state has no Win bit
-        self.assertEqual(self.changes[-1], ("hotkey", "<cmd>+<f5>"))
-        self.assertEqual(w.hotkey_lbl["text"], "Win+F5")
-
-    def test_legacy_setter_still_targets_read_after_rewrite_recording_is_cancelled(self):
-        w = self.make_window()
-        for key in ("rewrite_hotkey", "dictate_hotkey"):
-            w.shortcuts[key]["change"].invoke()
-            self.press(w, 0x1B, 0)
-            w._set_hotkey("")
-            self.assertEqual(w.cfg[key], settings.DEFAULTS[key])
-            self.assertEqual(w.cfg["hotkey"], "")
-
-    def test_rewrite_and_dictate_shortcuts_record_and_refuse_a_used_chord(self):
-        recording = []
-        w = self.make_window(on_record=recording.append)
-        rewrite, dictate = w.shortcuts["rewrite_hotkey"], w.shortcuts["dictate_hotkey"]
-        self.assertEqual((rewrite["label"]["text"], dictate["label"]["text"]), ("Ctrl+Shift+E", "Ctrl+Shift+D"))
-        rewrite["change"].invoke()
-        self.press(w, ord("R"), 0x20004)  # the read shortcut's chord
-        self.assertEqual(rewrite["label"]["text"], "Ctrl+Shift+E")
-        self.assertEqual(rewrite["error"]["text"], "Read shortcut already uses Ctrl+Alt+R.")
-        self.assertEqual(self.changes, [])
-        rewrite["change"].invoke()
-        self.assertEqual(rewrite["error"]["text"], "")
-        self.press(w, ord("W"), 0x20005)  # Ctrl+Alt+Shift
-        self.assertEqual(self.changes[-1], ("rewrite_hotkey", "<ctrl>+<alt>+<shift>+w"))
-        w.shortcuts["hotkey"]["change"].invoke()
-        dictate["off"].invoke()
-        self.assertEqual(w.hotkey_lbl["text"], "Ctrl+Alt+R")
-        self.assertEqual(self.changes[-1], ("dictate_hotkey", ""))
-        self.assertEqual(dictate["label"]["text"], "Off")
-        w.shortcuts["hotkey"]["change"].invoke()
-        self.press(w, 0x1B, 0)  # Esc keeps the old one
-        self.assertEqual(w.hotkey_lbl["text"], "Ctrl+Alt+R")
-        self.assertEqual(recording, [True, False, True, False, True, False, True, False])  # Off resumes too, as before
 
     def test_dictation_orders_its_sources_and_shows_the_microphone(self):
         mic = ["Not checked"]

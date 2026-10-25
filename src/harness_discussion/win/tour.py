@@ -5,7 +5,6 @@ import os
 import tkinter as tk
 from ctypes import wintypes
 
-from .. import hotkeys
 from . import edit, tour_steps
 from .bar_parts import fonts, work_area
 from .captions import _bind, _get_parent
@@ -79,7 +78,7 @@ class TourWindow(ShortcutRow):
             return
         for key, widgets in self.shortcuts.items():
             if self.cfg[key] != self._shown.get(key):
-                widgets["label"]["text"] = hotkeys.label(self.cfg[key])
+                widgets["label"].show(self.cfg[key])
                 self._shown[key] = self.cfg[key]
 
     def _draw(self, v):

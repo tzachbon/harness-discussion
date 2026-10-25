@@ -40,6 +40,16 @@ class Parse(unittest.TestCase):
             self.assertEqual(hotkeys.label("<ctrl>+<alt>"), "⌃⌥")
         self.assertEqual(hotkeys.label(""), "Off")
 
+    def test_keys_are_one_name_per_keycap(self):
+        with patch.object(hotkeys.sys, "platform", "win32"):
+            self.assertEqual(hotkeys.keys("<ctrl>+<alt>+r"), ["Ctrl", "Alt", "R"])
+            self.assertEqual(hotkeys.keys("<cmd>+<f5>"), ["Win", "F5"])
+        with patch.object(hotkeys.sys, "platform", "darwin"):
+            self.assertEqual(hotkeys.keys("<cmd>+<alt>+r"), ["⌥", "⌘", "R"])
+            self.assertEqual(hotkeys.keys("<ctrl>+<alt>"), ["⌃", "⌥"])
+        self.assertEqual(hotkeys.keys(""), [])
+        self.assertEqual(hotkeys.keys("<ctrl>+r+s"), [])
+
 
 class Saved(unittest.TestCase):
     def load(self, value):

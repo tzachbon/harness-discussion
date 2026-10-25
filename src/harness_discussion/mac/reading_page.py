@@ -29,8 +29,8 @@ class ReadingPage:
         from .settings_ui import WIDTH, _spacer
         if not hasattr(self, "shortcut_labels"):
             self.shortcut_labels, self.shortcut_hints = {}, {}
-        label = self.shortcut_labels[key] = ui.label("", 13, bold=True)
-        row = ui.stack([ui.label(SHORTCUT_TITLES[key], 13), _spacer(), label,
+        label = self.shortcut_labels[key] = ui.Keys()
+        row = ui.stack([ui.label(SHORTCUT_TITLES[key], 13), _spacer(), label.view,
                         ui.button("Change…", lambda: self._record_hotkey(key)),
                         ui.button("Off", lambda: self._set_hotkey("", key))], vertical=False, spacing=8)
         row.widthAnchor().constraintEqualToConstant_(WIDTH).setActive_(True)
@@ -39,7 +39,10 @@ class ReadingPage:
         return ui.stack([row, self.shortcut_hints[key]], spacing=4)  # the stack drops the hint while it's hidden
 
     def _show_shortcut(self, key, text=None):
-        self.shortcut_labels[key].setStringValue_(text or hotkeys.label(self.cfg[key]))
+        if text:
+            self.shortcut_labels[key].say(text)
+        else:
+            self.shortcut_labels[key].show(self.cfg[key])
         self.shortcut_hints[key].setHidden_(hotkeys.parse(self.cfg[key]) not in WINDOW_KEYS)
 
     @property
@@ -51,7 +54,7 @@ class ReadingPage:
         if self._recorder:
             return
         self._recording_key = key
-        self.shortcut_labels[key].setStringValue_("Press keys…")
+        self.shortcut_labels[key].say("Press keys…")
         self.app.apply(key, "")  # so pressing the current shortcut records it instead of running it
         peak = set()  # the most modifiers held at once; letting them all go with no key records them alone
 
@@ -68,8 +71,10 @@ class ReadingPage:
                 if len(mods) > len(peak):
                     peak.clear()
                     peak.update(mods)
-                held = hotkeys.mac_mods(mods)
-                label.setStringValue_(held + "…" if held else "Press keys…")
+                if mods:
+                    label.show(hotkeys.spec(mods), "…")
+                else:
+                    label.say("Press keys…")
                 return event
             if event.keyCode() == 53:  # Esc
                 self._stop_recording()

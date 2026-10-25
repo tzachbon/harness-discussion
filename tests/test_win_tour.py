@@ -263,13 +263,13 @@ class ShortcutRows(TourBase):
     def test_a_rewrite_view_shows_the_saved_shortcut(self):
         self.show(REWRITE)
         self.assertEqual(set(self.w.shortcuts), {"rewrite_hotkey"})
-        self.assertEqual(self.w.shortcuts["rewrite_hotkey"]["label"]["text"],
+        self.assertEqual(self.w.shortcuts["rewrite_hotkey"]["label"].text,
                          hotkeys.label(self.app.cfg["rewrite_hotkey"]))
 
     def test_a_recorded_chord_is_saved_through_the_tour(self):
         self.show(REWRITE)
         self.w._record_hotkey("rewrite_hotkey")
-        self.assertEqual(self.w.shortcuts["rewrite_hotkey"]["label"]["text"], "Press keys…")
+        self.assertEqual(self.w.shortcuts["rewrite_hotkey"]["label"].text, "Press keys…")
         self.w._hotkey_key(SimpleNamespace(keycode=0x59, state=self.CTRL | self.SHIFT, keysym="Y"))
         self.assertEqual(self.calls.mock_calls, [call.on_record(True),
                                                  call.tour_action("shortcut", ("rewrite_hotkey", "<ctrl>+<shift>+y")),
@@ -291,7 +291,7 @@ class ShortcutRows(TourBase):
         self.show(REWRITE)
         self.app.cfg["rewrite_hotkey"] = "<ctrl>+<shift>+e"
         self.w.refresh(self.view(REWRITE))
-        self.assertEqual(self.w.shortcuts["rewrite_hotkey"]["label"]["text"], "Ctrl+Shift+E")
+        self.assertEqual(self.w.shortcuts["rewrite_hotkey"]["label"].text, "Ctrl+Shift+E")
 
     def test_show_ends_a_recording_and_rebuilds_the_rows(self):
         self.show(REWRITE)
@@ -313,7 +313,7 @@ class ShortcutRows(TourBase):
         self.w._record_hotkey("rewrite_hotkey")
         self.key(self.w.win, 0x1B, keysym="Escape")
         self.assertIsNone(self.w._recording)
-        self.assertEqual(self.w.shortcuts["rewrite_hotkey"]["label"]["text"], hotkeys.label(saved))
+        self.assertEqual(self.w.shortcuts["rewrite_hotkey"]["label"].text, hotkeys.label(saved))
         self.app.tour_action.assert_not_called()
         self.w._user_close()
         self.assertEqual(self.calls.mock_calls, [call.on_record(True), call.on_record(False), call.tour_closed()])

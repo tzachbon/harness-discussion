@@ -419,10 +419,10 @@ class ShortcutTest(FlowTest):
         self.assertEqual(win.cfg["rewrite_hotkey"], "<ctrl>+<alt>+e")
         win._show_shortcut.assert_called_once_with("rewrite_hotkey")
         win2 = SimpleNamespace(alive=True, cfg=dict(self.app.cfg),
-                               shortcuts={"rewrite_hotkey": {"label": {"text": ""}, "error": None}})
+                               shortcuts={"rewrite_hotkey": {"label": Mock(), "error": None}})
         self.app.settings_win = win2
         self.app.tour_action("shortcut", ("rewrite_hotkey", "y"))
-        self.assertEqual(win2.shortcuts["rewrite_hotkey"]["label"]["text"], hotkeys.label("y"))
+        win2.shortcuts["rewrite_hotkey"]["label"].show.assert_called_once_with("y")
 
     def test_a_settings_change_queues_a_refresh_only_while_the_tour_is_open(self):
         self.app.change("hotkey", "<ctrl>+<alt>+r")

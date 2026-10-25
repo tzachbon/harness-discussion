@@ -43,9 +43,6 @@ def spec(mods, key=None):
     return text if parse(text) else None
 
 
-def mac_mods(mods):
-    return "".join({"ctrl": "⌃", "alt": "⌥", "shift": "⇧", "cmd": "⌘"}[m] for m in MODS if m in mods)
-
 
 def key_label(key):
     """How a key reads in Settings; a key stored by code is named by the current keyboard layout."""
@@ -58,12 +55,16 @@ def key_label(key):
     return key_name(int(key[4:]))
 
 
-def label(text):
+def keys(text):
+    """Each key's name in display order, one per keycap; [] when the shortcut is off or invalid."""
     parsed = parse(text)
     if not parsed:
-        return "Off"
+        return []
     mods, key = parsed
-    if sys.platform == "darwin":
-        return mac_mods(mods) + (key_label(key) if key else "")
-    return "+".join([{"ctrl": "Ctrl", "alt": "Alt", "shift": "Shift", "cmd": "Win"}[m] for m in MODS if m in mods]
-                    + ([key_label(key)] if key else []))
+    names = ({"ctrl": "⌃", "alt": "⌥", "shift": "⇧", "cmd": "⌘"} if sys.platform == "darwin"
+             else {"ctrl": "Ctrl", "alt": "Alt", "shift": "Shift", "cmd": "Win"})
+    return [names[m] for m in MODS if m in mods] + ([key_label(key)] if key else [])
+
+def label(text):
+    names = keys(text)
+    return ("" if sys.platform == "darwin" else "+").join(names) if names else "Off"
