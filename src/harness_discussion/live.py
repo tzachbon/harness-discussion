@@ -11,7 +11,7 @@ from collections import OrderedDict, namedtuple
 
 from . import writer
 
-POLL_S, PAUSE_S = 0.5, 1.5
+POLL_S, PAUSE_S = 0.5, 0.7
 LIVE_MAX_DOC = 20_000  # ponytail: longer fields are not checked; reading them every poll costs too much
 MAX_PARAGRAPH, MIN_WORDS = 2_000, 3
 MAX_SUGGESTIONS = 40

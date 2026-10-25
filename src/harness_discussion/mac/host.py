@@ -5,7 +5,7 @@ import AppKit
 import objc
 from Foundation import NSObject
 
-from .. import icons, settings, updates
+from .. import hotkeys, icons, settings, updates
 from ..codex_rt import CodexEngine
 from ..cursor_tts import CursorEngine
 from ..kokoro_tts import KokoroEngine
@@ -17,6 +17,10 @@ from .settings_ui import SettingsWindow
 from .toast import Toast
 from .trigger import HotKey, SelectionTrigger, top_left
 from .voice import MacVoiceEngine
+
+
+def _ignore():
+    pass
 
 
 class _Delegate(NSObject):
@@ -196,6 +200,8 @@ class MacHost:
         if old:
             old.stop()
         if spec:
+            if on_release is None and hotkeys.parse(spec)[1] is not None:
+                on_release = _ignore  # the event tap a hold uses also sees keys macOS reserves, such as ⌘`
             options = {"on_activity": on_activity} if on_activity is not None else {}
             if on_cancel is not None:
                 options["on_cancel"] = on_cancel

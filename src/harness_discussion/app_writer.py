@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 
-from . import dictation, edit_logic, hotkeys, local_stt, mic, sources, writer
+from . import dictation, edit_logic, hotkeys, live, local_stt, mic, sources, writer
 from . import writer_settings as ws
 from .app_dictation import Dictation, _Recording, START_TIMEOUT_S, STOP_TIMEOUT_S, TRANSCRIBE_TIMEOUT_S
 from .llm_codex import CodexWriter
@@ -18,6 +18,7 @@ from .summarize import LocalWriter
 
 log = logging.getLogger("harness_discussion")
 DOUBLE_PRESS_S = 0.35
+WHOLE_FIELD_MAX = 4_000  # with nothing selected, a field up to this many UTF-16 units is rewritten whole
 UNDO_KEYS = "Cmd+Z" if sys.platform == "darwin" else "Ctrl+Z"
 
 
@@ -43,6 +44,7 @@ class Writer(Dictation):
         self.writer_ready = self.edit is not None
         self.writer_sources = [CursorWriter(), CodexWriter(), LocalWriter(self.summary_server)]
         self._rewrite_id, self._rewrite_cancel, self.rewriting = 0, threading.Event(), False
+        self._rewrite_whole = False  # the rewrite in flight selected the whole field itself
         self._last_edit = None  # (ctx, original, inserted, mode) of the latest in-place rewrite
         self._press_at, self._press_gen, self._escaped_at = 0.0, 0, 0.0
         self.toast = self.review = self._esc = None
@@ -178,18 +180,22 @@ class Writer(Dictation):
         if (not (self.writer_ready and self.cfg["writer"]) or self.rewriting
                 or self._recorder is not None or self._dictation_job is not None or self._writer_closed):
             return
+        whole = prev is None and self._select_whole_field()
+        if whole is None:
+            return
         mode = self._find_mode(mode_name)
         at = self._anchor()
         self._rewrite_id += 1
         rid, cancel = self._rewrite_id, threading.Event()
-        self._rewrite_cancel = cancel
+        self._rewrite_cancel, self._rewrite_whole = cancel, whole
         self._rewrite_ctx = (rid, prev[0]) if prev else None  # a Mode retry's target; fresh captures validate before pasting
         self._set_rewriting(True)
         self.popup.set_last_mode(mode.name)
         self._summary_gen += 1  # a summary's idle stop must not stop the local model under this rewrite
         sources = writer.chain(self.writer_sources, self.cfg["writer_sources"])
         models, clipboard = self.cfg["writer_models"], self.cfg["clipboard_fallback"]
-        self._toast(f"Rewriting · {mode.name}", [("Cancel", self.cancel_rewrite)], busy=True, at=at)
+        what = "Rewriting the whole field" if whole else "Rewriting"
+        self._toast(f"{what} · {mode.name}", [("Cancel", self.cancel_rewrite)], busy=True, at=at)
 
         def work():
             ctx = prev[0] if prev else None
@@ -206,6 +212,19 @@ class Writer(Dictation):
                 result = e
             self.events.put(("rewrite", rid, ctx, mode.name, result, prev, at))
         threading.Thread(target=work, daemon=True).start()
+
+    def _select_whole_field(self):
+        """With nothing selected in an editable field, selects all of it: True. False when there is a selection or
+        no readable field, so the selection flow runs as before. None, after a hint, when the field is too long."""
+        observe, select = getattr(self.edit, "observe", None), getattr(self.edit, "select_range", None)
+        field = observe() if observe and select else None
+        if field is None or field.caret[0] != field.caret[1] or not field.text.strip():
+            return False
+        if live.units(field.text) > WHOLE_FIELD_MAX:
+            self._toast(f"Select text to rewrite. This field has more than {WHOLE_FIELD_MAX:,} characters.",
+                        at=self._anchor())
+            return None
+        return select(field, 0, live.units(field.text), field.text) is not None
 
     def _set_rewriting(self, on):
         self.rewriting = on
@@ -246,8 +265,9 @@ class Writer(Dictation):
             return
         self._last_edit = (ctx, original, inserted, mode)
         modes = [(m, lambda m=m: self._rewrite_again(m), m == mode) for m in self.mode_names()]
-        self._toast(f"{mode} · {source}", [("Undo", self.undo_last), ("Review", self.open_review),
-                                           ("Mode", modes)], at=at)
+        what = "Rewrote the whole field · " if self._rewrite_whole and not prev else ""
+        self._toast(f"{what}{mode} · {source}", [("Undo", self.undo_last), ("Review", self.open_review),
+                                                 ("Mode", modes)], at=at)
 
     def _rewrite_again(self, mode_name):
         if self._last_edit:

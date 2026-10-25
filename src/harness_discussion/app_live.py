@@ -62,7 +62,7 @@ class Live:
         self._live_changed_at = 0.0
         self._live_typed = None  # (app, window, handle, line start) of the line last typed in, while it is focused
         self._live_view, self._live_posted = None, None  # what the last live_marks event drew
-        self._live_stop = threading.Event()
+        self._live_stop, self._live_wake = threading.Event(), threading.Event()  # wake: a check ended, poll now
         self.marks = self.host.make_marks() if self.live_ready else None
         if self.live_ready:
             threading.Thread(target=self._live_loop, name="live-check", daemon=True).start()
@@ -74,25 +74,40 @@ class Live:
         return self.cfg["writer"] and self.cfg.get("live_check") and not busy
 
     def _live_loop(self):
-        while not self._live_stop.wait(live.POLL_S):
+        while not self._live_stop.is_set():
+            self._live_wake.wait(live.POLL_S)
+            self._live_wake.clear()
+            if self._live_stop.is_set():
+                return
             try:
                 self._live_tick()
             except Exception as e:
                 log.info("live check poll failed: %s", type(e).__name__)
 
-    def _live_post(self, field, found, placed, unplaced):
+    def _live_post(self, field, found, placed, unplaced, checking=()):
         """Posts what to draw only when it differs from the last post, so an idle field costs no main-thread work."""
         drawn = (field.app, field.window, field.handle, field.digest, field.rect, tuple(s.key for s in found),
-                 tuple(placed), unplaced, field.caret if unplaced else None) if found else None
+                 tuple(placed), unplaced, field.caret if unplaced else None,
+                 tuple(checking)) if found or checking else None
         # Apply and Review act on the field drawn for, and the badge on its caret's line: a change to either redraws
         if drawn != self._live_posted:
             self._live_posted = drawn
-            self.events.put(("live_marks", field if found else None, found, placed, unplaced))
+            self.events.put(("live_marks", field if drawn else None, found, placed, unplaced, list(checking)))
 
     def _live_hide(self):
         if self._live_posted is not None:
             self._live_posted = None
-            self.events.put(("live_marks", None, [], [], 0))
+            self.events.put(("live_marks", None, [], [], 0, []))
+
+    @staticmethod
+    def _line_spans(text, core):
+        """(start, end, core) of every line of `text` whose stripped text is `core`."""
+        spans = []
+        for at, line in live.lines(text):
+            if line.strip() == core:
+                start = at + live.units(line[:line.index(core)])
+                spans.append((start, start + live.units(core), core))
+        return spans
 
     def _live_tick(self, now=None):
         """One poll: read the field, post what to draw, and start a check of a paused, uncached line."""
@@ -115,11 +130,6 @@ class Live:
                 self._live_typed = None  # another field: a line is sent only after typing in it
             self._live_seen, self._live_text, self._live_changed_at = seen, field.text, now
         mode = self._find_mode(None)
-        found = live.suggestions(field.text, self.live_cache, self._live_dismissed, mode)[:live.MAX_SUGGESTIONS]
-        rects = self.edit.bounds(field, [(s.start, s.end, s.old) for s in found]) if found else []
-        if rects is not None:
-            placed = [((s.start, *s.key), r) for s, rs in zip(found, rects) if rs for r in rs]
-            self._live_post(field, found, placed, sum(rs is None for rs in rects))
         checking = self._live_checking
         if checking is not None and checking not in {line.strip() for _, line in live.lines(field.text)}:
             self._live_cancel.set()  # the line being checked is gone
@@ -127,7 +137,15 @@ class Live:
         if (checking is None and self._live_typed == (*seen[:3], start) and now - self._live_changed_at >= live.PAUSE_S
                 and live.checkable(line) and line != self._live_failed and not self.live_cache.has(line, mode)
                 and self._live_on()):
-            self._live_check(line, mode)
+            self._live_check(line, mode)  # first, so this same poll already draws its checking strip
+        found = live.suggestions(field.text, self.live_cache, self._live_dismissed, mode)[:live.MAX_SUGGESTIONS]
+        checking = self._live_checking
+        spans = [(s.start, s.end, s.old) for s in found] + (self._line_spans(field.text, checking) if checking else [])
+        rects = self.edit.bounds(field, spans) if spans else []
+        if rects is not None:
+            rects, lines = rects[:len(found)], rects[len(found):]
+            placed = [((s.start, *s.key), r) for s, rs in zip(found, rects) if rs for r in rs]
+            self._live_post(field, found, placed, sum(rs is None for rs in rects), [r for rs in lines if rs for r in rs])
 
     def _live_check(self, line, mode):
         self._live_checking, self._live_cancel = line, threading.Event()
@@ -151,6 +169,7 @@ class Live:
             finally:
                 self._live_checking = None
                 self.events.put(("live_check_done",))
+                self._live_wake.set()
         threading.Thread(target=work, daemon=True).start()
 
     def _live_check_start(self):
@@ -165,7 +184,7 @@ class Live:
 
     # main thread
 
-    def _live_marks(self, field, found, placed, unplaced):
+    def _live_marks(self, field, found, placed, unplaced, checking=()):
         if not self.marks:
             return
         if field is None or not self._live_on():
@@ -177,7 +196,7 @@ class Live:
         if unplaced:
             right, top = (field.rect[2], field.rect[1]) if field.rect else self.host.pointer()
             badge = (right, top, len(found))
-        self.marks.show(placed, badge)
+        self.marks.show(placed, badge, checking)
 
     def _live_press(self, x, y):
         """True when the click was on an underline or the badge; core then ignores it."""
@@ -317,6 +336,7 @@ class Live:
         if not hasattr(self, "_live_stop"):  # quit before _init_live ran
             return
         self._live_stop.set()
+        self._live_wake.set()
         self._live_cancel.set()
         if self.marks:
             self.marks.hide()
