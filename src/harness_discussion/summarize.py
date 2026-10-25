@@ -286,9 +286,9 @@ class Server:
             raise Error("The local model's reply was cut off.")
         return content
 
-    def summarize(self, text, language, timeout=180):
-        summary = _clean(self.complete(PROMPT.format(lang=language), f"<text>\n{text[:MAX_CHARS]}\n</text>", 400,
-                                       timeout))
+    def summarize(self, text, language, timeout=180, about=""):
+        system = PROMPT.format(lang=language) + ("\n\n" + about if about else "")
+        summary = _clean(self.complete(system, f"<text>\n{text[:MAX_CHARS]}\n</text>", 400, timeout))
         if not summary:
             raise Error("The Summarize model returned no summary.")
         return summary

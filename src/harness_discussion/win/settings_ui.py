@@ -12,6 +12,7 @@ from ..stt_server import connection as stt_connection
 from .popup import fonts, work_area
 from .sources_ui import CARD, SourcesSection
 from .shortcut_row import ShortcutRow
+from .about_page import AboutSection
 from .summarize_page import SummarizePage
 from .writing_page import WritingPage
 from .stt_page import build_page as stt_page
@@ -20,7 +21,7 @@ PAGE, BORDER, SUBTLE, SELECTED = "#f3f3f3", "#e5e5e5", "#5f5f5f", "#e6e6e6"
 PAGES = ("Voices", "Captions", "Reading", "Summarize", "Writing", "Dictation", "Speech to Text", "General")
 
 
-class SettingsWindow(SourcesSection, SummarizePage, ShortcutRow, WritingPage):
+class SettingsWindow(SourcesSection, SummarizePage, ShortcutRow, WritingPage, AboutSection):
     def __init__(self, root, cfg, icon, on_change, on_test, stt_state=lambda: None,
                  update_state=lambda: ("Ready to check.", False), on_update=lambda: None, engines=(),
                  statuses=dict, on_play=lambda name: None, welcome=False, on_fix=lambda name: None, summarizer=None,
@@ -119,6 +120,7 @@ class SettingsWindow(SourcesSection, SummarizePage, ShortcutRow, WritingPage):
         self.update_button.pack(side="right")
         self.update_status = ttk.Label(card, style="Sub.Card.TLabel", wraplength=440)
         self.update_status.pack(anchor="w", pady=(10, 0))
+        self._about_section(general, text)
         card = self._card(general, "Startup and updates")
         ttk.Checkbutton(card, text="Start Harness Discussion when I sign in to Windows", style="Card.TCheckbutton",
                         variable=self.startup, command=self._startup_changed).pack(anchor="w")
@@ -328,6 +330,7 @@ class SettingsWindow(SourcesSection, SummarizePage, ShortcutRow, WritingPage):
             self._set(key, self.cfg[key])
 
     def _flush_pending(self):
+        self._about_changed()
         self._caption_font_changed()
         if self._save_job:
             self.win.after_cancel(self._save_job)

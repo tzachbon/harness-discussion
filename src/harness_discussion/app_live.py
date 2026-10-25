@@ -133,13 +133,13 @@ class Live:
         self._live_checking, self._live_cancel = line, threading.Event()
         cancel = self._live_cancel
         sources = writer.chain(self.writer_sources, self.cfg["writer_sources"])
-        models = self.cfg["writer_models"]
+        models, about = self.cfg["writer_models"], writer.about(self.cfg)
         self.events.put(("live_check_start",))
 
         def work():
             log.info("live check %d chars", len(line))  # before sending: proof of every send, never the text
             try:
-                new, source = writer.rewrite(line, mode, sources, models=models,
+                new, source = writer.rewrite(line, mode, sources, models=models, about=about,
                                              cancelled=lambda: cancel.is_set() or not self._live_on())
                 log.info("live check done with %s", source)
                 if not cancel.is_set():

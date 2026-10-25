@@ -39,6 +39,9 @@ COPY = {
              "Click at the end of the line, type a space, and pause. Click the underline, or press {rewrite} "
              "to apply them all.",
              "Click at the end of the line, type a space, and pause. Click the underline to apply it."),
+    "about": ("Tell the writing tools about you",
+              "A line or two:\n• Who you are and what you do\n• Your working days and hours\n"
+              "• How you like to write\nThe date and time zone are added for you.", None),
 }
 NO_SOURCE = ("No writing source is ready", "Sign in for real results. Until then, you'll see a sample.")
 NO_STT = ("No speech source is ready", "Sign in or download to add speech-to-text.")

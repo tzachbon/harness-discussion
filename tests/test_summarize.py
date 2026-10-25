@@ -244,6 +244,7 @@ class _App(app_summarize.Summaries):
 
     def __init__(self, status):
         self.events, self._read_id, self.settings_win = queue.Queue(), 0, None
+        self.cfg, self.abouts = {"about_me": "Dana, PM", "about_me_on": True}, []
         self.notes, self.played, self.confirms, self.timers = [], [], [], []
         self.host = SimpleNamespace(notify=self.notes.append, after=lambda ms, fn: self.timers.append(fn),
                                     confirm=lambda title, message: self.confirms.append(title) or self.answer)
@@ -254,7 +255,8 @@ class _App(app_summarize.Summaries):
         self.chain = SimpleNamespace(pause=lambda: self.played.append("paused"))
         with mock.patch.object(summarize, "status", return_value=status):
             self._init_summaries()
-        self.summary_server = SimpleNamespace(summarize=lambda text, language: f"{language}: short.",
+        self.summary_server = SimpleNamespace(summarize=lambda text, language, about="": self.abouts.append(about)
+                                              or f"{language}: short.",
                                               stop=lambda: self.played.append("server stopped"))
 
     def stop(self):
@@ -277,6 +279,7 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(app.popup.summary, 1)
         app.drain()
         self.assertEqual(app.played, [("Hebrew: short.", None)])
+        self.assertIn("<about>\nDana, PM\n</about>", app.abouts[0])  # About you reaches the summary prompt
         app.summarize("text", "en-US")
         app.drain()
         app.timers[0]()  # the first summary's idle timer: a newer summary keeps the server
@@ -319,7 +322,7 @@ class FlowTest(unittest.TestCase):
 
     def test_a_failed_summary_names_the_error_without_the_text(self):
         app = _App("ready")
-        app.summary_server.summarize = lambda text, language: (_ for _ in ()).throw(ValueError(text))
+        app.summary_server.summarize = lambda text, language, about: (_ for _ in ()).throw(ValueError(text))
         app.summarize("secret words", "en-US")
         app.drain()
         self.assertEqual(app.notes, ["Could not summarize. ValueError"])

@@ -188,7 +188,7 @@ class Writer(Dictation):
         self.popup.set_last_mode(mode.name)
         self._summary_gen += 1  # a summary's idle stop must not stop the local model under this rewrite
         sources = writer.chain(self.writer_sources, self.cfg["writer_sources"])
-        models, clipboard = self.cfg["writer_models"], self.cfg["clipboard_fallback"]
+        models, clipboard, about = self.cfg["writer_models"], self.cfg["clipboard_fallback"], writer.about(self.cfg)
         self._toast(f"Rewriting · {mode.name}", [("Cancel", self.cancel_rewrite)], busy=True, at=at)
 
         def work():
@@ -201,7 +201,7 @@ class Writer(Dictation):
                     if ctx is None or not ctx.text.strip():
                         raise writer.Error("Select text to rewrite.")
                 text = prev[1] if prev else ctx.text
-                result = writer.rewrite(text, mode, sources, models=models, cancelled=cancel.is_set)
+                result = writer.rewrite(text, mode, sources, models=models, cancelled=cancel.is_set, about=about)
             except Exception as e:
                 result = e
             self.events.put(("rewrite", rid, ctx, mode.name, result, prev, at))

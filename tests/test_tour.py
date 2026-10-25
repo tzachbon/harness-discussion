@@ -27,7 +27,7 @@ class ProgressTest(unittest.TestCase):
     def test_resume(self):
         self.assertEqual(tour.resume_at({}), 0)
         self.assertEqual(tour.resume_at({"welcome": "tried", "voice": "skipped"}), 2)
-        self.assertEqual(tour.resume_at({s: "tried" for s in tour.STEPS}), 7)
+        self.assertEqual(tour.resume_at({s: "tried" for s in tour.STEPS}), 8)
 
     def test_mark_keeps_a_tried_step(self):
         self.assertEqual(tour.mark({"read": "tried"}, "read", "skipped")["read"], "tried")
@@ -189,9 +189,9 @@ class ViewTest(unittest.TestCase):
         self.assertEqual(tour_view.view(2, state())["shortcuts"], [("hotkey", None)])
         self.assertEqual(tour_view.view(3, state())["shortcuts"], [("rewrite_hotkey", None)])
         self.assertEqual(tour_view.view(5, state())["shortcuts"], [("dictate_hotkey", None)])
-        self.assertEqual(tour_view.view(7, state())["shortcuts"],
+        self.assertEqual(tour_view.view(8, state())["shortcuts"],
                          [("hotkey", None), ("rewrite_hotkey", "press twice to pick a mode"), ("dictate_hotkey", None)])
-        for i in (0, 1, 4, 6):
+        for i in (0, 1, 4, 6, 7):
             self.assertEqual(tour_view.view(i, state())["shortcuts"], [])
 
     def test_leads_follow_the_shortcuts(self):
@@ -233,7 +233,8 @@ class ViewTest(unittest.TestCase):
         self.assertEqual(tour_view.view(3, s)["box"], {"text": tour_copy.REWRITE, "select": "all"})
         self.assertEqual(tour_view.view(5, s)["box"], {"text": "", "select": None})
         self.assertEqual(tour_view.view(6, s)["box"], {"text": tour_copy.LIVE, "select": "end"})
-        self.assertIsNone(tour_view.view(7, s)["box"])
+        self.assertEqual(tour_view.view(7, s)["box"], {"text": "", "select": "end"})  # About you: the saved note
+        self.assertIsNone(tour_view.view(8, s)["box"])
         self.assertEqual(tour_view.view(5, s)["quote"], tour_copy.SAY)
 
     def test_the_dictation_step_needs_access_on_a_mac(self):
@@ -244,8 +245,8 @@ class ViewTest(unittest.TestCase):
     def test_dots_and_the_step_number(self):
         s = state(progress={"welcome": "tried", "voice": "skipped"})
         v = tour_view.view(2, s)
-        self.assertEqual((v["index"], v["count"], v["step"]), (2, 7, "read"))
-        self.assertEqual(v["dots"], ["tried", "skipped", "now", "", "", "", ""])
+        self.assertEqual((v["index"], v["count"], v["step"]), (2, 8, "read"))
+        self.assertEqual(v["dots"], ["tried", "skipped", "now", "", "", "", "", ""])
 
     def test_next_is_primary_only_for_a_tried_step(self):
         s = state()
@@ -256,13 +257,13 @@ class ViewTest(unittest.TestCase):
     def test_the_done_screen_lists_the_steps_and_the_skipped_one(self):
         progress = {s: "tried" for s in tour.STEPS if s != "live"}
         progress["live"] = "skipped"
-        v = tour_view.view(7, state(progress=progress))
-        self.assertEqual(v["title"], "You're set: 6 of 7 tried")
+        v = tour_view.view(8, state(progress=progress))
+        self.assertEqual(v["title"], "You're set: 7 of 8 tried")
         labels = [(label, tried, step) for label, tried, step in v["done"]["rows"]]
         self.assertIn(("Check as I type", False, "live"), labels)
         self.assertIn(("Voice", True, "voice"), labels)
         self.assertEqual(labels[0][0], "Allow access")
-        self.assertEqual(tour_view.view(7, state(mac=False, progress=progress))["done"]["rows"][0][0], "Welcome")
+        self.assertEqual(tour_view.view(8, state(mac=False, progress=progress))["done"]["rows"][0][0], "Welcome")
         self.assertIn("Summarize on the bar", v["done"]["more"])
         self.assertIsNone(v["status"])
 

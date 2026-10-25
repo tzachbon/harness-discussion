@@ -118,6 +118,7 @@ class TourWindow(ShortcutRow):
 
     def _user_close(self):
         self._end_recording()  # tour_closed() never calls close(), so × during "Press keys…" ends it here
+        self.app.tour_save_about()  # before the box goes
         self.box, self.alive = None, False
         self.win.destroy()
         self.app.tour_closed()

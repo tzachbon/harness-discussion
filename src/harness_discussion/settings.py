@@ -6,7 +6,7 @@ import shutil
 import sys
 import tempfile
 
-from . import hotkeys, tour
+from . import hotkeys, tour, writer
 
 if sys.platform == "win32":
     import winreg
@@ -36,7 +36,9 @@ DEFAULTS = {"sources": [[n, True] for n in DEFAULT_SOURCES], "voices": {}, "spee
             "live_check": True, "live_off_apps": [], "tour_done": False, "tour_steps": {},
             "rewrite_hotkey": hotkeys.REWRITE, "dictate_hotkey": hotkeys.DICTATE,
             "stt_sources": [["Local", True], ["Cursor", True], ["Codex", True]], "dictate_polish": True,
-            "dictate_mode": "Clean dictation", "dictate_local_tidy": True, "dictate_microphone": ""}
+            "dictate_mode": "Clean dictation", "dictate_local_tidy": True, "dictate_microphone": "",
+            # About you: a short note sent with every rewrite and summary prompt, with today's date
+            "about_me": "", "about_me_on": True, "about_me_uncapped": False}
 WRITER_SOURCES, STT_SOURCES = ("Cursor", "Codex", "Local"), ("Local", "Cursor", "Codex")
 SPEEDS = (0.5, 2.0)
 SPEED_PRESETS = (0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)  # the popup's speed menu
@@ -119,6 +121,10 @@ def load(path=PATH) -> dict:
     if ["Local", True] not in stt_items and ["Local", False] not in stt_items:
         stt_order = [["Local", True]] + [item for item in stt_order if item[0] != "Local"]
     s["stt_sources"] = stt_order
+    for key in ("about_me_on", "about_me_uncapped"):
+        if not isinstance(s[key], bool):
+            s[key] = DEFAULTS[key]
+    s["about_me"] = s["about_me"][:writer.about_limit(s)] if isinstance(s["about_me"], str) else ""
     if not isinstance(s["dictate_microphone"], str):
         s["dictate_microphone"] = ""
     models = s["writer_models"] if isinstance(s["writer_models"], dict) else {}

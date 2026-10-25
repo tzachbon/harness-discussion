@@ -7,6 +7,7 @@ from Foundation import NSURL
 from .. import icons, settings, updates
 from ..sources import fix as source_fix
 from . import permission, startup, ui
+from .about_page import AboutSection
 from .captions_page import CaptionsPage
 from .reading_page import ReadingPage
 from .stt_page import SttPage
@@ -72,7 +73,7 @@ def _nav_button(title, symbol, color, fn):
     return b
 
 
-class SettingsWindow(CaptionsPage, SummarizePage, ReadingPage, SttPage, WritingPage):
+class SettingsWindow(CaptionsPage, SummarizePage, ReadingPage, SttPage, WritingPage, AboutSection):
     def __init__(self, app, show_guide, welcome=False):
         self.app, self.cfg = app, dict(app.cfg)
         self._save_timer = self._recorder = None
@@ -123,7 +124,7 @@ class SettingsWindow(CaptionsPage, SummarizePage, ReadingPage, SttPage, WritingP
         about.widthAnchor().constraintEqualToConstant_(WIDTH).setActive_(True)
         version = ui.stack([self.update_status, _spacer(), self.download_button, self.update_button], vertical=False)
         version.widthAnchor().constraintEqualToConstant_(WIDTH).setActive_(True)
-        general = [_card([about, _divider(), version]), _card([login, _divider(), auto])]
+        general = [_card([about, _divider(), version]), *self._about_section(), _card([login, _divider(), auto])]
 
         # The page area: a permission banner over the selected page
         warning = ui.image_view(ui.symbol("exclamationmark.triangle.fill", "Warning"), 18)
@@ -326,6 +327,7 @@ class SettingsWindow(CaptionsPage, SummarizePage, ReadingPage, SttPage, WritingP
         self._save_timer = ui.timer(0.4, self._flush)
 
     def _flush(self):
+        self._about_changed()
         if self._save_timer:
             self._save_timer.invalidate()
             self._save_timer = None

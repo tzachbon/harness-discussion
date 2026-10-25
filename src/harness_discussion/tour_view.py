@@ -1,9 +1,9 @@
 """The tour's view model: every step's copy and state in one dict, so the Mac and Windows windows render it
 and never decide copy."""
-from . import hotkeys, sources, tour, tour_copy
+from . import hotkeys, sources, tour, tour_copy, writer
 from .settings import status_text
 
-DONE_LABELS = ("Voice", "Read", "Rewrite", "Review", "Dictation", "Check as I type")
+DONE_LABELS = ("Voice", "Read", "Rewrite", "Review", "Dictation", "Check as I type", "About you")
 WRITER_FIX = {"Cursor": "Sign in to Cursor", "Codex": "Sign in to Codex", "Local": "Download Local…"}
 
 
@@ -164,6 +164,13 @@ def _live(v, s, tried):
                              "Turn it off in Settings → Writing."}
 
 
+def _about(v, s, tried):
+    v["box"] = {"text": s.cfg.get("about_me", ""), "select": "end"}
+    if tried:
+        v["status"] = ("✓ Saved. Edit it any time in Settings → General.", True)
+    v["dest"] = (f"Up to {writer.about_limit(s.cfg)} characters. Sent with every rewrite, dictation tidy, and "
+                 "summary to the source that runs it. Turn it off in Settings → General.")
+
 def _done(s):
     first = "Allow access" if s.mac else "Welcome"
     rows = [(first, s.progress.get("welcome") == tour.TRIED, "welcome")]
@@ -180,4 +187,4 @@ def _done(s):
 
 
 _STEPS = {"welcome": _welcome, "voice": _voice, "read": _read, "rewrite": _rewrite, "review": _review,
-          "dictate": _dictate, "live": _live}
+          "dictate": _dictate, "live": _live, "about": _about}
