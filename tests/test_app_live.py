@@ -50,7 +50,8 @@ class FakeField:
                 for s, e, x in spans]
 
     def select_range(self, field, start, end, expected):
-        if field.digest != digest(self.text) or live.text_at(self.text, start, end) != expected:
+        if (field.handle != self.handle or field.digest != digest(self.text)
+                or live.text_at(self.text, start, end) != expected):
             return None
         self.selected = (start, end)
         return Context(expected, 1, 2, True, False, "element", (start, end - start))
@@ -365,6 +366,12 @@ class Actions(unittest.TestCase):
             self.app.tick(at)
         self.assertEqual(len(self.app.source.texts), 1)
         self.assertEqual([k[3] for k in self.app.marks_.word], ["of"])
+
+    def test_apply_works_in_a_field_focused_after_an_identical_one(self):
+        self.field.handle = "another field"  # same text and place, as in two copies of one draft
+        self.app.tick(4)
+        self.click("i thinks")[1]["Apply"]()
+        self.assertEqual(self.field.text, "I think we should of gone.")
 
     def test_undo_restores_the_original(self):
         self.click("i thinks")[1]["Apply"]()
