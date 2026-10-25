@@ -87,7 +87,8 @@ underlined part. Set the mode back to Fix errors afterwards.
 ## CPU (DoD 5)
 
 Paste the page's *en* line into Notepad/TextEdit 25 times, one per line (about 2,000 characters), and wait: one
-check underlines every copy of the line. Then leave the keyboard and mouse alone and run:
+check underlines every copy of the line. Then run the command below, click back into Notepad/TextEdit within
+5 seconds (only the focused field is checked), and leave the keyboard and mouse alone:
 
 Windows (PowerShell):
 
@@ -95,14 +96,14 @@ Windows (PowerShell):
 function cpu($ids) { (Get-Process -Id $ids | Measure-Object CPU -Sum).Sum }
 $app = (Get-CimInstance Win32_Process | Where-Object CommandLine -like '*harness-discussion*').ProcessId
 $pad = (Get-Process notepad).Id
-$a, $n = (cpu $app), (cpu $pad); Start-Sleep 60
+Start-Sleep 5; $a, $n = (cpu $app), (cpu $pad); Start-Sleep 60
 "app {0:N1} %, Notepad {1:N1} % of one core" -f (((cpu $app) - $a) / 0.6), (((cpu $pad) - $n) / 0.6)
 ```
 
 Mac (Terminal):
 
 ```sh
-app=$(pgrep -nf 'harness[-_]discussion'); edit=$(pgrep -x TextEdit)
+app=$(pgrep -nf 'harness[-_]discussion'); edit=$(pgrep -x TextEdit); sleep 5
 for i in $(seq 60); do echo $(ps -o %cpu= -p $app) $(ps -o %cpu= -p $edit); sleep 1; done |
   awk '{a+=$1; e+=$2} END {printf "app %.1f %%, TextEdit %.1f %% of one core\n", a/NR, e/NR}'
 ```
