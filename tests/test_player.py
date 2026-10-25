@@ -3,7 +3,7 @@ import threading
 import unittest
 from unittest import mock
 
-from harness_discussion import audio
+from harness_discussion import audio, mic
 from harness_discussion.audio import PcmPlayer
 
 
@@ -21,6 +21,51 @@ def opens(*results):
 
 
 class Player(unittest.TestCase):
+    def test_no_playback_reset_while_a_microphone_is_open(self):
+        stream = mock.Mock()
+        rec = mic.Recorder(lambda cb: stream)
+        rec.start()
+        self.addCleanup(rec.stop)
+        with mock.patch.object(audio.sd, "RawOutputStream", side_effect=audio.sd.PortAudioError("gone")), \
+                mock.patch.object(audio.sd, "_terminate") as terminate:
+            with self.assertRaises(audio.sd.PortAudioError):
+                PcmPlayer()
+        terminate.assert_not_called()
+        stream.close.assert_not_called()
+
+    def test_no_microphone_reset_while_a_player_is_open(self):
+        stream = mock.Mock()
+        with mock.patch.object(audio.sd, "RawOutputStream", side_effect=opens(stream)):
+            player = PcmPlayer()
+        self.addCleanup(player.close)
+        with mock.patch.object(audio.sd, "RawInputStream", side_effect=audio.sd.PortAudioError("gone")), \
+                mock.patch.object(audio.sd, "_terminate") as terminate:
+            with self.assertRaises(audio.sd.PortAudioError):
+                mic.Recorder().start()
+        terminate.assert_not_called()
+        stream.close.assert_not_called()
+
+    def test_unconfirmed_player_close_blocks_microphone_recovery(self):
+        for fail_start in (False, True):
+            with self.subTest(fail_start=fail_start):
+                stream = mock.Mock()
+                stream.close.side_effect = audio.sd.PortAudioError("cannot close")
+                self.addCleanup(audio._live.discard, stream)
+                if fail_start:
+                    stream.start.side_effect = audio.sd.PortAudioError("cannot start")
+                with mock.patch.object(audio.sd, "RawOutputStream", side_effect=opens(stream)), \
+                        mock.patch.object(audio.sd, "_terminate") as terminate:
+                    with self.assertRaises(audio.sd.PortAudioError):
+                        PcmPlayer().close()
+                terminate.assert_not_called()
+                with mock.patch.object(audio.sd, "RawInputStream", side_effect=audio.sd.PortAudioError("gone")), \
+                        mock.patch.object(audio.sd, "_terminate") as terminate:
+                    with self.assertRaises(audio.sd.PortAudioError):
+                        mic.Recorder().start()
+                terminate.assert_not_called()
+                self.assertIn(stream, audio._live)
+                audio._live.discard(stream)
+
     def test_a_stale_device_list_is_refreshed_once(self):
         stream = mock.Mock()
         with mock.patch.object(audio.sd, "RawOutputStream", side_effect=opens(audio.sd.PortAudioError("gone"), stream)), \
