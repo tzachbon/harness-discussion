@@ -77,7 +77,7 @@ def _inspect(limit=MAX_DOCUMENT):
     if not identity:
         return None
     app, window = identity
-    focus = uia.GetFocusedControl()
+    focus = selection.focused()
     ancestors = selection._safe_controls(focus, window)
     if ancestors is selection.PASSWORD:
         return Context("", app, window, False, True), "", None, None
@@ -295,7 +295,7 @@ def observe():
         if not name:
             return None
         try:
-            r = uia.GetFocusedControl().BoundingRectangle
+            r = selection.focused().BoundingRectangle
             rect = (r.left, r.top, r.right, r.bottom)
         except Exception:
             rect = None

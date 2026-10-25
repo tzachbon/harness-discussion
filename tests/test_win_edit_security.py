@@ -182,6 +182,45 @@ class CaptureSafety(unittest.TestCase):
                     document.GetPattern.assert_not_called()
 
 
+    def test_webview2_in_winui_is_read_only_when_its_host_is_inside_the_foreground_window(self):
+        """WhatsApp: focus stops at the WinUI bridge, and the WebView2 browser window is its own top-level window."""
+        from harness_discussion.win import edit, selection
+        classes = {43: "Chrome_RenderWidgetHostHWND", 44: "Chrome_WidgetWin_1", 45: "Chrome_WidgetWin_0", 46: "Bridge"}
+        roots = {42: 42, 43: 44, 44: 44, 45: 42, 46: 42}
+        for case in ("hosted", "password", "unvouched"):
+            with self.subTest(case=case):
+                document = Document()
+                def pane(hwnd, parent, kind=selection.uia.ControlType.PaneControl, password=UNSUPPORTED):
+                    control = Mock(ControlType=kind, NativeWindowHandle=hwnd, ClassName=classes.get(hwnd, ""))
+                    control.Element.GetCurrentPropertyValueEx.return_value = password
+                    control.GetParentControl.return_value = parent
+                    return control
+                window = pane(42, None, selection.uia.ControlType.WindowControl, case == "password")
+                bridge = pane(46, window, password=False)
+                bridge.ClassName = selection.WINUI_BRIDGE
+                host = pane(45, bridge)
+                browser = pane(44, window if case == "unvouched" else host)
+                renderer = pane(43, browser)
+                document.GetParentControl = lambda: renderer
+                document.GetPattern = Mock(wraps=document.GetPattern)
+                handles = {c.NativeWindowHandle: c for c in (window, bridge, host, browser, renderer)}
+                native_class = lambda hwnd, buf, size: setattr(buf, "value", classes.get(hwnd, "")) or 1
+                with target(bridge), native_host(window), \
+                        patch.object(selection.uia, "ControlFromHandle", side_effect=handles.get), \
+                        patch.object(selection.uia, "GetAncestor", side_effect=lambda hwnd, flag: roots[hwnd]), \
+                        patch.object(selection.u32, "GetClassNameW", side_effect=native_class), \
+                        patch.object(selection.uia.Control, "CreateControlFromElement", return_value=document):
+                    context = edit.capture(False)
+                    self.assertEqual(selection.read(False), "old" if case == "hosted" else "")
+                if case == "hosted":
+                    self.assertEqual((context.text, context.secure), ("old", False))
+                elif case == "password":
+                    self.assertTrue(context.secure)
+                else:
+                    self.assertIsNone(context)
+                if case != "hosted":
+                    document.GetPattern.assert_not_called()
+
     def test_renderer_exception_requires_its_native_class_and_verified_outer_root(self):
         from harness_discussion.win import edit, selection
         for case in ("missing root", "malformed root", "root error", "UIA class", "native class", "wrong root"):
