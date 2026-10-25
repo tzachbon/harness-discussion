@@ -36,7 +36,8 @@ DEFAULTS = {"sources": [[n, True] for n in DEFAULT_SOURCES], "voices": {}, "spee
             "live_check": True, "live_off_apps": [], "tour_done": False, "tour_steps": {},
             "rewrite_hotkey": hotkeys.REWRITE, "dictate_hotkey": hotkeys.DICTATE,
             "stt_sources": [["Local", True], ["Cursor", True], ["Codex", True]], "dictate_polish": True,
-            "dictate_mode": "Clean dictation", "dictate_local_tidy": True, "dictate_microphone": ""}
+            "dictate_mode": "Clean dictation", "dictate_local_tidy": True, "dictate_microphone": "",
+            "dictation_history": True}
 WRITER_SOURCES, STT_SOURCES = ("Cursor", "Codex", "Local"), ("Local", "Cursor", "Codex")
 SPEEDS = (0.5, 2.0)
 SPEED_PRESETS = (0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)  # the popup's speed menu
@@ -98,7 +99,7 @@ def load(path=PATH) -> dict:
     s["caption_background_opacity"] = (min(max(float(opacity), 0.0), 1.0)
                                         if ok else DEFAULTS["caption_background_opacity"])
     for key in ("clipboard_fallback", "stt_server", "prefetch", "caption_background", "auto_update", "dictate_polish",
-                "dictate_local_tidy"):
+                "dictate_local_tidy", "dictation_history"):
         if not isinstance(s[key], bool):
             s[key] = DEFAULTS[key]
     if not isinstance(s["ax_granted_build"], (str, type(None))):

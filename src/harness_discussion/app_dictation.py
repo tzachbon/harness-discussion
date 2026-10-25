@@ -4,7 +4,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 
-from . import dictation, mic, writer
+from . import dictation, history, mic, writer
 from . import writer_settings as ws
 
 log = logging.getLogger("harness_discussion")
@@ -264,6 +264,7 @@ class Dictation:
         at = self._anchor()
         sources = self._dictation_writers() if mode else []
         models, order, chain = self.cfg["writer_models"], self.cfg["stt_sources"], self.stt_sources
+        keep = lambda: self.cfg.get("dictation_history")  # read live: turning it off mid-dictation saves nothing
         self._toast("Transcribing", [("×", lambda: self.cancel_rewrite() if rid == self._rewrite_id else None)],
                     busy=True, at=at)
         self._dictation_after(session, TRANSCRIBE_TIMEOUT_S, "transcribing")
@@ -275,12 +276,15 @@ class Dictation:
                 stt_s = time.monotonic() - released
                 if cancel.is_set():
                     raise writer.Cancelled("The dictation was cancelled.")
+                kept = _keep(text, keep)
                 if mode:
                     started = time.monotonic()
                     try:
                         text, source = writer.rewrite(text, mode, sources, models=models, cancelled=cancel.is_set)
                     finally:
                         rewrite_s = time.monotonic() - started
+                    if kept is not None:
+                        _keep_tidied(kept, text, keep)
                     result = (text, stt_name, source)
                 else:
                     result = (text, stt_name, None)
@@ -292,6 +296,12 @@ class Dictation:
         session.thread = threading.Thread(target=work, daemon=True)
         session.thread.start()
 
+    def history_changed(self):
+        getattr(self.host, "history_changed", lambda: None)()
+        win = getattr(self, "settings_win", None)
+        if win and win.alive and hasattr(win, "refresh_history"):
+            win.refresh_history()
+
     def _dictated(self, rid, generation, binding, mode, result, at, timing):
         session = self._dictation_job
         if session is None or (rid, generation, binding) != (session.rid, session.generation, session.binding):
@@ -302,6 +312,7 @@ class Dictation:
         self._dictation_delivery = session
         try:
             self._dictation_job = None
+            self.history_changed()
             if rid != self._rewrite_id:
                 return
             self._set_rewriting(False)
@@ -366,3 +377,15 @@ class Dictation:
                 self._dictation_delivery = None
                 if session.cancel.is_set() and self._recorder is None and self._dictation_job is None:
                     self.toast.hide()
+
+def _keep(raw, keep):
+    try:
+        return history.add(raw, keep)
+    except OSError as e:  # history is a backup: never lose the dictation over it
+        log.info("dictation history not saved: %s", type(e).__name__)
+
+def _keep_tidied(at, text, keep):
+    try:
+        history.finish(at, text, keep)
+    except OSError as e:
+        log.info("dictation history not saved: %s", type(e).__name__)

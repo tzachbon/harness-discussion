@@ -193,6 +193,25 @@ class WritingSettingsTest(unittest.TestCase):
         self.assertFalse(hints["rewrite_hotkey"].isHidden())
         self.assertTrue(hints["hotkey"].isHidden())
 
+    def test_recent_dictations_copy_the_tidied_text_and_the_original(self):
+        from harness_discussion import history
+        with mock.patch.object(history, "rows", return_value=[("Tidy.", "Tidy.", "words")]):
+            self.win.refresh_history()
+        row = self.win.history_list.arrangedSubviews()[0]
+        for b in row.arrangedSubviews()[2:]:
+            self.click(b)
+        self.assertEqual([c.args[0] for c in self.app.host.copy_text.call_args_list], ["Tidy.", "words"])
+
+    def test_rebuilding_recent_dictations_keeps_no_more_callbacks(self):
+        from harness_discussion import history
+        from harness_discussion.mac import ui
+        with mock.patch.object(history, "rows", return_value=[("Tidy.", "Tidy.", "words")]):
+            self.win.refresh_history()
+            kept = len(ui._keep)
+            for _ in range(5):
+                self.win.refresh_history()
+        self.assertEqual(len(ui._keep), kept)  # no transcript stays referenced after its row is gone
+
 
 if __name__ == "__main__":
     unittest.main()
