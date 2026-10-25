@@ -209,7 +209,7 @@ class Tour:
         elif name == "try":
             self.tour_try(arg)
         elif name == "fix_source":
-            self.fix_source(arg)
+            self.fix_source(*arg)
         elif name == "fix_writer":
             self.fix_writer(*arg)
         elif name == "settings":

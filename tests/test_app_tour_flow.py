@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from harness_discussion import app_practice, app_tour, hotkeys, settings, tour, tour_copy
+from harness_discussion import app_practice, app_tour, hotkeys, settings, tour, tour_copy, tour_view
 
 
 class FakeTour:
@@ -246,6 +246,15 @@ class VoiceAndGuideTest(FlowTest):
         app.test_voice(tour_copy.VOICE)
         app._handle("done", "boom", app._tour_voice_rid)
         self.assertEqual(app.cfg["tour_steps"], {})
+
+    def test_a_voice_row_fix_reaches_the_source(self):
+        self.app.fix_source = Mock()
+        self.app.statuses = {"Cursor": "signed_out"}
+        with patch.object(self.app, "_mac", return_value=False):
+            view = tour_view.view(1, self.app.tour_state())
+        _, (name, arg) = view["rows"][0]["actions"][0]  # the voice step's "Sign in…" on the Cursor row
+        self.app.tour_action(name, arg)
+        self.app.fix_source.assert_called_once_with("Cursor")
 
     def test_a_close_with_access_still_missing_shows_the_guide(self):
         self.app.host.watcher = SimpleNamespace(state=False, show_guide=Mock())
