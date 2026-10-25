@@ -212,7 +212,9 @@ class Popup:
             self._highlight(False)
         self.caption.set_paused(self.paused)  # a read stopped while paused must not freeze the next one
         pausing = playing and not paused
-        self.btn.setImage_(ui.symbol("pause.fill" if pausing else "play.fill", "Pause" if pausing else "Play"))
+        action = "Pause" if pausing else "Play"
+        self.btn.setImage_(ui.symbol("pause.fill" if pausing else "play.fill", action))
+        self.btn.setAccessibilityLabel_(action)
         self._layout()
         if not playing:
             self.schedule_hide()
