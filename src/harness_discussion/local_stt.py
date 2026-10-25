@@ -81,7 +81,10 @@ def _load_model(force_cpu=False):
                 return WhisperModel(str(DIR), device="cuda", compute_type="int8_float16", local_files_only=True)
         except (ImportError, OSError, RuntimeError) as e:
             log.info("Local dictation GPU unavailable: %s", type(e).__name__)
-    return WhisperModel(str(DIR), device="cpu", compute_type="int8", cpu_threads=8, local_files_only=True)
+    # ponytail: half the logical cores approximates the fast cores (Apple P-cores, x86 physical cores).
+    # Using every core starves the desktop and waits on efficiency cores. Read hw.perflevel0 if that misses.
+    threads = max(1, (os.cpu_count() or 2) // 2)
+    return WhisperModel(str(DIR), device="cpu", compute_type="int8", cpu_threads=threads, local_files_only=True)
 
 
 class LocalStt:

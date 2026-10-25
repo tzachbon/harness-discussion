@@ -170,8 +170,10 @@ class Module(unittest.TestCase):
         self.assertFalse(stt._settled(since_audio_end=3.0, since_last_word=2.9, audio_seconds=20, unheard=0.0))
         self.assertTrue(stt._settled(since_audio_end=3.0, since_last_word=3.0, audio_seconds=20, unheard=-0.6))
         self.assertFalse(stt._settled(since_audio_end=4.0, since_last_word=3.9, audio_seconds=20, unheard=1.0))
-        # A position far past the audio end is implausible, so it is not trusted.
-        self.assertFalse(stt._settled(since_audio_end=9.0, since_last_word=9.0, audio_seconds=20, unheard=-5.0))
+        # Codex hears trailing silence, so a position past the audio end means it is done (measured: 3.2 s past).
+        self.assertTrue(stt._settled(since_audio_end=3.0, since_last_word=3.0, audio_seconds=30, unheard=-3.2))
+        # A position past everything sent is implausible, so it is not trusted.
+        self.assertFalse(stt._settled(since_audio_end=1.0, since_last_word=9.0, audio_seconds=20, unheard=-6.0))
 
     def test_late_word_after_skewed_position_is_kept(self):
         # Codex reports a position 0.6 s past the truth, then the last word arrives 2.9 s later.
