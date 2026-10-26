@@ -266,8 +266,15 @@ class Dictation:
         models, order, chain = self.cfg["writer_models"], self.cfg["stt_sources"], self.stt_sources
         about = writer.about(self.cfg)
         keep = lambda: self.cfg.get("dictation_history")  # read live: turning it off mid-dictation saves nothing
-        self._toast("Transcribing", [("×", lambda: self.cancel_rewrite() if rid == self._rewrite_id else None)],
-                    busy=True, at=at)
+        skip = threading.Event()
+        stop = lambda: self.cancel_rewrite() if rid == self._rewrite_id else None
+
+        def skip_tidy():
+            """Skip: type the raw transcript, now if tidy is running or as soon as transcription ends."""
+            if rid == self._rewrite_id and not skip.is_set():
+                skip.set()
+                self._toast("Transcribing", [("×", stop)], busy=True, at=at)
+        self._toast("Transcribing", [*([("Skip", skip_tidy)] if mode else []), ("×", stop)], busy=True, at=at)
         self._dictation_after(session, TRANSCRIBE_TIMEOUT_S, "transcribing")
 
         def work():
@@ -278,16 +285,21 @@ class Dictation:
                 if cancel.is_set():
                     raise writer.Cancelled("The dictation was cancelled.")
                 kept = _keep(text, keep)
-                if mode:
+                if mode and not skip.is_set():
                     started = time.monotonic()
                     try:
-                        text, source = writer.rewrite(text, mode, sources, models=models, cancelled=cancel.is_set,
-                                                      about=about)
+                        tidied, source = writer.rewrite(text, mode, sources, models=models, about=about,
+                                                        cancelled=lambda: cancel.is_set() or skip.is_set())
+                    except writer.Cancelled:
+                        if cancel.is_set() or not skip.is_set():
+                            raise
                     finally:
                         rewrite_s = time.monotonic() - started
+                # a source that finished despite Skip still yields the raw transcript the user asked for
+                if mode and not skip.is_set():
                     if kept is not None:
-                        _keep_tidied(kept, text, keep)
-                    result = (text, stt_name, source)
+                        _keep_tidied(kept, tidied, keep)
+                    result = (tidied, stt_name, source)
                 else:
                     result = (text, stt_name, None)
             except Exception as e:

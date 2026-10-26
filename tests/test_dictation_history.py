@@ -1,6 +1,7 @@
 """Recent dictations: the raw transcript is kept even when tidy fails."""
 import os
 import tempfile
+import time
 from unittest.mock import Mock, patch
 
 from harness_discussion import history, writer
@@ -38,6 +39,17 @@ class HistoryTest(DictationCase):
             raise writer.Error("No source could rewrite.")
         self.dictate(rewrite=broken)
         self.assertEqual(history.entries(), [("words", "words")])
+
+    def test_skipping_tidy_keeps_only_raw(self):
+        def skipped(text, *_a, cancelled, **_kw):
+            self.app.events.put(("call", self.app.toast_.action("Skip")))
+            while not cancelled():
+                time.sleep(0.01)
+            raise writer.Cancelled("The rewrite was cancelled.")
+        self.dictate(rewrite=skipped)
+        self.assertEqual([(i["raw"], i["text"]) for i in history.load()], [("words", None)])
+        self.app.host.edit.type_at_caret.assert_called_once()
+        self.assertEqual(self.app.host.edit.type_at_caret.call_args[0][0], "words")
 
     def test_turning_it_off_mid_dictation_keeps_nothing(self):
         def off_while_tidying(text, *_a, **_kw):
