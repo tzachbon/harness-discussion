@@ -51,6 +51,19 @@ class HistoryTest(DictationCase):
         self.app.host.edit.type_at_caret.assert_called_once()
         self.assertEqual(self.app.host.edit.type_at_caret.call_args[0][0], "words")
 
+    def test_skip_after_tidy_finished_but_before_delivery_keeps_only_raw(self):
+        self.app, _ = self.make_app()
+        self.app.cfg["dictation_history"] = True
+        with patch.object(writer, "rewrite", lambda text, *a, **kw: ("Tidy.", "Cursor")):
+            self.start(self.app)
+            self.app._dictate_up()
+            self.app.drain("recording_done")
+            self.app._dictation_job.thread.join(5)
+            self.app.toast_.action("Skip")()
+            self.app.drain("dictated")
+        self.assertEqual([(i["raw"], i["text"]) for i in history.load()], [("words", None)])
+        self.assertEqual(self.app.host.edit.type_at_caret.call_args[0][0], "words")
+
     def test_turning_it_off_mid_dictation_keeps_nothing(self):
         def off_while_tidying(text, *_a, **_kw):
             self.app.cfg["dictation_history"] = False

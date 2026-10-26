@@ -84,6 +84,14 @@ class SkipTest(unittest.TestCase):
         self.app.drain()
         self.assertEqual(self.app.host.edit.pasted, ["i thinks so"])
 
+    def test_skip_after_tidy_finished_but_before_delivery_types_the_raw_transcript(self):
+        self.app.writer_sources[0].rewrite = lambda system, text, model, effort, cancelled: "I think so."
+        self.hold()
+        self.app._dictation_job.thread.join(5)
+        self.app.toast_.action("Skip")()
+        self.app.drain()
+        self.assertEqual(self.app.host.edit.pasted, ["i thinks so"])
+
     def test_cancel_after_skip_types_nothing(self):
         self.heard.clear()
         self.hold()

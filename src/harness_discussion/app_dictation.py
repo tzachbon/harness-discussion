@@ -26,6 +26,8 @@ class _Recording:
     phase: str = "preparing"
     thread: object = None
     rid: int = 0
+    skip: threading.Event = field(default_factory=threading.Event)
+    raw: tuple = None
 
 
 class Dictation:
@@ -266,7 +268,7 @@ class Dictation:
         models, order, chain = self.cfg["writer_models"], self.cfg["stt_sources"], self.stt_sources
         about = writer.about(self.cfg)
         keep = lambda: self.cfg.get("dictation_history")  # read live: turning it off mid-dictation saves nothing
-        skip = threading.Event()
+        skip = session.skip
         stop = lambda: self.cancel_rewrite() if rid == self._rewrite_id else None
 
         def skip_tidy():
@@ -285,6 +287,7 @@ class Dictation:
                 if cancel.is_set():
                     raise writer.Cancelled("The dictation was cancelled.")
                 kept = _keep(text, keep)
+                session.raw = (text, kept)
                 if mode and not skip.is_set():
                     started = time.monotonic()
                     try:
@@ -346,6 +349,11 @@ class Dictation:
                 self._toast(str(result) if safe else "Could not finish the dictation.", at=at)
                 return
             text, stt_name, source = result
+            if session.skip.is_set() and session.raw and text != session.raw[0]:  # Skip pressed before this delivery
+                text, source = session.raw[0], None
+                if session.raw[1] is not None:
+                    _keep_tidied(session.raw[1], None, lambda: self.cfg.get("dictation_history"))
+                    self.history_changed()
             log.info("dictated %d chars with %s%s in %.1fs (transcribe %.1fs, rewrite %s)", len(text), stt_name,
                      f" then {source}" if source else "", time.monotonic() - released, stt_s, secs(rewrite_s))
             current = lambda: self._dictation_current(session) and rid == self._rewrite_id
