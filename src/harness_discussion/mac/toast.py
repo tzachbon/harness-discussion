@@ -35,7 +35,7 @@ def _action_button(title, fn):
 class Toast:
     def __init__(self):
         self._timer, self.menu_open, self.actions, self._busy = None, False, [], False
-        self.on_hide = lambda: None
+        self.on_hide, self.bounds = lambda: None, None  # bounds: (left, top, right, bottom) while shown
         self.label = ui.label("", 12)
         self.label.setTextColor_(AppKit.NSColor.whiteColor())
         self.meter = AppKit.NSView.alloc().init()
@@ -139,6 +139,7 @@ class Toast:
         top = max(area_top, min(y, area_bottom - h))
         left = max(area.origin.x, min(x, area.origin.x + area.size.width - w))
         p.setFrameOrigin_((left, _cocoa_y(top + h)))
+        self.bounds = (left, top, left + w, top + h)
         p.orderFrontRegardless()
         self._busy = busy
         self.schedule_hide()
@@ -185,5 +186,6 @@ class Toast:
 
     def hide(self):
         self.cancel_hide()
+        self.bounds = None
         self.win.orderOut_(None)
         self.on_hide()

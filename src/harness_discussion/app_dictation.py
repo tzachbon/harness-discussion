@@ -36,7 +36,12 @@ class Dictation:
                 and session.generation == self._dictate_generation and session.binding == self._dictate_binding)
 
     def _invalidate_dictation_target(self):
-        """Native callbacks latch activity before the UI can process a delayed result."""
+        """Native callbacks latch activity before the UI can process a delayed result. A click on the toast, such as
+        Skip, keeps the target: the toast never takes focus. Runs on the Windows hook thread, so no UI calls."""
+        box = getattr(getattr(self, "toast", None), "bounds", None)
+        x, y = self.host.pointer() if box else (0, 0)
+        if box and box[0] <= x < box[2] and box[1] <= y < box[3]:
+            return
         self._dictate_activity()
         if self._dictation_target_activity is not None:
             self._dictation_target_activity.set()
@@ -339,6 +344,12 @@ class Dictation:
                 return
             released, stt_s, rewrite_s, stt_name = timing
             secs = lambda s: f"{s:.1f}s" if s is not None else "-"
+            raw = session.raw if session.skip.is_set() and not session.cancel.is_set() else None
+            if raw and (isinstance(result, Exception) or result[0] != raw[0]):  # Skip beats a late tidy or its error
+                result = (raw[0], stt_name, None)
+                if raw[1] is not None:
+                    _keep_tidied(raw[1], None, lambda: self.cfg.get("dictation_history"))
+                    self.history_changed()
             if isinstance(result, writer.Cancelled):
                 self.toast.hide()
                 return
@@ -349,11 +360,6 @@ class Dictation:
                 self._toast(str(result) if safe else "Could not finish the dictation.", at=at)
                 return
             text, stt_name, source = result
-            if session.skip.is_set() and session.raw and text != session.raw[0]:  # Skip pressed before this delivery
-                text, source = session.raw[0], None
-                if session.raw[1] is not None:
-                    _keep_tidied(session.raw[1], None, lambda: self.cfg.get("dictation_history"))
-                    self.history_changed()
             log.info("dictated %d chars with %s%s in %.1fs (transcribe %.1fs, rewrite %s)", len(text), stt_name,
                      f" then {source}" if source else "", time.monotonic() - released, stt_s, secs(rewrite_s))
             current = lambda: self._dictation_current(session) and rid == self._rewrite_id

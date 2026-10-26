@@ -92,6 +92,39 @@ class SkipTest(unittest.TestCase):
         self.app.drain()
         self.assertEqual(self.app.host.edit.pasted, ["i thinks so"])
 
+    def test_a_tidy_that_fails_after_skip_still_types_the_raw_transcript(self):
+        def failing(system, text, model, effort, cancelled):
+            self.app.events.put(("call", self.app.toast_.action("Skip")))
+            while not cancelled():
+                time.sleep(0.01)
+            raise RuntimeError("the source broke")
+        self.app.writer_sources[0].rewrite = failing
+        self.hold()
+        self.app.drain()
+        self.assertEqual(self.app.host.edit.pasted, ["i thinks so"])
+
+    def test_skip_after_tidy_failed_but_before_delivery_types_the_raw_transcript(self):
+        self.app.writer_sources[0].reply = RuntimeError("the source broke")
+        self.hold()
+        self.app._dictation_job.thread.join(5)
+        self.app.toast_.action("Skip")()
+        self.app.drain()
+        self.assertEqual(self.app.host.edit.pasted, ["i thinks so"])
+
+    def test_clicking_the_toast_keeps_the_dictation_target(self):
+        self.app.toast_.bounds = (100, 100, 200, 130)
+        for pointer, pasted in (((150, 110), ["i thinks so"]), ((150, 140), [])):
+            with self.subTest(pointer=pointer):
+                self.app.host.edit.pasted = []
+                self.app.host.pointer = lambda: pointer
+                self.heard.clear()
+                self.hold()
+                self.app._invalidate_dictation_target()
+                self.app.toast_.action("Skip")()
+                self.heard.set()
+                self.app.drain()
+                self.assertEqual(self.app.host.edit.pasted, pasted)
+
     def test_cancel_after_skip_types_nothing(self):
         self.heard.clear()
         self.hold()
