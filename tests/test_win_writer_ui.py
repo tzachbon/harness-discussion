@@ -46,6 +46,31 @@ class Base(unittest.TestCase):
         self.addCleanup(self.root.destroy)
 
 class ToastTest(Base):
+    def test_completed_rewrite_can_be_dismissed_while_hovered_with_its_menu_open(self):
+        from test_app_writer import _App
+        app = _App()
+        self.addCleanup(app._close_writer)
+        toast = app.toast = win_toast.Toast(self.root)
+        self.addCleanup(toast.destroy)
+        hidden = []
+        toast.on_hide = lambda: (hidden.append(True), app._watch_escape())
+        app.rewrite_selection()
+        app.drain()
+        self.root.update()
+        self.assertEqual([lbl["text"] for lbl in labels(toast.win)].count("×"), 1)
+        self.assertTrue(app.esc.on)
+        last_edit, pasted = app._last_edit, list(app.edit.pasted)
+        toast.win.event_generate("<Enter>")
+        click(self.root, toast.win, "Mode ▾")
+        self.assertTrue(toast._menu_open)
+        click(self.root, toast.win, "×")
+        self.assertFalse(toast.visible)
+        self.assertFalse(toast._menu_open)
+        self.assertFalse(app.esc.on)
+        self.assertEqual(hidden, [True])
+        self.assertEqual(app._last_edit, last_edit)
+        self.assertEqual(app.edit.pasted, pasted)
+
     def test_reentering_the_toast_cancels_the_pending_submenu_close(self):
         toast = win_toast.Toast(self.root)
         self.addCleanup(toast.destroy)
