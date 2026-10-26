@@ -13,7 +13,7 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
-from harness_discussion import core, settings
+from harness_discussion import core, settings, summarize
 from harness_discussion.audio import NoAudioError
 from harness_discussion.win import host as win_host, popup as win_popup, settings_ui
 
@@ -160,7 +160,7 @@ class PopupSettings(unittest.TestCase):
 
     def test_summarize_reads_the_summary_and_settings_shows_the_model(self):
         popup, app = self.app.popup, self.app
-        app._summarize_status = "ready"
+        self.boundaries.enter_context(patch.object(summarize, "status", return_value="ready"))  # else a dialog blocks
         app.summary_server = type("Fake", (), {"summarize": lambda self, text, language, about="": "A short summary.",
                                                "stop": lambda self: None})()
         label = popup.ai_btn.parts[1]
