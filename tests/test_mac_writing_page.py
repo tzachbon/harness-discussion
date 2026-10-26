@@ -181,17 +181,22 @@ class WritingSettingsTest(unittest.TestCase):
         self.win._set_hotkey("<cmd>+<shift>+r", "rewrite_hotkey")
         self.assertEqual(self.changes[-1], ("rewrite_hotkey", "<cmd>+<shift>+r"))
 
-    def test_command_backtick_warns_that_macos_also_switches_windows(self):
+    def test_warns_only_for_the_keys_macos_switches_windows_with_first(self):
+        from harness_discussion.mac import window_keys
         hints = self.win.shortcut_hints
-        self.assertTrue(hints["hotkey"].isHidden())
-        self.win._set_hotkey("<cmd>+<key_50>")
-        self.assertFalse(hints["hotkey"].isHidden())
-        self.assertIn("Move focus to next window", hints["hotkey"].stringValue())
-        self.win._set_hotkey("<cmd>+<alt>+r")
-        self.assertTrue(hints["hotkey"].isHidden())
-        self.win._set_hotkey("<shift>+<cmd>+<key_50>", "rewrite_hotkey")
-        self.assertFalse(hints["rewrite_hotkey"].isHidden())
-        self.assertTrue(hints["hotkey"].isHidden())
+        switching = {(frozenset({"cmd"}), "key_50"), (frozenset({"cmd", "shift"}), "key_50")}
+        with mock.patch.object(window_keys, "window_switch_keys", return_value=switching):
+            self.win._set_hotkey("<cmd>+<key_50>")
+            self.assertFalse(hints["hotkey"].isHidden())
+            self.assertIn("Move focus to next window", hints["hotkey"].stringValue())
+            self.win._set_hotkey("<cmd>+<alt>+r")
+            self.assertTrue(hints["hotkey"].isHidden())
+            self.win._set_hotkey("<shift>+<cmd>+<key_50>", "rewrite_hotkey")
+            self.assertFalse(hints["rewrite_hotkey"].isHidden())
+            self.assertTrue(hints["hotkey"].isHidden())
+        with mock.patch.object(window_keys, "window_switch_keys", return_value=set()):
+            self.win._set_hotkey("<cmd>+<key_50>")
+            self.assertTrue(hints["hotkey"].isHidden())
 
     def test_recent_dictations_copy_the_tidied_text_and_the_original(self):
         from harness_discussion import history

@@ -9,7 +9,7 @@ if sys.platform != "darwin":
 import AppKit  # noqa: E402
 
 from harness_discussion import hotkeys  # noqa: E402
-from harness_discussion.mac import trigger  # noqa: E402
+from harness_discussion.mac import trigger, window_keys  # noqa: E402
 
 
 def key_event(code, flags=0, kind=AppKit.NSEventTypeKeyDown):
@@ -35,6 +35,20 @@ class ShortcutKeyTest(unittest.TestCase):
                 self.assertEqual(trigger.key_name(code), name)
         self.assertTrue(trigger.key_name(50))  # the real layout lookup answers
         self.assertEqual(hotkeys.label("<cmd>+<key_50>"), "⌘" + trigger.key_name(50))
+
+    def test_macos_switches_windows_first_only_with_stage_manager_and_its_shortcut_on(self):
+        cmd, alt = frozenset({"cmd"}), frozenset({"alt"})
+        backtick = {(cmd, "key_50"), (cmd | {"shift"}, "key_50")}
+        option_b = {(alt, "b"), (alt | {"shift"}, "b")}
+        bound = {"enabled": True, "value": {"parameters": (98, 11, AppKit.NSEventModifierFlagOption)}}
+        for stage, entry, expected in ((True, None, backtick), (True, bound, option_b),
+                                       (True, {**bound, "enabled": False}, set()), (False, None, set()),
+                                       (True, {"enabled": True}, set())):
+            prefs = {"GloballyEnabled": stage, "AppleSymbolicHotKeys": {} if entry is None else {"27": entry}}
+            with self.subTest(stage=stage, entry=entry), \
+                    mock.patch.object(window_keys.CF, "CFPreferencesAppSynchronize"), \
+                    mock.patch.object(window_keys.CF, "CFPreferencesCopyAppValue", lambda key, _domain: prefs[key]):
+                self.assertEqual(window_keys.window_switch_keys(), expected)
 
     def test_a_keyboard_selection_fires_once_the_modifiers_come_up(self):
         shift, cmd, flags = AppKit.NSEventModifierFlagShift, AppKit.NSEventModifierFlagCommand, AppKit.NSEventTypeFlagsChanged

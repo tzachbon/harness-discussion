@@ -33,6 +33,11 @@ class ShortcutHook(unittest.TestCase):
             hook.reset_mock()
             host.set_shortcut("rewrite", "<ctrl>+<alt>", fired)
             hook.assert_called_once_with("<ctrl>+<alt>", fired, None)
+        host.hotkey = None
+        for spec, press in (("<cmd>+<key_50>", True), ("<ctrl>+<alt>", False)):
+            with self.subTest(read=spec), patch.object(native_host, "HotKey") as hook:
+                host.set_hotkey(spec, fired)  # the read shortcut swallows its key too
+                hook.assert_called_once_with(spec, fired, press=press)
 
 
 class PressRearm(unittest.TestCase):

@@ -128,7 +128,8 @@ def key_name(code):
 class HotKey:
     """Watches key-downs for one shortcut. In another app it can't swallow the key, so that app sees it too.
     With `on_release`, it also reports when the key or one of its modifiers comes up, for hold shortcuts.
-    `press` watches a keyed shortcut on the event tap instead, which also sees keys macOS reserves, such as ⌘`."""
+    `press` watches a keyed shortcut on the event tap instead, which sees keys macOS reserves, such as ⌘`, and
+    swallows the shortcut's key so the frontmost app doesn't act on it too."""
 
     def __init__(self, spec, on_hotkey, on_release=None, *, on_activity=None, on_cancel=None, press=False):
         self.keys, self.on_hotkey = hotkeys.parse(spec), on_hotkey  # parsed, so modifier order doesn't matter
@@ -206,7 +207,7 @@ class NativeHold:
             keymap[primary] = primary
         self.tracker = HeldShortcut(mods, primary, keymap, on_down, on_up, press=press)
         self.on_activity, self.on_cancel = on_activity, on_cancel
-        self._closed = False
+        self._closed, self._swallowed = False, set()
         self._tap = self._source = self._loop = None
         self._callback = self._event  # retain the bridged callback until owner cleanup
         from .permission import trusted
@@ -220,7 +221,7 @@ class NativeHold:
                 self.stop()
                 return
             self.tracker.seed({code: name for code, name in keymap.items() if self._key_down(code)})
-            # Default preserves the existing Accessibility grant. Never suppress or alter events.
+            # Default preserves the existing Accessibility grant. Only the shortcut's own key is ever suppressed.
             self._tap = Quartz.CGEventTapCreate(Quartz.kCGSessionEventTap, Quartz.kCGHeadInsertEventTap,
                                                Quartz.kCGEventTapOptionDefault, mask, self._callback, None)
             if self._tap is None:
@@ -359,11 +360,27 @@ class NativeHold:
                         self.tracker.event(code, name, down)
                 else:
                     repeat = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGKeyboardEventAutorepeat)
-                    self.tracker.event(code, code, kind == Quartz.kCGEventKeyDown,
-                                       repeat=bool(repeat) or mods != self.tracker.mods)
+                    down = kind == Quartz.kCGEventKeyDown
+                    self.tracker.event(code, code, down, repeat=bool(repeat) or mods != self.tracker.mods)
+                    if self._swallow(code, down, mods):
+                        return None
             except Exception:
                 self._loss()
             return event
+
+    def _swallow(self, code, down, mods):
+        """The shortcut's key, from the press with exactly its modifiers through that key's own key-up."""
+        if code != self.tracker.primary:
+            return False
+        if not down:
+            if code not in self._swallowed:
+                return False
+            self._swallowed.discard(code)
+            return True
+        if code in self._swallowed or mods == self.tracker.mods:
+            self._swallowed.add(code)
+            return True
+        return False
 
     def stop(self):
         with self.tracker.lock:
