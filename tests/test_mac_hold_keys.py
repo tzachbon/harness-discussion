@@ -152,13 +152,27 @@ class NativeMacKeys(unittest.TestCase):
                 self.assertFalse(self.event(12, 59, 0))
                 fired.assert_not_called()
                 self.assertEqual(self.actions, ["down", "up"])
-        monitor(19, 59, ctrl)  # a plain tap, processed after a later hold's swallow, still fires
-        monitor(20, 58, ctrl | alt)
-        clock.return_value = 23
+        for base in (20, 30):  # two holds swallow before the monitor handles either of them
+            clock.return_value = base + 3
+            self.event(12, 59, ctrl | 1)
+            self.event(12, 58, ctrl | alt | 1 | 0x20)
+            self.assertTrue(self.event(10, 2, ctrl | alt | 1 | 0x20))
+            self.assertTrue(self.event(11, 2, ctrl | alt | 1 | 0x20))
+            self.event(12, 58, ctrl | 1)
+            self.event(12, 59, 0)
+        for base in (20, 30):
+            monitor(base + 1, 59, ctrl)
+            monitor(base + 2, 58, ctrl | alt)
+            monitor(base + 4, 58, ctrl)
+            monitor(base + 5, 59, 0)
+        fired.assert_not_called()
+        monitor(49, 59, ctrl)  # a plain tap, processed after a later hold's swallow, still fires
+        monitor(50, 58, ctrl | alt)
+        clock.return_value = 53
         self.event(12, 59, ctrl | 1)
         self.event(12, 58, ctrl | alt | 1 | 0x20)
         self.assertTrue(self.event(10, 2, ctrl | alt | 1 | 0x20))
-        monitor(21, 59, 0)
+        monitor(51, 59, 0)
         fired.assert_called_once_with()
 
     def test_modifier_only_shortcut_swallows_nothing(self):

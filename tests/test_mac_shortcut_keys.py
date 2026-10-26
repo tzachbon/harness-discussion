@@ -1,4 +1,5 @@
 """Shortcut keys on macOS: what a key press records, how Settings names it, and how it fires."""
+import collections
 import sys
 import unittest
 from unittest import mock
@@ -101,7 +102,7 @@ class ShortcutKeyTest(unittest.TestCase):
         hk = object.__new__(trigger.HotKey)  # skips installing the system monitors
         hk.keys, hk.on_hotkey, hk.on_release, hk._held = hotkeys.parse(spec), mock.Mock(), on_release, None
         hk._tap = hk._spoiled = False
-        hk._swallowed_at = hk._since = float("-inf")
+        hk._swallowed_at = collections.deque()
         return hk
 
     def test_modifiers_alone_fire_on_release_unless_a_key_joined(self):

@@ -2,6 +2,7 @@
 
 Coordinates are top-left based on the main screen, in points, the way the core and popup use them.
 """
+import collections
 import threading
 import time
 
@@ -120,7 +121,7 @@ class HotKey:
     def __init__(self, spec, on_hotkey, on_release=None, *, on_activity=None, on_cancel=None, press=False):
         self.keys, self.on_hotkey = hotkeys.parse(spec), on_hotkey  # parsed, so modifier order doesn't matter
         self.on_release, self._tap, self._spoiled = on_release, False, False
-        self._swallowed_at = self._since = float("-inf")  # NSEvent timestamps
+        self._swallowed_at = collections.deque()  # NSEvent timestamps, oldest first
         self._hold, self._closed = None, False
         if on_release is not None or press:
             options = {"on_activity": on_activity} if on_activity is not None else {}
@@ -159,21 +160,23 @@ class HotKey:
             return
         mods, chord = frozenset(event_mods(event)), self.keys[0]
         if not mods >= chord:  # the chord ended
-            now = event.timestamp()
-            if self._tap and not self._since < self._swallowed_at < now:
+            now, swallowed = event.timestamp(), False
+            while self._swallowed_at and self._swallowed_at[0] < now:  # swallowed during the hold ending now
+                self._swallowed_at.popleft()
+                swallowed = True
+            if self._tap and not swallowed:
                 self.on_hotkey()
             self._tap = self._spoiled = False
-            self._since = now
         elif mods == chord and not self._spoiled:
             self._tap = True
         else:  # an extra modifier joined, so this hold is no longer a tap of the chord
             self._tap, self._spoiled = False, True
 
     def swallowed(self, mods, at):
-        """The event tap swallowed a key at `at`, on its own thread. Comparing event times, not arrival order,
-        spoils the hold that spans `at` even while this monitor still has older modifier events queued."""
+        """The event tap swallowed a key at `at`, on its own thread. Each time waits until this monitor ends the
+        hold it fell in, so a stalled main loop with several holds queued still spoils every one of them."""
         if mods & self.keys[0]:
-            self._swallowed_at = at
+            self._swallowed_at.append(at)
 
     def stop(self):
         if self._closed:
