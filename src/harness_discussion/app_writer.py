@@ -163,6 +163,9 @@ class Writer(Dictation):
 
     def _toast(self, message, actions=(), busy=False, at=None):
         x, y, above = at or self._anchor()
+        if not busy and not any(title == "×" for title, _ in actions):
+            # Both native toasts hide before invoking an action's callback.
+            actions = [*actions, ("×", lambda: None)]
         self.toast.show(message, x, y, actions, busy, above=above)
         self._watch_escape()
 

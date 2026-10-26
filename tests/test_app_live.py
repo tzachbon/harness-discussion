@@ -359,7 +359,7 @@ class Actions(unittest.TestCase):
     def test_apply_changes_only_that_span_and_keeps_the_rest_without_a_new_check(self):
         message, actions, _ = self.click("i thinks")
         self.assertEqual(message, "i thinks → I think")
-        self.assertEqual(set(actions), {"Apply", "Dismiss", "Review", "More"})
+        self.assertEqual(set(actions), {"Apply", "Dismiss", "Review", "More", "×"})
         actions["Apply"]()
         self.assertEqual(self.field.text, "I think we should of gone.")
         self.assertEqual(self.app.toast_.shown[-1][0], "Applied")

@@ -47,6 +47,7 @@ class FakeToast:
     def show(self, message, x, y, actions=(), busy=False, above=None):
         self.visible = True
         self.at = (x, y, above)
+        self.actions = list(actions)
         self.shown.append((message, dict(actions), busy))
 
     def hide(self):
@@ -331,7 +332,7 @@ class DictationTest(unittest.TestCase):
         self.app.mic_ok = False
         self.app._dictate_down()
         self.app.drain("recording_done")
-        self.assertEqual(sorted(self.app.toast_.shown[-1][1]), ["Open Settings"])
+        self.assertEqual(sorted(self.app.toast_.shown[-1][1]), ["Open Settings", "×"])
         self.assertIsNone(self.app._recorder)
 
     def test_a_window_change_offers_copy_instead_of_typing(self):
@@ -356,7 +357,7 @@ class DictationTest(unittest.TestCase):
         self.assertEqual(app.copied, ["hello"])
         app.host.edit.type_at_caret.assert_not_called()
         self.assertEqual(app.toast_.shown[-1][0], "Copied to clipboard")
-        self.assertEqual(app.toast_.shown[-1][1], {})
+        self.assertEqual(list(app.toast_.shown[-1][1]), ["×"])
 
     def test_changed_or_secure_input_copies_without_requesting_paste(self):
         for current in (None, Context("", 9, 9, True, False), Context("", 1, 2, True, True)):
@@ -630,6 +631,30 @@ class DictationTest(unittest.TestCase):
 
 
 class FlowTest(unittest.TestCase):
+    def test_completed_toasts_add_one_dismiss_action_without_changing_caller_actions(self):
+        app = _App()
+        self.addCleanup(app._close_writer)
+        review = unittest.mock.Mock()
+        actions = [("Review", review)]
+        app._toast("Ready", actions)
+        self.assertEqual(actions, [("Review", review)])
+        self.assertEqual([title for title, _ in app.toast_.actions], ["Review", "×"])
+        app.toast_.action("×")()
+        review.assert_not_called()
+
+    def test_caller_supplied_close_actions_keep_their_callback_without_duplicates(self):
+        app = _App()
+        self.addCleanup(app._close_writer)
+        close = unittest.mock.Mock()
+        actions = [("×", close)]
+        for busy in (False, True):
+            with self.subTest(busy=busy):
+                app._toast("Ready", actions, busy=busy)
+                self.assertEqual(app.toast_.actions, actions)
+                self.assertIs(app.toast_.action("×"), close)
+                app.toast_.action("×")()
+        self.assertEqual(close.call_count, 2)
+
     def test_repeated_review_replacements_use_the_last_inserted_text(self):
         app = _App()
         app._last_edit = (CTX, "original", "first", "Fix errors")
@@ -650,7 +675,7 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(app.host.edit.pasted, ["Hi there. "])
         self.assertEqual(app.host.edit.ctxs, [CTX])  # the paste carries the captured target
         message, actions, busy = app.toast_.shown[-1]
-        self.assertEqual((message, sorted(actions), busy), ("Fix errors · Cursor", ["Mode", "Review", "Undo"], False))
+        self.assertEqual((message, sorted(actions), busy), ("Fix errors · Cursor", ["Mode", "Review", "Undo", "×"], False))
         self.assertFalse(app.popup.rewriting)
         self.assertEqual(len(app.timers), 1)  # the local model's idle stop is armed again
 
