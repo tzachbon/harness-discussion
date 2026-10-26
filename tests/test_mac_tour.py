@@ -255,12 +255,11 @@ class ShortcutRowTest(_TourCase):
         self.assertEqual(self.app.actions, [("shortcut", ("rewrite_hotkey", "<ctrl>+<alt>+e"))])
 
     def test_show_ends_a_recording(self):
-        saved = self.app.cfg["rewrite_hotkey"]
         self.t._record_hotkey("rewrite_hotkey")
-        self.assertEqual(self.app.applied, [("rewrite_hotkey", "")])
+        self.assertEqual(self.app.applied, [(key, "") for key in hotkeys.SHORTCUTS])  # the tap swallows bound keys
         self.t.show(view(self.app, "review"))
         self.assertIsNone(self.t._recorder)
-        self.assertEqual(self.app.applied[-1], ("rewrite_hotkey", saved))
+        self.assertEqual(self.app.applied[3:], [(key, self.app.cfg[key]) for key in hotkeys.SHORTCUTS])
 
     def test_refresh_keeps_a_conflict_and_follows_outside_changes(self):
         self.t._set_hotkey(self.app.cfg["hotkey"], "rewrite_hotkey")

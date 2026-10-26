@@ -97,6 +97,33 @@ class NativeMacKeys(unittest.TestCase):
         self.assertFalse(self.event(10, 50))
         self.assertEqual(self.actions, ["down", "up"])  # a hold rearms only once ⌘ comes up, yet ⌘` stays ours
 
+    def test_a_key_that_reached_the_app_keeps_its_repeats_and_key_up(self):
+        self.make()
+        ctrl, shift = 1 << 18, 1 << 17
+        self.assertFalse(self.event(12, 59, ctrl | 1))
+        self.assertFalse(self.event(12, 56, ctrl | shift | 1 | 2))
+        self.assertFalse(self.event(10, 15, ctrl | shift | 1 | 2))  # ⇧⌃R isn't ⌃R
+        self.assertFalse(self.event(12, 56, ctrl | 1))
+        self.assertFalse(self.event(10, 15, ctrl | 1, repeat=1))  # now ⌃R, but a repeat of a press the app has
+        self.assertFalse(self.event(11, 15, ctrl | 1))
+        self.assertEqual(self.actions, [])
+
+    def test_a_swallowed_key_spoils_a_modifier_only_tap_of_its_chord(self):
+        ctrl, alt = 1 << 18, 1 << 19
+        fired = Mock()
+        read = self.trigger.HotKey("<ctrl>+<alt>", fired)
+        self.addCleanup(read.stop)
+        self.make("<ctrl>+<alt>+d")
+        for code, flags in ((59, ctrl), (58, ctrl | alt)):
+            read._event(Mock(type=lambda: 12, keyCode=lambda: code, modifierFlags=lambda: flags))
+        self.assertFalse(self.event(12, 59, ctrl | 1))
+        self.assertFalse(self.event(12, 58, ctrl | alt | 1 | 0x20))
+        self.assertTrue(self.event(10, 2, ctrl | alt | 1 | 0x20))  # Read's monitor never sees this D
+        self.assertTrue(self.event(11, 2, ctrl | alt | 1 | 0x20))
+        read._event(Mock(type=lambda: 12, keyCode=lambda: 58, modifierFlags=lambda: 0))
+        fired.assert_not_called()
+        self.assertEqual(self.actions, ["down", "up"])
+
     def test_modifier_only_shortcut_swallows_nothing(self):
         self.make("<ctrl>+<alt>")
         ctrl, alt = 1 << 18, 1 << 19

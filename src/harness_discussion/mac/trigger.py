@@ -125,6 +125,9 @@ def key_name(code):
     return ("Keypad " if code in KEYPAD else "") + text.upper()
 
 
+MODIFIER_TAPS = set()  # modifier-only HotKeys, which never see a key the event tap swallows
+
+
 class HotKey:
     """Watches key-downs for one shortcut. In another app it can't swallow the key, so that app sees it too.
     With `on_release`, it also reports when the key or one of its modifiers comes up, for hold shortcuts.
@@ -144,6 +147,7 @@ class HotKey:
         mask = AppKit.NSEventMaskKeyDown
         if self.keys[1] is None:
             mask |= AppKit.NSEventMaskKeyUp | AppKit.NSEventMaskFlagsChanged
+            MODIFIER_TAPS.add(self)
         self._monitors = [AppKit.NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(mask, self._event)]
 
         def local(event):  # keys while one of our windows is active, which the global monitor never sees
@@ -164,9 +168,7 @@ class HotKey:
     def _modifiers_only(self, event, kind):
         """A tap fires once the chord is let go with no other key pressed, so ⌃⌥R doesn't also fire ⌃⌥."""
         if kind == AppKit.NSEventTypeKeyDown:
-            if event_mods(event) & self.keys[0]:  # typing before the chord starts doesn't cancel it
-                self._tap, self._spoiled = False, True
-            return
+            return self.spoil(event_mods(event))
         if kind != AppKit.NSEventTypeFlagsChanged:
             return
         mods, chord = frozenset(event_mods(event)), self.keys[0]
@@ -179,10 +181,16 @@ class HotKey:
         else:  # an extra modifier joined, so this hold is no longer a tap of the chord
             self._tap, self._spoiled = False, True
 
+    def spoil(self, mods):
+        """A key went down with `mods` held. Typing before the chord starts doesn't cancel it."""
+        if mods & self.keys[0]:
+            self._tap, self._spoiled = False, True
+
     def stop(self):
         if self._closed:
             return
         self._closed = True
+        MODIFIER_TAPS.discard(self)
         if self._hold:
             self._hold.stop()
             return
@@ -362,25 +370,26 @@ class NativeHold:
                     repeat = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGKeyboardEventAutorepeat)
                     down = kind == Quartz.kCGEventKeyDown
                     self.tracker.event(code, code, down, repeat=bool(repeat) or mods != self.tracker.mods)
-                    if self._swallow(code, down, mods):
+                    if self._swallow(code, down, bool(repeat), mods):
                         return None
             except Exception:
                 self._loss()
             return event
 
-    def _swallow(self, code, down, mods):
-        """The shortcut's key, from the press with exactly its modifiers through that key's own key-up."""
+    def _swallow(self, code, down, repeat, mods):
+        """The shortcut's key, from a fresh press with exactly its modifiers through that key's own key-up."""
         if code != self.tracker.primary:
             return False
-        if not down:
-            if code not in self._swallowed:
-                return False
-            self._swallowed.discard(code)
+        if code in self._swallowed:
+            if not down:
+                self._swallowed.discard(code)
             return True
-        if code in self._swallowed or mods == self.tracker.mods:
-            self._swallowed.add(code)
-            return True
-        return False
+        if not down or repeat or mods != self.tracker.mods:
+            return False
+        self._swallowed.add(code)
+        for tap in list(MODIFIER_TAPS):  # so releasing ⌃⌥D doesn't also fire a ⌃⌥ shortcut
+            tap.spoil(mods)
+        return True
 
     def stop(self):
         with self.tracker.lock:

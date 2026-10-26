@@ -54,7 +54,8 @@ class ReadingPage:
             return
         self._recording_key = key
         self.shortcut_labels[key].say("Press keys…")
-        self.app.apply(key, "")  # so pressing the current shortcut records it instead of running it
+        for name in hotkeys.SHORTCUTS:  # so pressing a bound shortcut records it instead of running or swallowing it
+            self.app.apply(name, "")
         peak = set()  # the most modifiers held at once; letting them all go with no key records them alone
 
         def on_key(event):
@@ -92,7 +93,8 @@ class ReadingPage:
             AppKit.NSEvent.removeMonitor_(self._recorder)
             self._recorder = None
             AppKit.NSNotificationCenter.defaultCenter().removeObserver_(self._closed)
-            self.app.apply(key, self.cfg[key])
+            for name in hotkeys.SHORTCUTS:
+                self.app.apply(name, self.cfg[name])
             self._show_shortcut(key)
 
     def _set_hotkey(self, spec, key="hotkey"):
