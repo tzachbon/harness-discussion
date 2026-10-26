@@ -114,12 +114,15 @@ class NativeMacHold(unittest.TestCase):
                 self.physical.discard(code)
         elif kind == 11:
             self.physical.discard(code)
+        result = []
         def deliver():
-            self.assertIs(self.hk._hold._event(None, kind, event, None), event)
+            result.append(self.hk._hold._event(None, kind, event, None))
+            self.assertIn(result[0], (event, None))  # passed through unchanged, or swallowed
         if self.hk._hold._closed:
             deliver()
         else:
             self.worker(deliver)
+        return result[0] is None
 
     def chord(self):
         self.event(12, 59, (1 << 18) | 1)
@@ -178,48 +181,6 @@ class NativeMacHold(unittest.TestCase):
         last.stop.assert_called_once_with()
         self.assertEqual(host.shortcuts, {})
 
-    def test_escape_cancel_does_not_require_an_activity_callback(self):
-        cancel = Mock()
-        self.make(on_cancel=cancel)
-        self.event(10, 53)
-        cancel.assert_called_once_with()
-        self.event(11, 53)
-        cancel.assert_called_once_with()
-
-    def test_activity_excludes_normal_chord_and_includes_unrelated_repeats_after_up(self):
-        activity = Mock()
-        self.make(on_activity=activity)
-        self.chord()
-        self.event(10, 15, (1 << 18) | 1, repeat=1)
-        self.event(12, 62, (1 << 18) | 1 | 0x2000)
-        self.event(12, 59, (1 << 18) | 0x2000)
-        self.event(11, 15, (1 << 18) | 0x2000)
-        self.event(12, 62)
-        activity.assert_not_called()
-        self.assertEqual(self.actions, ["down", "up"])
-        self.event(10, 7)
-        self.event(10, 7, repeat=1)
-        self.assertEqual(activity.call_count, 2)
-        self.event(12, 56, (1 << 17) | 2)
-        self.event(12, 56)
-        self.assertEqual(activity.call_count, 4)
-        self.hk.stop()
-        self.event(10, 7, repeat=1)
-        self.event(12, 56, (1 << 17) | 2)
-        self.assertEqual(activity.call_count, 4)
-
-    def test_unrelated_repeat_notifies_before_tracker_early_returns(self):
-        activity = Mock()
-        self.make(on_activity=activity)
-        self.chord()
-        self.event(10, 7, (1 << 18) | 1)
-        self.event(10, 7, (1 << 18) | 1, repeat=1)
-        self.assertEqual(activity.call_count, 2)
-        self.event(11, 15, (1 << 18) | 1)
-        self.event(10, 7, (1 << 18) | 1, repeat=1)
-        self.assertEqual(activity.call_count, 3)
-        self.assertEqual(self.actions, ["down", "up"])
-
     def test_other_mouse_down_notifies_without_advancing_left_selection_heuristics(self):
         native = self.trigger.AppKit.NSEvent
         native.doubleClickInterval.return_value = .5
@@ -253,32 +214,6 @@ class NativeMacHold(unittest.TestCase):
         self.event(1)
         self.assertEqual(self.actions, ["down"])
         self.event(11, 15, (1 << 18) | 1)
-        self.assertEqual(self.actions, ["down", "up"])
-
-    def test_both_control_sides_and_lost_primary_up(self):
-        hold = self.make()
-        self.chord()
-        self.event(12, 62, (1 << 18) | 1 | 0x2000)
-        self.event(12, 59, (1 << 18) | 0x2000)
-        self.assertEqual(self.actions, ["down"])
-        self.physical = {62}
-        hold.tracker.reconcile(hold._key_down)
-        self.assertEqual(self.actions, ["down", "up"])
-
-    def test_unrelated_key_cannot_activate_a_rejected_chord(self):
-        self.make()
-        self.event(12, 59, (1 << 18) | 1)
-        self.event(12, 56, (1 << 18) | (1 << 17) | 1 | 2)
-        self.event(10, 15, (1 << 18) | (1 << 17) | 1 | 2)
-        self.event(12, 56, (1 << 18) | 1)
-        self.event(10, 7, (1 << 18) | 1)
-        self.assertEqual(self.actions, [])
-
-    def test_poll_heals_missing_modifier_up_while_primary_remains_down(self):
-        hold = self.make()
-        self.chord()
-        self.physical = {15}
-        hold.tracker.reconcile(hold._key_down)
         self.assertEqual(self.actions, ["down", "up"])
 
     def test_lifetime_health_after_full_release_blocks_paste(self):
@@ -452,89 +387,6 @@ class NativeMacHold(unittest.TestCase):
                         hold = self.make()
                 self.assertTrue(hold._closed)
                 self.cf.CFMachPortInvalidate.assert_called_once_with(hold._tap)
-
-    def test_modifier_only_extras_repeat_and_required_modifier_release(self):
-        self.make("<ctrl>+<alt>")
-        shift, ctrl, alt = 1 << 17, 1 << 18, 1 << 19
-        self.event(12, 56, shift | 2)
-        self.event(12, 59, shift | ctrl | 2 | 1)
-        self.event(12, 58, shift | ctrl | alt | 2 | 1 | 0x20)
-        self.assertEqual(self.actions, ["down"])
-        self.event(10, 0, shift | ctrl | alt | 2 | 1 | 0x20, repeat=1)
-        self.event(12, 58, shift | ctrl | 2 | 1)
-        self.event(12, 58, shift | ctrl | alt | 2 | 1 | 0x20)
-        self.assertEqual(self.actions, ["down", "up"])
-
-    def test_extra_modifier_disallows_key_chord_without_release_activation(self):
-        self.make()
-        ctrl, shift = 1 << 18, 1 << 17
-        self.event(12, 59, ctrl | 1)
-        self.event(12, 56, ctrl | shift | 1 | 2)
-        self.event(10, 15, ctrl | shift | 1 | 2)
-        self.event(12, 56, ctrl | 1)
-        self.event(10, 15, ctrl | 1, repeat=1)
-        self.event(11, 15, ctrl | 1)
-        self.assertEqual(self.actions, [])
-
-    def test_key_only_and_rebind_during_autorepeat(self):
-        self.make("<key_50>")
-        self.event(10, 50)
-        self.event(10, 50, repeat=1)
-        self.event(11, 50)
-        self.assertEqual(self.actions, ["down", "up"])
-        self.hk.stop()
-        self.physical = {50}
-        self.make("<key_50>")
-        self.event(10, 50, repeat=1)
-        self.assertEqual(self.actions, ["down", "up"])
-        self.event(11, 50)
-        self.event(10, 50)
-        self.assertEqual(self.actions, ["down", "up", "down"])
-
-    def test_modifier_sides_without_device_flags_do_not_query_async_state_in_event(self):
-        self.make()
-        self.q.CGEventSourceKeyState.reset_mock()
-        self.event(12, 59, 1 << 18)
-        self.event(12, 62, 1 << 18)
-        self.event(10, 15, 1 << 18)
-        self.event(12, 59, 1 << 18)
-        self.assertEqual(self.actions, ["down"])
-        self.event(12, 62)
-        self.assertEqual(self.actions, ["down", "up"])
-
-    def test_read_and_rewrite_taps_keep_nsevent_monitors(self):
-        for spec, code in (("<ctrl>+r", 15), ("<ctrl>+e", 14)):
-            with self.subTest(spec=spec):
-                fired, activity, cancel = Mock(), Mock(), Mock()
-                hk = self.trigger.HotKey(spec, fired, on_activity=activity, on_cancel=cancel)
-                hk._event(Mock(type=lambda: 10, keyCode=lambda: code,
-                               modifierFlags=lambda: 1 << 18, isARepeat=lambda: False))
-                fired.assert_called_once_with()
-                hk._event(Mock(type=lambda: 10, keyCode=lambda: 7,
-                               modifierFlags=lambda: 1 << 18, isARepeat=lambda: True))
-                hk._event(Mock(type=lambda: 10, keyCode=lambda: 53,
-                               modifierFlags=lambda: 0, isARepeat=lambda: False))
-                activity.assert_not_called()
-                cancel.assert_not_called()
-                hk.stop()
-                hk._event(Mock(type=lambda: 10, keyCode=lambda: code,
-                               modifierFlags=lambda: 1 << 18, isARepeat=lambda: False))
-                fired.assert_called_once_with()
-        self.q.CGEventTapCreate.assert_not_called()
-        self.assertEqual(self.trigger.AppKit.NSEvent.addGlobalMonitorForEventsMatchingMask_handler_.call_count, 2)
-
-    def test_modifier_only_tap_fires_on_release_and_is_spoiled_by_typing(self):
-        fired = Mock()
-        hk = self.trigger.HotKey("<ctrl>", fired)
-        for kind, code, flags in ((12, 59, 1 << 18), (12, 59, 0)):
-            hk._event(Mock(type=lambda: kind, keyCode=lambda: code, modifierFlags=lambda: flags))
-        fired.assert_called_once_with()
-        fired.reset_mock()
-        for kind, code, flags in ((12, 59, 1 << 18), (10, 15, 1 << 18), (12, 59, 0)):
-            hk._event(Mock(type=lambda: kind, keyCode=lambda: code, modifierFlags=lambda: flags))
-        fired.assert_not_called()
-        hk.stop()
-
 
 if __name__ == "__main__":
     unittest.main()

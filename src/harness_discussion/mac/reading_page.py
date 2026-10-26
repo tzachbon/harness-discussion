@@ -2,13 +2,12 @@
 import AppKit
 
 from .. import hotkeys
-from . import trigger, ui
+from . import trigger, ui, window_keys
 
 SHORTCUT_TITLES = {"hotkey": "Read shortcut", "rewrite_hotkey": "Rewrite shortcut",
                    "dictate_hotkey": "Dictation shortcut (hold)"}
-WINDOW_KEYS = {hotkeys.parse("<cmd>+<key_50>"), hotkeys.parse("<shift>+<cmd>+<key_50>")}  # ⌘` and ⇧⌘`
-WINDOW_HINT = ("macOS also switches windows with this shortcut. To stop that, turn off “Move focus to next "
-               "window” in System Settings → Keyboard → Keyboard Shortcuts → Keyboard.")
+WINDOW_HINT = ("With Stage Manager on, macOS also switches windows with this shortcut. To stop that, turn off "
+               "“Move focus to next window” in System Settings → Keyboard → Keyboard Shortcuts → Keyboard.")
 
 
 class ReadingPage:
@@ -43,7 +42,7 @@ class ReadingPage:
             self.shortcut_labels[key].say(text)
         else:
             self.shortcut_labels[key].show(self.cfg[key])
-        self.shortcut_hints[key].setHidden_(hotkeys.parse(self.cfg[key]) not in WINDOW_KEYS)
+        self.shortcut_hints[key].setHidden_(hotkeys.parse(self.cfg[key]) not in window_keys.window_switch_keys())
 
     @property
     def hotkey_label(self):
@@ -55,7 +54,8 @@ class ReadingPage:
             return
         self._recording_key = key
         self.shortcut_labels[key].say("Press keys…")
-        self.app.apply(key, "")  # so pressing the current shortcut records it instead of running it
+        for name in hotkeys.SHORTCUTS:  # so pressing a bound shortcut records it instead of running or swallowing it
+            self.app.apply(name, "")
         peak = set()  # the most modifiers held at once; letting them all go with no key records them alone
 
         def on_key(event):
@@ -93,7 +93,8 @@ class ReadingPage:
             AppKit.NSEvent.removeMonitor_(self._recorder)
             self._recorder = None
             AppKit.NSNotificationCenter.defaultCenter().removeObserver_(self._closed)
-            self.app.apply(key, self.cfg[key])
+            for name in hotkeys.SHORTCUTS:
+                self.app.apply(name, self.cfg[name])
             self._show_shortcut(key)
 
     def _set_hotkey(self, spec, key="hotkey"):

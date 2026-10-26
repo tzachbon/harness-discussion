@@ -65,11 +65,12 @@ class Watcher:
         self.app.host.after(1000, self.tick)
 
     def _heal(self):
-        """A hold shortcut's event tap can fail at launch or right after a grant, and never retries itself."""
-        for name, key in (("rewrite", "rewrite_hotkey"), ("dictate", "dictate_hotkey")):
-            shortcut = self.app.host.shortcuts.get(name)
+        """A shortcut's event tap can fail at launch or right after a grant, and never retries itself."""
+        host = self.app.host
+        for key, shortcut in (("hotkey", host.hotkey), ("rewrite_hotkey", host.shortcuts.get("rewrite")),
+                              ("dictate_hotkey", host.shortcuts.get("dictate"))):
             if shortcut is not None and not shortcut.active:
-                log.info("%s shortcut inactive, binding again", name)
+                log.info("%s inactive, binding again", key)
                 self.app.apply(key, self.app.cfg[key])
 
     def _changed(self, now):

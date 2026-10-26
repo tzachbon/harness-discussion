@@ -199,7 +199,7 @@ class MacHost:
         """Replaces the read shortcut; "" turns it off."""
         if self.hotkey:
             self.hotkey.stop()
-        self.hotkey = HotKey(spec, on_hotkey) if spec else None
+        self.hotkey = HotKey(spec, on_hotkey, press=hotkeys.parse(spec)[1] is not None) if spec else None
 
     def set_shortcut(self, name, spec, fn, on_release=None, *, on_activity=None, on_cancel=None):
         """Replaces one of the writer's shortcuts; "" turns it off. on_release makes it a hold shortcut."""
@@ -211,7 +211,7 @@ class MacHost:
             if on_cancel is not None:
                 options["on_cancel"] = on_cancel
             if on_release is None and hotkeys.parse(spec)[1] is not None:
-                options["press"] = True  # the event tap a hold uses also sees keys macOS reserves, such as ⌘`
+                options["press"] = True  # the event tap sees and swallows keys macOS reserves, such as ⌘`
             self.shortcuts[name] = HotKey(spec, fn, on_release, **options)
 
     def mic_permission(self, then):
