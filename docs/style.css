@@ -35,6 +35,9 @@ h2 { font-size: clamp(40px, 5.4vw, 72px); }
 h3 { font-size: 22px; letter-spacing: -.02em; line-height: 1.2; font-weight: 700; }
 p { color: var(--muted); }
 code { font: 500 .88em var(--mono); background: var(--shell); padding: 2px 6px; border-radius: 6px; }
+.keys { display: inline-flex; gap: 4px; vertical-align: 1px; font: inherit; }
+.keys kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 5px;
+            border-radius: 5px; background: var(--off); color: var(--muted); font: 500 12px/1 "Plus Jakarta Sans", system-ui, sans-serif; }
 .eyebrow { display: inline-block; font: 500 10px/1 var(--mono); letter-spacing: .2em; text-transform: uppercase;
            padding: 7px 12px; border-radius: 999px; background: var(--surface); box-shadow: var(--amb); color: var(--muted); }
 .eyebrow b { color: var(--accent); font-weight: 500; }

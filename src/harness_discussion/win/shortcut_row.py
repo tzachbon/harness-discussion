@@ -4,6 +4,8 @@ import tkinter as tk
 from tkinter import ttk
 
 from .. import hotkeys
+from .bar_parts import FG, SUBTLE, fonts
+from .keycaps import Keys
 from .sources_ui import CARD
 from .trigger import MOD_VKS, VK
 
@@ -12,6 +14,7 @@ MOD_NAMES = {vk: name for name, codes in {"shift": (0x10, 0xA0, 0xA1), "ctrl": (
 MOD_SIDES = {0x10: (0xA0, 0xA1), 0x11: (0xA2, 0xA3), 0x12: (0xA4, 0xA5)}
 TK_MODS = {"shift": 0x1, "ctrl": 0x4, "alt": 0x20000}  # Tk's event.state bits on Windows
 KEYS = {vk: name for name, vk in VK.items()}  # Tk's keycode is the virtual key, the same under any layout
+KEYCAP = "#ebebeb"  # a keycap's fill on the white card
 TITLES = {"hotkey": "Read shortcut", "rewrite_hotkey": "Rewrite shortcut", "dictate_hotkey": "Hold to dictate"}
 
 
@@ -32,7 +35,8 @@ class ShortcutRow:
         widgets = self.shortcuts[key] = {
             "off": ttk.Button(row, text="Off", command=lambda: self._set_hotkey("", key)),
             "change": ttk.Button(row, text="Change…", command=lambda: self._record_hotkey(key)),
-            "label": ttk.Label(row, text=hotkeys.label(self.cfg[key]), style="Card.TLabel")}
+            "label": Keys(row, fonts(self.win)[1], FG, KEYCAP, SUBTLE)}
+        widgets["label"].show(self.cfg[key])
         widgets["off"].pack(side="right")
         widgets["change"].pack(side="right", padx=(0, 8))
         widgets["label"].pack(side="right", padx=(0, 8))
@@ -47,7 +51,7 @@ class ShortcutRow:
         self._stop_recording()
         self._recording = key
         self._held_mods, self._peak_mods = {}, set()
-        self.shortcuts[key]["label"]["text"] = "Press keys…"
+        self.shortcuts[key]["label"].say("Press keys…")
         self.shortcuts[key]["error"]["text"] = ""
         self.on_record(True)  # so pressing a current shortcut records it instead of acting on it
         self.win.focus_force()
@@ -62,7 +66,7 @@ class ShortcutRow:
             mods = set(self._held_mods.values())
             if len(mods) >= len(self._peak_mods):
                 self._peak_mods = mods
-            self.shortcuts[self._recording]["label"]["text"] = hotkeys.label(hotkeys.spec(mods)) + "…"
+            self.shortcuts[self._recording]["label"].show(hotkeys.spec(mods), "…")
         elif event.keycode not in MOD_VKS:  # a held modifier waits for the key
             key = KEYS.get(event.keycode) or f"key_{event.keycode}"
             mods = set(self._held_mods.values()) | {m for m, bit in TK_MODS.items() if event.state & bit}
@@ -84,7 +88,7 @@ class ShortcutRow:
         self.win.unbind("<KeyPress>")
         self.win.unbind("<KeyRelease>")
         for key, widgets in self.shortcuts.items():
-            widgets["label"]["text"] = hotkeys.label(self.cfg[key])
+            widgets["label"].show(self.cfg[key])
 
     def _set_hotkey(self, spec, key="hotkey"):
         self._stop_recording()
@@ -95,5 +99,5 @@ class ShortcutRow:
         if spec != self.cfg[key]:
             self._set(key, spec)
         for k, widgets in self.shortcuts.items():  # also ends a recording another row started
-            widgets["label"]["text"] = hotkeys.label(self.cfg[k])
+            widgets["label"].show(self.cfg[k])
         self.on_record(False)

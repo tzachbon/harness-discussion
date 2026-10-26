@@ -158,25 +158,25 @@ class WritingSettingsTest(unittest.TestCase):
                 w._record_hotkey("rewrite_hotkey")
                 ctrl, alt = AppKit.NSEventModifierFlagControl, AppKit.NSEventModifierFlagOption
                 handlers[0](event(AppKit.NSEventTypeFlagsChanged, ctrl | alt))
-                self.assertEqual(label.stringValue(), "⌃⌥…")
+                self.assertEqual(label.text, "⌃⌥…")
                 handlers[0](event(AppKit.NSEventTypeKeyDown, ctrl | alt, 14))
                 self.assertEqual(self.changes[-1], ("rewrite_hotkey", "<ctrl>+<alt>+e"))
-                self.assertEqual(label.stringValue(), "⌃⌥E")
+                self.assertEqual(label.text, "⌃⌥E")
                 w._record_hotkey("rewrite_hotkey")
                 handlers[1](event(AppKit.NSEventTypeKeyDown, 0, 14))  # a key alone is a shortcut too
                 self.assertEqual(self.changes[-1], ("rewrite_hotkey", "e"))
-                self.assertEqual(label.stringValue(), "E")
+                self.assertEqual(label.text, "E")
                 w._record_hotkey("rewrite_hotkey")
                 saved = len(self.changes)
                 handlers[2](event(AppKit.NSEventTypeKeyDown, AppKit.NSEventModifierFlagCommand, 53))  # Esc cancels
         finally:
             w.win = real
         self.assertEqual(len(self.changes), saved)
-        self.assertEqual(label.stringValue(), "E")
+        self.assertEqual(label.text, "E")
 
     def test_a_shortcut_another_row_uses_is_refused(self):
         self.win._set_hotkey(self.win.cfg["hotkey"], "rewrite_hotkey")
-        self.assertEqual(self.win.shortcut_labels["rewrite_hotkey"].stringValue(), "Used by Read shortcut")
+        self.assertEqual(self.win.shortcut_labels["rewrite_hotkey"].text, "Used by Read shortcut")
         self.assertNotIn("rewrite_hotkey", [k for k, _ in self.changes])
         self.win._set_hotkey("<cmd>+<shift>+r", "rewrite_hotkey")
         self.assertEqual(self.changes[-1], ("rewrite_hotkey", "<cmd>+<shift>+r"))
