@@ -13,6 +13,7 @@ import Quartz
 from .. import hotkeys
 from ..clicks import Clicks
 from ..held_shortcut import HeldShortcut
+from .keycodes import FLAGS, KEY_CODES, KEYPAD, MOD_CODES, SPECIAL
 
 MASK = (AppKit.NSEventMaskLeftMouseDown | AppKit.NSEventMaskLeftMouseUp |
         AppKit.NSEventMaskRightMouseDown | AppKit.NSEventMaskOtherMouseDown)
@@ -80,24 +81,6 @@ class SelectionTrigger:
         callAfter(lambda: self.on_selection(*(point or top_left(AppKit.NSEvent.mouseLocation()))))
 
 
-FLAGS = {"ctrl": AppKit.NSEventModifierFlagControl, "alt": AppKit.NSEventModifierFlagOption,
-         "shift": AppKit.NSEventModifierFlagShift, "cmd": AppKit.NSEventModifierFlagCommand}
-# ANSI key codes, so the shortcut follows the physical key under any keyboard layout (Hebrew, Russian...)
-KEY_CODES = {0: "a", 1: "s", 2: "d", 3: "f", 4: "h", 5: "g", 6: "z", 7: "x", 8: "c", 9: "v", 11: "b", 12: "q",
-             13: "w", 14: "e", 15: "r", 16: "y", 17: "t", 18: "1", 19: "2", 20: "3", 21: "4", 22: "6", 23: "5",
-             25: "9", 26: "7", 28: "8", 29: "0", 31: "o", 32: "u", 34: "i", 35: "p", 37: "l", 38: "j", 40: "k",
-             45: "n", 46: "m", 122: "f1", 120: "f2", 99: "f3", 118: "f4", 96: "f5", 97: "f6", 98: "f7",
-             100: "f8", 101: "f9", 109: "f10", 103: "f11", 111: "f12"}
-# keys that type no character, so the layout can't name them
-SPECIAL = {36: "↩", 48: "⇥", 49: "Space", 51: "⌫", 53: "⎋", 71: "⌧", 76: "⌤", 114: "Help", 115: "↖",
-           116: "⇞", 117: "⌦", 119: "↘", 121: "⇟", 123: "←", 124: "→", 125: "↓", 126: "↑",
-           105: "F13", 107: "F14", 113: "F15", 106: "F16", 64: "F17", 79: "F18", 80: "F19", 90: "F20"}
-KEYPAD = {65, 67, 69, 75, 78, 81, 82, 83, 84, 85, 86, 87, 88, 89, 91, 92}  # type the same as the main keys
-# Physical modifier keycodes and NX_DEVICE* masks from Apple's IOLLEvent.h.
-MOD_CODES = {59: ("ctrl", 0x1), 62: ("ctrl", 0x2000), 56: ("shift", 0x2), 60: ("shift", 0x4),
-             58: ("alt", 0x20), 61: ("alt", 0x40), 55: ("cmd", 0x8), 54: ("cmd", 0x10)}
-
-
 def event_mods(event):
     flags = event.modifierFlags()
     return {name for name, flag in FLAGS.items() if flags & flag}
@@ -137,6 +120,7 @@ class HotKey:
     def __init__(self, spec, on_hotkey, on_release=None, *, on_activity=None, on_cancel=None, press=False):
         self.keys, self.on_hotkey = hotkeys.parse(spec), on_hotkey  # parsed, so modifier order doesn't matter
         self.on_release, self._tap, self._spoiled = on_release, False, False
+        self._swallowed_at = self._since = float("-inf")  # NSEvent timestamps
         self._hold, self._closed = None, False
         if on_release is not None or press:
             options = {"on_activity": on_activity} if on_activity is not None else {}
@@ -168,23 +152,28 @@ class HotKey:
     def _modifiers_only(self, event, kind):
         """A tap fires once the chord is let go with no other key pressed, so ⌃⌥R doesn't also fire ⌃⌥."""
         if kind == AppKit.NSEventTypeKeyDown:
-            return self.spoil(event_mods(event))
+            if event_mods(event) & self.keys[0]:  # typing before the chord starts doesn't cancel it
+                self._tap, self._spoiled = False, True
+            return
         if kind != AppKit.NSEventTypeFlagsChanged:
             return
         mods, chord = frozenset(event_mods(event)), self.keys[0]
         if not mods >= chord:  # the chord ended
-            if self._tap:
+            now = event.timestamp()
+            if self._tap and not self._since < self._swallowed_at < now:
                 self.on_hotkey()
             self._tap = self._spoiled = False
+            self._since = now
         elif mods == chord and not self._spoiled:
             self._tap = True
         else:  # an extra modifier joined, so this hold is no longer a tap of the chord
             self._tap, self._spoiled = False, True
 
-    def spoil(self, mods):
-        """A key went down with `mods` held. Typing before the chord starts doesn't cancel it."""
+    def swallowed(self, mods, at):
+        """The event tap swallowed a key at `at`, on its own thread. Comparing event times, not arrival order,
+        spoils the hold that spans `at` even while this monitor still has older modifier events queued."""
         if mods & self.keys[0]:
-            self._tap, self._spoiled = False, True
+            self._swallowed_at = at
 
     def stop(self):
         if self._closed:
@@ -370,13 +359,13 @@ class NativeHold:
                     repeat = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGKeyboardEventAutorepeat)
                     down = kind == Quartz.kCGEventKeyDown
                     self.tracker.event(code, code, down, repeat=bool(repeat) or mods != self.tracker.mods)
-                    if self._swallow(code, down, bool(repeat), mods):
+                    if self._swallow(event, code, down, bool(repeat), mods):
                         return None
             except Exception:
                 self._loss()
             return event
 
-    def _swallow(self, code, down, repeat, mods):
+    def _swallow(self, event, code, down, repeat, mods):
         """The shortcut's key, from a fresh press with exactly its modifiers through that key's own key-up."""
         if code != self.tracker.primary:
             return False
@@ -388,8 +377,11 @@ class NativeHold:
             self._swallowed.discard(code)  # a fresh press after a missed key-up
             return False
         self._swallowed.add(code)
-        for tap in list(MODIFIER_TAPS):  # so releasing ⌃⌥D doesn't also fire a ⌃⌥ shortcut
-            tap.spoil(mods)
+        taps = list(MODIFIER_TAPS)  # so releasing ⌃⌥D doesn't also fire a ⌃⌥ shortcut
+        if taps:
+            at = AppKit.NSEvent.eventWithCGEvent_(event).timestamp()  # the clock the monitors' events use
+            for tap in taps:
+                tap.swallowed(mods, at)
         return True
 
     def stop(self):

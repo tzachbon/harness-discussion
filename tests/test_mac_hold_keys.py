@@ -128,15 +128,38 @@ class NativeMacKeys(unittest.TestCase):
         read = self.trigger.HotKey("<ctrl>+<alt>", fired)
         self.addCleanup(read.stop)
         self.make("<ctrl>+<alt>+d")
-        for code, flags in ((59, ctrl), (58, ctrl | alt)):
-            read._event(Mock(type=lambda: 12, keyCode=lambda: code, modifierFlags=lambda: flags))
-        self.assertFalse(self.event(12, 59, ctrl | 1))
-        self.assertFalse(self.event(12, 58, ctrl | alt | 1 | 0x20))
-        self.assertTrue(self.event(10, 2, ctrl | alt | 1 | 0x20))  # Read's monitor never sees this D
-        self.assertTrue(self.event(11, 2, ctrl | alt | 1 | 0x20))
-        read._event(Mock(type=lambda: 12, keyCode=lambda: 58, modifierFlags=lambda: 0))
-        fired.assert_not_called()
-        self.assertEqual(self.actions, ["down", "up"])
+        clock = self.trigger.AppKit.NSEvent.eventWithCGEvent_.return_value.timestamp
+        monitor = lambda at, code, flags: read._event(Mock(type=lambda: 12, keyCode=lambda: code,
+                                                           modifierFlags=lambda: flags, timestamp=lambda: at))
+        for queued in (False, True):  # Read's monitor sees the chord before the swallow, or only after it
+            with self.subTest(queued=queued):
+                self.actions.clear()
+                base = 10.0 * queued
+                if not queued:
+                    monitor(base + 1, 59, ctrl)
+                    monitor(base + 2, 58, ctrl | alt)
+                self.assertFalse(self.event(12, 59, ctrl | 1))
+                self.assertFalse(self.event(12, 58, ctrl | alt | 1 | 0x20))
+                clock.return_value = base + 3
+                self.assertTrue(self.event(10, 2, ctrl | alt | 1 | 0x20))  # Read's monitor never sees this D
+                self.assertTrue(self.event(11, 2, ctrl | alt | 1 | 0x20))
+                if queued:
+                    monitor(base + 1, 59, ctrl)
+                    monitor(base + 2, 58, ctrl | alt)
+                monitor(base + 4, 58, ctrl)
+                monitor(base + 5, 59, 0)
+                self.assertFalse(self.event(12, 58, ctrl | 1))
+                self.assertFalse(self.event(12, 59, 0))
+                fired.assert_not_called()
+                self.assertEqual(self.actions, ["down", "up"])
+        monitor(19, 59, ctrl)  # a plain tap, processed after a later hold's swallow, still fires
+        monitor(20, 58, ctrl | alt)
+        clock.return_value = 23
+        self.event(12, 59, ctrl | 1)
+        self.event(12, 58, ctrl | alt | 1 | 0x20)
+        self.assertTrue(self.event(10, 2, ctrl | alt | 1 | 0x20))
+        monitor(21, 59, 0)
+        fired.assert_called_once_with()
 
     def test_modifier_only_shortcut_swallows_nothing(self):
         self.make("<ctrl>+<alt>")
@@ -219,11 +242,11 @@ class NativeMacKeys(unittest.TestCase):
         fired = Mock()
         hk = self.trigger.HotKey("<ctrl>", fired)
         for kind, code, flags in ((12, 59, 1 << 18), (12, 59, 0)):
-            hk._event(Mock(type=lambda: kind, keyCode=lambda: code, modifierFlags=lambda: flags))
+            hk._event(Mock(type=lambda: kind, keyCode=lambda: code, modifierFlags=lambda: flags, timestamp=lambda: 0))
         fired.assert_called_once_with()
         fired.reset_mock()
         for kind, code, flags in ((12, 59, 1 << 18), (10, 15, 1 << 18), (12, 59, 0)):
-            hk._event(Mock(type=lambda: kind, keyCode=lambda: code, modifierFlags=lambda: flags))
+            hk._event(Mock(type=lambda: kind, keyCode=lambda: code, modifierFlags=lambda: flags, timestamp=lambda: 0))
         fired.assert_not_called()
         hk.stop()
 

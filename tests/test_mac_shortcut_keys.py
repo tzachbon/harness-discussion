@@ -13,7 +13,8 @@ from harness_discussion.mac import trigger, window_keys  # noqa: E402
 
 
 def key_event(code, flags=0, kind=AppKit.NSEventTypeKeyDown):
-    return mock.Mock(type=lambda: kind, keyCode=lambda: code, modifierFlags=lambda: flags, isARepeat=lambda: False)
+    return mock.Mock(type=lambda: kind, keyCode=lambda: code, modifierFlags=lambda: flags, isARepeat=lambda: False,
+                     timestamp=lambda: 0)
 
 
 class ShortcutKeyTest(unittest.TestCase):
@@ -100,6 +101,7 @@ class ShortcutKeyTest(unittest.TestCase):
         hk = object.__new__(trigger.HotKey)  # skips installing the system monitors
         hk.keys, hk.on_hotkey, hk.on_release, hk._held = hotkeys.parse(spec), mock.Mock(), on_release, None
         hk._tap = hk._spoiled = False
+        hk._swallowed_at = hk._since = float("-inf")
         return hk
 
     def test_modifiers_alone_fire_on_release_unless_a_key_joined(self):
