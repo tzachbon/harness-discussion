@@ -36,7 +36,9 @@ def place(w, x, y, above=None):
         top = y + 16 if y + 16 + height <= area.bottom else y - height - 14
     else:
         top = y if y + height <= area.bottom else above - height - 6
-    w.geometry(f"+{max(area.left, min(x - width // 2, area.right - width))}+{max(area.top, top)}")
+    left, top = max(area.left, min(x - width // 2, area.right - width)), max(area.top, top)
+    w.geometry(f"+{left}+{top}")
+    return left, top, left + width, top + height
 
 
 class Toast:
@@ -46,7 +48,7 @@ class Toast:
         self._hide_job = self._activity_job = self._menu_close_job = None
         self._hovered = self._busy = self._menu_open = False
         self._activity_frame = 0
-        self._menu_win = None
+        self._menu_win = self.bounds = None  # (left, top, right, bottom) while shown, safe to read off the UI thread
         self._action_buttons = []
         icons, text = self.fonts = fonts(root)
         w = self.win = floating(root)
@@ -106,7 +108,7 @@ class Toast:
 
         if x is None or y is None:
             x, y = self.win.winfo_pointerxy()
-        place(self.win, x, y, above)
+        self.bounds = place(self.win, x, y, above)
         self.win.deiconify()
         self._busy = bool(busy)
         if self._busy:
@@ -139,6 +141,7 @@ class Toast:
         self._cancel_activity()
         self._close_menu()
         self._busy = self._hovered = False
+        self.bounds = None
         try:
             self.win.withdraw()
         except tk.TclError:
