@@ -108,6 +108,20 @@ class NativeMacKeys(unittest.TestCase):
         self.assertFalse(self.event(11, 15, ctrl | 1))
         self.assertEqual(self.actions, [])
 
+    def test_a_missed_key_up_never_swallows_the_next_plain_press(self):
+        hold = self.make()
+        ctrl = 1 << 18
+        self.assertFalse(self.event(12, 59, ctrl | 1))
+        self.assertTrue(self.event(10, 15, ctrl | 1))
+        self.physical = set()  # R's key-up never arrives
+        hold.tracker.reconcile(hold._key_down)
+        self.assertFalse(self.event(12, 59, 0))
+        self.assertFalse(self.event(10, 15))
+        self.assertFalse(self.event(11, 15))
+        self.assertFalse(self.event(12, 59, ctrl | 1))
+        self.assertTrue(self.event(10, 15, ctrl | 1))
+        self.assertEqual(self.actions, ["down", "up", "down"])
+
     def test_a_swallowed_key_spoils_a_modifier_only_tap_of_its_chord(self):
         ctrl, alt = 1 << 18, 1 << 19
         fired = Mock()

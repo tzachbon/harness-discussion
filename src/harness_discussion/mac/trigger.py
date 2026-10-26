@@ -380,11 +380,12 @@ class NativeHold:
         """The shortcut's key, from a fresh press with exactly its modifiers through that key's own key-up."""
         if code != self.tracker.primary:
             return False
-        if code in self._swallowed:
+        if code in self._swallowed and (repeat or not down):
             if not down:
                 self._swallowed.discard(code)
             return True
         if not down or repeat or mods != self.tracker.mods:
+            self._swallowed.discard(code)  # a fresh press after a missed key-up
             return False
         self._swallowed.add(code)
         for tap in list(MODIFIER_TAPS):  # so releasing ⌃⌥D doesn't also fire a ⌃⌥ shortcut
