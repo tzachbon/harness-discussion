@@ -73,7 +73,7 @@
 
     <figure class="hero-clip rv">
       <div class="shell"><div class="core clip-core">
-        <video class="clip" src="shots/read.mp4" poster="shots/read-poster.png" width="760" height="378" autoplay muted loop playsinline preload="metadata"
+        <video class="clip" src="shots/read.mp4" poster="shots/read-poster.png" width="760" height="378" autoplay muted loop playsinline controls preload="metadata"
                aria-label="On a Mac, text is selected in a Notes window. The bar appears under it, Play starts reading, and each sentence shows as a caption above the bar."></video>
       </div></div>
       <figcaption class="src">Mac · the app's own windows over sample text · no sound</figcaption>
@@ -120,9 +120,17 @@
   }
   {
     const clips = document.querySelectorAll("video.clip");
-    if (matchMedia("(prefers-reduced-motion: reduce)").matches) clips.forEach(v => { v.pause(); v.removeAttribute("autoplay"); v.controls = true; });
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) clips.forEach(v => { v.pause(); v.removeAttribute("autoplay"); });
     else if ("IntersectionObserver" in window) {
-      const vo = new IntersectionObserver(es => es.forEach(e => e.isIntersecting ? e.target.play().catch(() => {}) : e.target.pause()), { threshold: .25 });
+      // a clip the visitor paused stays paused when it scrolls back into view
+      clips.forEach(v => {
+        v.addEventListener("pause", () => { if (!v.dataset.auto) v.dataset.held = "1"; delete v.dataset.auto; });
+        v.addEventListener("play", () => delete v.dataset.held);
+      });
+      const vo = new IntersectionObserver(es => es.forEach(({ target: v, isIntersecting }) => {
+        if (isIntersecting) { if (!v.dataset.held) v.play().catch(() => {}); }
+        else if (!v.paused) { v.dataset.auto = "1"; v.pause(); }
+      }), { threshold: .25 });
       clips.forEach(v => vo.observe(v));
     }
   }
