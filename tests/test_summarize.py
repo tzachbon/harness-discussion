@@ -253,8 +253,8 @@ class _App(app_summarize.Summaries):
         self.popup.set_summarize_progress = self.popup.progress.append
         self.popup.set_summary = lambda: setattr(self.popup, "summary", self.popup.summary + 1)
         self.chain = SimpleNamespace(pause=lambda: self.played.append("paused"))
-        with mock.patch.object(summarize, "status", return_value=status):
-            self._init_summaries()
+        self.status = mock.patch.object(summarize, "status", return_value=status).start()
+        self._init_summaries()
         self.summary_server = SimpleNamespace(summarize=lambda text, language, about="": self.abouts.append(about)
                                               or f"{language}: short.",
                                               stop=lambda: self.played.append("server stopped"))
@@ -273,6 +273,9 @@ class _App(app_summarize.Summaries):
 
 
 class FlowTest(unittest.TestCase):
+    def setUp(self):
+        self.addCleanup(mock.patch.stopall)  # _App patches summarize.status for the whole test
+
     def test_a_ready_model_summarizes_and_reads_the_summary(self):
         app = _App("ready")
         app.summarize("שלום עולם, זה טקסט ארוך", None)
@@ -342,8 +345,8 @@ class FlowTest(unittest.TestCase):
         def fake(progress, cancelled):
             progress(50, 100)
             progress(100, 100)
-        with mock.patch.object(summarize, "download", fake), mock.patch.object(summarize, "status",
-                                                                                 return_value="ready"):
+            app.status.return_value = "ready"
+        with mock.patch.object(summarize, "download", fake):
             app.summarize("text", None)
             while app.drain() != "summarize_done":
                 pass
@@ -369,6 +372,27 @@ class FlowTest(unittest.TestCase):
             app._summarize_downloaded(OSError("no route"))
             app._summarize_downloaded(summarize.Cancelled("x"))
         self.assertEqual(app.notes, ["Could not download the Summarize model. Check your connection and try again."])
+
+    def test_a_model_removed_after_start_asks_to_download_again(self):
+        app = _App("ready")
+        app.answer = False
+        app.status.return_value = "missing"
+        app.summarize("text", None)
+        self.assertEqual(app.confirms, ["Download the Summarize model?"])
+        self.assertEqual((app.popup.summary, app.summarize_state()), (0, ("missing", None)))
+
+    def test_errors_show_in_the_toast_when_the_writer_has_one(self):
+        app = _App("ready")
+        app.toasts = []
+        app.toast = object()
+        app._toast = app.toasts.append
+        app.summary_server.summarize = lambda text, language, about="": (_ for _ in ()).throw(summarize.Error("Too slow."))
+        app.summarize("text", "en-US")
+        app.drain()
+        app.status.return_value = "unsupported"
+        app.summarize("text", "en-US")
+        self.assertEqual(app.toasts, ["Could not summarize. Too slow.", "Summarize isn't available on this computer."])
+        self.assertEqual(app.notes, [])
 
 
 if __name__ == "__main__":
