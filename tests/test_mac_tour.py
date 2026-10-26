@@ -103,7 +103,7 @@ class TourWindowTest(_TourCase):
 
     def test_the_done_screen_lists_every_step(self):
         self.t.show(view(self.app, None, progress={"welcome": "tried", "voice": "skipped"}))
-        self.assertEqual(len(self.t.done_rows), 7)
+        self.assertEqual(len(self.t.done_rows), 8)
         self.assertIsNone(self.t.box)
 
     def test_every_step_draws_and_refreshes(self):
@@ -245,11 +245,11 @@ class ShortcutRowTest(_TourCase):
     def test_the_tour_reuses_the_settings_recorder(self):
         from harness_discussion.mac.reading_page import ReadingPage
         self.assertIsInstance(self.t, ReadingPage)
-        self.assertEqual(self.label.stringValue(), hotkeys.label(self.app.cfg["rewrite_hotkey"]))
+        self.assertEqual(self.label.text, hotkeys.label(self.app.cfg["rewrite_hotkey"]))
 
     def test_a_conflict_is_refused_and_a_free_chord_saves(self):
         self.t._set_hotkey(self.app.cfg["hotkey"], "rewrite_hotkey")
-        self.assertEqual(self.label.stringValue(), "Used by Read shortcut")
+        self.assertEqual(self.label.text, "Used by Read shortcut")
         self.assertEqual(self.app.actions, [])
         self.t._set_hotkey("<ctrl>+<alt>+e", "rewrite_hotkey")
         self.assertEqual(self.app.actions, [("shortcut", ("rewrite_hotkey", "<ctrl>+<alt>+e"))])
@@ -265,10 +265,10 @@ class ShortcutRowTest(_TourCase):
     def test_refresh_keeps_a_conflict_and_follows_outside_changes(self):
         self.t._set_hotkey(self.app.cfg["hotkey"], "rewrite_hotkey")
         self.t.refresh(view(self.app, "rewrite"))
-        self.assertEqual(self.label.stringValue(), "Used by Read shortcut")
+        self.assertEqual(self.label.text, "Used by Read shortcut")
         self.app.cfg["rewrite_hotkey"] = "<ctrl>+<alt>+e"
         self.t.refresh(view(self.app, "rewrite"))
-        self.assertEqual(self.label.stringValue(), hotkeys.label("<ctrl>+<alt>+e"))
+        self.assertEqual(self.label.text, hotkeys.label("<ctrl>+<alt>+e"))
 
     def test_a_user_close_after_change_and_esc_still_calls_back(self):
         self.t._record_hotkey("rewrite_hotkey")

@@ -7,6 +7,7 @@ if sys.platform != "win32":
 
 from types import SimpleNamespace
 from unittest.mock import patch
+from _ctypes import COMError
 
 from tests.win_edit_fakes import Document, Range, target
 
@@ -82,6 +83,20 @@ class Observe(unittest.TestCase):
         self.assertEqual(field.caret, (units(field.text), units(field.text)))
         self.assertEqual((field.app_name, field.label, field.rect), ("notepad.exe", "Notepad", (10, 20, 410, 220)))
 
+    def test_chromium_mixed_direction_fields_are_not_observed(self):
+        """Chromium reports such a line in visual order ("שלום 10 עולם" reads " עולם10שלום "), so a check would send,
+        and a whole-field rewrite paste back, reordered text."""
+        for text, framework, readable in (("שלום 10 עולם", "Chrome", False), ("ok\nשלום abc", "Chrome", False),
+                                          ("שלום עולם ,ואז", "Chrome", True), ("mixed שלום 10", "Win32", True),
+                                          ("plain words", "Chrome", True), ("﻿plain words", "Chrome", True),
+                                          ("שלום мир", "Chrome", False)):
+            with self.subTest(text=text, framework=framework):
+                document = LiveDocument(text)
+                document.FrameworkId = framework
+                with target(document):
+                    field = self.edit.observe()
+                self.assertEqual(field is not None, readable)
+
     def test_refuses_our_own_window_before_asking_uia(self):
         document = LiveDocument("some text here")
         with target(document), patch.object(self.edit.os, "getpid", return_value=9), \
@@ -108,6 +123,8 @@ class Place(unittest.TestCase):
     def setUp(self):
         from harness_discussion.win import edit
         self.edit = edit
+        edit._placed[:] = None, {}
+        edit._observed[:] = 0.0, None
         exe = patch.object(edit, "_exe", return_value="notepad.exe")
         exe.start()
         self.addCleanup(exe.stop)
@@ -134,6 +151,68 @@ class Place(unittest.TestCase):
             self.assertEqual(len(self.edit.bounds(field, [self.span(field, "goes")])[0]), 1)
             self.assertIsNone(self.edit.bounds(field, [(units("we "), units("we 👨"), "👨")])[0])
 
+    def test_bounds_right_after_observe_reads_the_field_once(self):
+        document = LiveDocument("i thinks so ok")
+        with target(document):
+            real, calls = self.edit._inspect, []
+            with patch.object(self.edit, "_inspect", side_effect=lambda *a: calls.append(a) or real(*a)):
+                field = self.edit.observe()
+                self.edit.bounds(field, [self.span(field, "thinks")])
+            self.assertEqual(len(calls), 1)
+            with patch.object(self.edit.time, "monotonic", return_value=self.edit.time.monotonic() + 1), \
+                    patch.object(self.edit, "_inspect", side_effect=lambda *a: calls.append(a) or real(*a)):
+                self.edit.bounds(field, [self.span(field, "thinks")])  # a later call reads the field again
+            self.assertEqual(len(calls), 2)
+
+    def test_an_unchanged_field_places_only_its_first_span_again(self):
+        """An idle field is polled twice a second: placing every span each time cost 10 % of a core. The first span
+        is placed each poll, since it moves with any scroll."""
+        document = LiveDocument("i thinks so ok and thinks again and thinks once more")
+        with target(document):
+            field = self.edit.observe()
+            at = [i for i in range(len(document.text)) if document.text.startswith("thinks", i)]
+            spans = [(a, a + 6, "thinks") for a in at]
+            first = self.edit.bounds(field, spans)
+            whole, placed = LiveRange.GetBoundingRectangles, []
+            def rects(self):
+                if (self.start, self.end) != (0, len(document.text)):
+                    placed.append(self.start)  # a span, not the whole document
+                return whole(self)
+            with patch.object(LiveRange, "GetBoundingRectangles", rects):
+                self.assertEqual(self.edit.bounds(field, spans), first)
+                self.assertEqual(placed, [at[0]])
+                document.text += "!"
+                field = self.edit.observe()
+                self.assertEqual(self.edit.bounds(field, spans), first)
+                self.assertEqual(sorted(placed[1:]), at)
+
+    def test_a_scroll_that_keeps_the_box_the_same_places_again(self):
+        """A long single-line input clips its document rectangle to the box, so only the text inside moves."""
+        document = LiveDocument("i thinks so ok")
+        whole = LiveRange.GetBoundingRectangles
+        shift = [0]
+        def rects(self):
+            if (self.start, self.end) == (0, len(document.text)):
+                return [SimpleNamespace(left=0, top=0, right=400, bottom=18)]  # the box, the same at any scroll
+            return [SimpleNamespace(left=r.left - shift[0], top=r.top, right=r.right - shift[0], bottom=r.bottom)
+                    for r in whole(self)]
+        with target(document), patch.object(LiveRange, "GetBoundingRectangles", rects):
+            field = self.edit.observe()
+            before = self.edit.bounds(field, [self.span(field, "thinks")])
+            shift[0] = 30
+            self.assertNotEqual(self.edit.bounds(field, [self.span(field, "thinks")]), before)
+
+    def test_a_document_whose_rectangles_fail_still_places_its_spans(self):
+        document = LiveDocument("i thinks 10 ok")
+        whole = LiveRange.GetBoundingRectangles
+        def rects(self):
+            if (self.start, self.end) == (0, len(document.text)):
+                raise COMError(-2147418113, "Catastrophic failure", None)
+            return whole(self)
+        with target(document), patch.object(LiveRange, "GetBoundingRectangles", rects):
+            field = self.edit.observe()
+            self.assertEqual(len(self.edit.bounds(field, [self.span(field, "thinks")])[0]), 1)
+
     def test_changed_text_places_nothing_and_hidden_text_has_no_rectangles(self):
         document = LiveDocument("i thinks so ok")
         with target(document):
@@ -157,6 +236,20 @@ class Place(unittest.TestCase):
             field = self.edit.observe()
             self.assertEqual(self.edit.bounds(field, [self.span(field, "thinks")]), [None])
         self.assertLessEqual(len(moves), 2 * 12)
+
+    def test_a_span_whose_rectangles_fail_is_unplaced_and_the_rest_still_drawn(self):
+        """Notepad raises "Catastrophic failure" for the number in a Hebrew line."""
+        document = LiveDocument("i thinks 10 ok")
+        real = LiveRange.GetBoundingRectangles
+        def rects(self):
+            if document.text[self.start:self.end] == "10":
+                raise COMError(-2147418113, "Catastrophic failure", None)
+            return real(self)
+        with target(document), patch.object(LiveRange, "GetBoundingRectangles", rects):
+            field = self.edit.observe()
+            placed = self.edit.bounds(field, [self.span(field, "10"), self.span(field, "thinks")])
+        self.assertIsNone(placed[0])
+        self.assertEqual(len(placed[1]), 1)
 
     def test_observe_and_bounds_never_use_the_clipboard_or_keys(self):
         document = LiveDocument("i thinks so ok")
@@ -255,6 +348,21 @@ class MarksTest(unittest.TestCase):
         self.root.update_idletasks()
         self.assertEqual(len(self.marks._strips), 3)
         self.assertEqual([w.state() for w in self.marks._strips], ["normal", "withdrawn", "withdrawn"])
+
+    def test_checking_strips_are_grey_click_through_and_never_hit(self):
+        from harness_discussion.win.captions import _get_parent, _get_style
+        self.marks.show([("a", (10, 20, 50, 38))], None, checking=[(0, 60, 200, 78)])
+        self.root.update_idletasks()
+        grey = self.marks._checks[0]
+        self.assertEqual(grey.geometry(), "200x2+0+77")
+        self.assertEqual(grey.cget("bg"), self.marks_module.CHECKING)
+        self.assertEqual(_get_style(_get_parent(grey.winfo_id()), -20) & self.marks_module.CLICK_THROUGH,
+                         self.marks_module.CLICK_THROUGH)
+        self.assertIsNone(self.marks.hit(100, 70))
+        self.assertEqual(self.marks._strips[0].state(), "normal")
+        self.marks.show([], None)
+        self.root.update_idletasks()
+        self.assertEqual(grey.state(), "withdrawn")
 
     def test_hit_finds_the_word_or_the_badge(self):
         self.marks.show([("a", (10, 20, 50, 38)), ("a", (0, 40, 30, 58))], (400, 100, 3))

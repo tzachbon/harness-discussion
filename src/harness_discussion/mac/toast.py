@@ -9,9 +9,9 @@ from .popup import _Button, _Hover, _cocoa_y, _icon_button, _screen_at, build_me
 HIDE_S = 6.0
 WAVE_BARS, BAR, GAP, WAVE_H = 9, 2.5, 2.5, 16  # as Windows: rounded bars of the latest levels, newest on the right
 
-def _close_button(fn):
+def _close_button(fn, description="Cancel"):
     """× as the system xmark, so it stays centered and crisp instead of a text glyph."""
-    b = _icon_button("xmark", "Cancel", fn, tint=AppKit.NSColor.colorWithWhite_alpha_(1, 0.75), size=22,
+    b = _icon_button("xmark", description, fn, tint=AppKit.NSColor.colorWithWhite_alpha_(1, 0.75), size=22,
                      fill=AppKit.NSColor.colorWithWhite_alpha_(1, 0.12))
     b.setSymbolConfiguration_(AppKit.NSImageSymbolConfiguration.configurationWithPointSize_weight_(
         10, AppKit.NSFontWeightBold))
@@ -116,8 +116,9 @@ class Toast:
                 entries = action
                 button = _action_button(f"{title} ▾", lambda s, entries=entries: self._menu(s, entries))
             else:
-                make = _close_button if title == "×" else lambda fn: _action_button(title, fn)
-                button = make(lambda _s, fn=action: (self.hide(), fn()))
+                callback = lambda _s, fn=action: (self.hide(), fn())
+                button = (_close_button(callback, "Cancel" if busy else "Dismiss") if title == "×"
+                          else _action_button(title, callback))
             self.row.addArrangedSubview_(button)
             self.actions.append(button)
         self.label.setStringValue_(message)

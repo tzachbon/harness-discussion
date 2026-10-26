@@ -118,6 +118,21 @@ class Module(unittest.TestCase):
         self.assertEqual(caught.exception.code, "realtime_start_failed")
         self.assertEqual(diag["peer_teardown_error"], "OSError")
 
+    def test_cancel_during_streaming_closes_the_peer_and_frees_the_transport(self):
+        pc = MagicMock()
+        pc.createOffer, pc.setLocalDescription, pc.close = AsyncMock(), AsyncMock(), AsyncMock()
+        pc.connectionState = "connecting"
+        started = threading.Event()
+        with patch.object(stt, "RTCPeerConnection", return_value=pc), patch.object(stt, "AppServer") as server, \
+                self.assertRaises(writer.Cancelled):
+            server.return_value.call.side_effect = lambda *a, **k: started.set()  # cancel once streaming begins
+            server.return_value.events.get.side_effect = queue.Empty
+            started_at = time.monotonic()
+            stt.transcribe(wav(), cancelled=started.is_set)
+        self.assertLess(time.monotonic() - started_at, 5)
+        pc.close.assert_awaited_once()
+        self.assertFalse(stt._busy.locked())
+
     def test_rejected_calls_are_logged(self):
         with self.assertRaises(ValueError):
             stt.transcribe(wav(), prompt="x" * 3000)

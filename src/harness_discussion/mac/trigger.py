@@ -2,8 +2,8 @@
 
 Coordinates are top-left based on the main screen, in points, the way the core and popup use them.
 """
-import time
 import threading
+import time
 
 import AppKit
 import CoreFoundation as CF
@@ -16,6 +16,8 @@ from ..held_shortcut import HeldShortcut
 
 MASK = (AppKit.NSEventMaskLeftMouseDown | AppKit.NSEventMaskLeftMouseUp |
         AppKit.NSEventMaskRightMouseDown | AppKit.NSEventMaskOtherMouseDown)
+KEY_MASK = AppKit.NSEventMaskKeyDown | AppKit.NSEventMaskFlagsChanged
+SELECT_KEYS = {115, 116, 119, 121, 123, 124, 125, 126}  # Home, Page Up, End, Page Down, the arrows
 
 
 def top_left(point):
@@ -29,12 +31,13 @@ class SelectionTrigger:
     def __init__(self, on_selection, on_press):
         self.on_selection, self.on_press = on_selection, on_press
         self._clicks = Clicks(AppKit.NSEvent.doubleClickInterval())
-        self._monitors = []
+        self._monitors, self._keyed = [], False
 
     def start(self):
         if self._monitors:
             return
         self._monitors.append(AppKit.NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(MASK, self._event))
+        self._monitors.append(AppKit.NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(KEY_MASK, self._key))
 
         def local(event):  # clicks on our own windows, which the global monitor never sees
             self._event(event)
@@ -55,6 +58,26 @@ class SelectionTrigger:
             self.on_press(x, y)
         elif kind == AppKit.NSEventTypeLeftMouseUp and self._clicks.up(x, y, time.monotonic()) and event.window() is None:
             self.on_selection(x, y)  # a drag or multi-click in another app
+
+    def _key(self, event):
+        """⇧ with an arrow, Home, End or a page key, or ⌘A, in another app. Fires once every modifier is up,
+        so holding ⇧ to grow the selection reads it once."""
+        mods = event_mods(event)
+        if event.type() == AppKit.NSEventTypeKeyDown:
+            code = event.keyCode()
+            self._keyed = ("shift" in mods and code in SELECT_KEYS) or (mods == {"cmd"} and code == 0)
+        elif self._keyed and not mods:
+            self._keyed = False
+            threading.Thread(target=self._at_selection, daemon=True).start()  # Accessibility can block
+
+    def _at_selection(self):
+        """Fires on the main thread at the selected text, its field or its window. The pointer is the last resort,
+        as a pointer resting on the bar would make the core take the selection for a click on the bar."""
+        from PyObjCTools.AppHelper import callAfter  # here, so tests can load this module with stub frameworks
+        from . import selection
+        time.sleep(0.08)  # let the app finish updating its selection
+        point = selection.bounds()
+        callAfter(lambda: self.on_selection(*(point or top_left(AppKit.NSEvent.mouseLocation()))))
 
 
 FLAGS = {"ctrl": AppKit.NSEventModifierFlagControl, "alt": AppKit.NSEventModifierFlagOption,
@@ -104,17 +127,18 @@ def key_name(code):
 
 class HotKey:
     """Watches key-downs for one shortcut. In another app it can't swallow the key, so that app sees it too.
-    With `on_release`, it also reports when the key or one of its modifiers comes up, for hold shortcuts."""
+    With `on_release`, it also reports when the key or one of its modifiers comes up, for hold shortcuts.
+    `press` watches a keyed shortcut on the event tap instead, which also sees keys macOS reserves, such as ⌘`."""
 
-    def __init__(self, spec, on_hotkey, on_release=None, *, on_activity=None, on_cancel=None):
+    def __init__(self, spec, on_hotkey, on_release=None, *, on_activity=None, on_cancel=None, press=False):
         self.keys, self.on_hotkey = hotkeys.parse(spec), on_hotkey  # parsed, so modifier order doesn't matter
         self.on_release, self._tap, self._spoiled = on_release, False, False
         self._hold, self._closed = None, False
-        if on_release is not None:
+        if on_release is not None or press:
             options = {"on_activity": on_activity} if on_activity is not None else {}
             if on_cancel is not None:
                 options["on_cancel"] = on_cancel
-            self._hold = NativeHold(spec, on_hotkey, on_release, **options)
+            self._hold = NativeHold(spec, on_hotkey, on_release or (lambda: None), press=press, **options)
             return
         mask = AppKit.NSEventMaskKeyDown
         if self.keys[1] is None:
@@ -173,14 +197,14 @@ class HotKey:
 class NativeHold:
     """Observe input and binding health independently of the AppKit main loop."""
 
-    def __init__(self, spec, on_down, on_up, *, on_activity=None, on_cancel=None):
+    def __init__(self, spec, on_down, on_up, *, on_activity=None, on_cancel=None, press=False):
         mods, key = hotkeys.parse(spec)
         primary = (next(code for code, name in KEY_CODES.items() if name == key)
                    if key in KEY_CODES.values() else int(key[4:]) if key else None)
         keymap = {code: name for code, (name, _) in MOD_CODES.items()}
         if primary is not None:
             keymap[primary] = primary
-        self.tracker = HeldShortcut(mods, primary, keymap, on_down, on_up)
+        self.tracker = HeldShortcut(mods, primary, keymap, on_down, on_up, press=press)
         self.on_activity, self.on_cancel = on_activity, on_cancel
         self._closed = False
         self._tap = self._source = self._loop = None

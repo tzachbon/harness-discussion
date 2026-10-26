@@ -2,7 +2,7 @@
 import logging
 import threading
 
-from . import lang, summarize
+from . import lang, summarize, writer
 
 log = logging.getLogger("harness_discussion")
 
@@ -43,10 +43,11 @@ class Summaries:
         self.popup.set_summary()
         tag = lang_tag or lang.detect(text)
         language = lang.name(tag) or "the language of the text"
+        about = writer.about(self.cfg)
 
         def work():
             try:
-                result = self.summary_server.summarize(text, language)
+                result = self.summary_server.summarize(text, language, about=about)
             except Exception as e:
                 result = e
             self.events.put(("summary", rid, gen, result, lang_tag))

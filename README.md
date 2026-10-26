@@ -31,7 +31,8 @@ Harness Discussion reads with Cursor's voices through your Cursor desktop sign-i
 - **You set the order.** Settings → Voices lists the sources in reading order. Turn each one on or off, move it up or down, pick its voice, and test it. A source that needs installing or a sign-in shows a button that opens the download page or starts the sign-in. The bar's source menu moves a source to the top. Picked during a read, it takes over from the sentence being read.
 - **Summarize.** ✦ next to Play summarizes the selection on your computer with Qwen3-4B through [llama.cpp](https://github.com/ggml-org/llama.cpp), then reads the summary. The first click asks to download the model once (2.5 GB, verified by SHA-256). Settings → Summarize shows its status and removes it.
 - **Check as I type.** On with Writing: when you pause, the default mode's changes to the line are underlined. Click one to apply it, or press the rewrite shortcut with nothing selected to apply all.
-- **Rewrite in place.** Over text you can edit, ✎ on the bar, Ctrl+Shift+E on Windows, or ⌥⌘E on a Mac rewrites the selection with the default mode and pastes it back. Modes are Fix errors, Message, Email, Improve writing, Clean dictation, and your own. A toast offers Undo, Review (keep or revert each change), and another mode. Press the rewrite shortcut twice quickly to pick a mode first. Cancel on the toast, or Esc, stops it. Cursor, Codex, then the local Qwen3-4B model rewrite, in the order you set. On for new installs; turn it off in Settings → Writing.
+- **Rewrite in place.** Over text you can edit, ✎ on the bar, Ctrl+Shift+E on Windows, or ⌥⌘E on a Mac rewrites the selection with the default mode and pastes it back. Modes are Fix errors, Message, Email, Improve writing, Clean dictation, and your own. A toast offers Undo, Review (keep or revert each change), and another mode. Click × to dismiss the result on either platform. Press the rewrite shortcut twice quickly to pick a mode first. Cancel on the toast, or Esc, stops it. Cursor, Codex, then the local Qwen3-4B model rewrite, in the order you set. On for new installs; turn it off in Settings → Writing.
+- **About you.** A short note about you, plus today's date and time zone, goes with every rewrite and summary. Set it in the tour or Settings → General.
 - **Dictation.** Hold Ctrl+Shift+D on Windows (⌥⌘D on Mac), speak, then release. Local (Whisper Small, downloaded in Settings → Dictation) is tried first, then enabled cloud sources; the dictation mode tidies the result before insertion, preferring the enabled, downloaded Local writing model. Pick the input device in Settings → Dictation; input bars show while recording. Esc or × stops it. *Clean dictation* removes fillers and formats spoken steps as numbered lists, including corrected numbers. Settings → Dictation sets its own mode; custom prompts come from Writing → Modes. Turn off *Tidy dictation after transcribing* for raw text. A short tap does nothing. Uses the Writing switch. Windows support is experimental; live English, Hebrew, and mixed speech acceptance is pending ([#92](https://github.com/tzachbon/harness-discussion/issues/92)).
 - **Pause, resume, stop, skip.** ⏸ pauses and ▶ continues from the same spot. ■ stops. ⏮ and ⏭ read again from the previous or next sentence.
 - **Read shortcut.** Ctrl+Alt+R on Windows, ⌥⌘R on a Mac, reads the selection at once and shows the bar at the pointer. Press it again to stop. Change it or turn it off in Settings → Reading.
@@ -50,7 +51,7 @@ Images show the current Windows UI with sample text. [How the promotional images
 1. Download **[HarnessDiscussion-Setup.exe](https://github.com/tzachbon/harness-discussion/releases/latest/download/HarnessDiscussion-Setup.exe)** and run it. It installs for your user only and needs no admin rights.
 2. The installer isn't code-signed, so SmartScreen may warn you. Choose *More info*, then *Run anyway*.
 3. Optional: sign in to the [Cursor](https://cursor.com) desktop app, or install the [Codex CLI](https://github.com/openai/codex) (`npm i -g @openai/codex`) and sign in once with `codex login`. Without either, the app uses the Edge and Windows voices.
-4. On first launch, a short tour has you try reading, rewriting, Review, dictation, and Check as I type on sample text, and change the shortcuts. **Take the Tour** in the tray menu replays it.
+4. On first launch, a short tour has you try reading, rewriting, Review, dictation, and Check as I type on sample text, change the shortcuts, and add an About you note. **Take the Tour** in the tray menu replays it.
 
 Requirements: Windows 11, 64-bit.
 
@@ -124,7 +125,8 @@ Open **Settings** from the bar's **…** menu, the tray or menu bar icon, or by 
 - **Prepare speech as soon as I select text**: off by default. When Cursor or Edge reads first, the app requests the opening's audio as soon as the bar appears. This sends those sentences to Cursor or Microsoft before you press play.
 - **Speech-to-text server**: see [STT.md](STT.md).
 - **Writing**: turns rewriting on or off, and sets the default mode, the rewrite shortcut, and the sources in order with each one's model and effort. The modes editor adds, renames, and deletes your own modes. Built-in modes keep their name, and Reset puts back their instructions.
-- **Dictation**: the transcript sources in order (Local first by default), local model download, the cleanup switch and local preference, its own mode selector (including custom modes), the hold shortcut, and the input device selector. Live input bars appear while recording, with × to cancel. Dictation finishes quietly after insertion. With no safe input target, it automatically copies the result to the clipboard. On Windows, Microphone settings opens the system privacy page.
+- **Dictation**: source order (Local first by default), local model download, cleanup and local preference, its own mode (including custom modes), hold shortcut, and input device. Input bars show while recording; × cancels. Dictation inserts quietly or copies to the clipboard without a safe target. Windows Microphone settings opens system privacy.
+  If microphone shutdown stalls, captured audio still transcribes. Restart if the microphone stays unavailable.
 - **Shortcuts**: Change… records the next key you press, alone or with modifiers. Esc keeps the current shortcut. Holding modifiers such as Ctrl+Win on Windows or ⌃⌥ on Mac and letting go without a key records them alone. That shortcut fires when you let go, unless you pressed another key while holding them. A hold shortcut starts once they are all down. On a Mac, ⌘` also switches windows unless you turn off “Move focus to next window” in System Settings → Keyboard → Keyboard Shortcuts → Keyboard.
 
 Settings are saved in `%APPDATA%\harness-discussion\settings.json`, next to a small `harness-discussion.log`.
@@ -160,15 +162,7 @@ Use *Settings > Apps > Harness Discussion*. This removes the app, its sign-in ta
 
 ## Known limitations
 
-- Codex's realtime API is marked experimental. A Codex update can break it, and the next source then reads.
-- Cursor speech uses the same call as the Cursor desktop app. A Cursor update can change it, and the next source then reads.
-- Codex reads a whole selection in one session, in pieces of up to 420 characters, with a short pause between pieces. It reads in its own words: links become site names, file paths become file names, and commit hashes are skipped. Other voices first read whole sentences up to a third of the selection's words or 30 words, whichever is fewer; finishing the last sentence can take it to 60 words, never more, and a longer first sentence reads alone. They read the rest in pieces of up to 5,000 characters, preparing the next while the current one plays. Voice, language, and speed changes apply to the next complete selection.
-- In testing, 5 of 16 long Codex reads had a fault: 2 lost the connection, 1 stopped early, and 2 said "Read it." aloud between pieces. Silence falls back automatically. An early stop does not.
-- When Codex reads first, each popup shown pre-starts a short Codex voice session.
-- Choosing a language from the menu moves keyboard focus away from the source app. The text is already captured.
-- Only mouse selections trigger the bar. Keyboard selections (Shift+arrows) don't.
-- Kokoro's first sentence after the app starts takes about 2 seconds while the model loads.
-- Pausing the Windows voice takes effect after about a second, because SAPI keeps playing audio it has already buffered. Codex and Edge pause at once.
+See [docs/known-limitations.md](docs/known-limitations.md): Codex and Cursor speech can break with their updates, how long selections are split, and a few platform quirks.
 
 ## Run from source
 

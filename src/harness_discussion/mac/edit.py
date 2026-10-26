@@ -18,11 +18,13 @@ from CoreFoundation import CFEqual, CFRangeMake
 
 from .. import edit_logic, live
 from ..edit_logic import Context
-from . import pasteboard, permission, selection
+from . import layout, pasteboard, permission, selection
+from .layout import _cf_range
 
 KEY_V, KEY_LEFT, KEY_RIGHT = 9, 123, 124
 EDITABLE_ROLES = {"AXTextArea", "AXTextField", "AXComboBox", "AXSearchField"}
 PASTE_ACK_S = 1.0
+SELECT_SETTLE_S = 0.3  # Chromium reports a set AXSelectedTextRange back one read late
 MAX_DOCUMENT = 1_000_000
 NEWLINE = "\n"
 
@@ -241,16 +243,22 @@ def collapse():
 # Terminals expose scrollback as an editable text area, which must never be sent anywhere.
 TERMINALS = {"com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable", "net.kovidgoyal.kitty",
              "io.alacritty", "org.alacritty", "com.github.wez.wezterm", "com.mitchellh.ghostty"}
+# Chromium browsers lay out text for accessibility only for a screen reader. Electron apps need no more than
+# AXManualAccessibility, and native apps must not get this: it slows window animations in some.
+CHROMIUM_BROWSERS = {"com.google.Chrome", "com.google.Chrome.beta", "com.google.Chrome.dev", "com.google.Chrome.canary",
+                     "org.chromium.Chromium", "com.microsoft.edgemac", "com.microsoft.edgemac.Beta",
+                     "com.microsoft.edgemac.Dev", "com.microsoft.edgemac.Canary", "com.brave.Browser",
+                     "com.brave.Browser.beta", "com.brave.Browser.nightly", "company.thebrowser.Browser",
+                     "com.vivaldi.Vivaldi", "com.operasoftware.Opera"}
+_enhanced = set()
+
+def _enhance(pid, bundle):
+    if bundle in CHROMIUM_BROWSERS and pid not in _enhanced:
+        _enhanced.add(pid)
+        AXUIElementSetAttributeValue(AXUIElementCreateApplication(pid), "AXEnhancedUserInterface", True)
 
 def _digest(text):
     return hashlib.sha256(text.encode("utf-16-le", "surrogatepass")).digest()
-
-def _param(element, name, value):
-    err, result = AS.AXUIElementCopyParameterizedAttributeValue(element, name, value, None)
-    return result if err == kAXErrorSuccess else None
-
-def _cf_range(start, length):
-    return AXValueCreate(kAXValueCFRangeType, CFRangeMake(start, length))
 
 def _rect_of(element):
     position, size = _attr(element, "AXPosition"), _attr(element, "AXSize")
@@ -270,6 +278,7 @@ def observe():
         return None
     pid, bundle = app.processIdentifier(), app.bundleIdentifier() or ""
     selection._expose(pid)
+    _enhance(pid, bundle)
     element = _focused(pid)
     if element is None or not _editable(element) or selection.secure_input() or selection.SECURE in (
             _attr(element, "AXRole"), _attr(element, "AXSubrole")):
@@ -299,38 +308,19 @@ def _same_field(field):
     value = _attr(element, "AXValue")
     return element if value is not None and _digest(str(value)) == field.digest else None
 
-def _place(element, text, start, end, expected):
-    """Rectangles for [start, end), one per line, or None when AX cannot prove the range reads `expected`."""
-    if live.text_at(text, start, end) != expected:
-        return None
-    rects, at = [], start
-    while at < end:
-        line = _param(element, "AXLineForIndex", at)
-        line_range = _param(element, "AXRangeForLine", line) if line is not None else None
-        ok, rng = AXValueGetValue(line_range, kAXValueCFRangeType, None) if line_range is not None else (False, None)
-        if not ok or rng[0] + rng[1] <= at:
-            return None
-        stop = min(end, rng[0] + rng[1])
-        piece = _cf_range(at, stop - at)
-        if str(_param(element, "AXStringForRange", piece) or "") != live.text_at(text, at, stop):
-            return None
-        bounds = _param(element, "AXBoundsForRange", piece)
-        ok, r = AXValueGetValue(bounds, AS.kAXValueCGRectType, None) if bounds is not None else (False, None)
-        if not ok:
-            return None
-        if r.size.width > 0 and r.size.height > 0:
-            rects.append((int(r.origin.x), int(r.origin.y), int(r.origin.x + r.size.width),
-                          int(r.origin.y + r.size.height)))
-        at = stop
-    return rects
-
 def bounds(field, spans):
     """Screen rectangles (top-left origin) per (start, end, expected) span: a list, empty when not visible, or None
     when the span cannot be placed exactly. None for the whole call when the field changed."""
     element = _same_field(field)
     if element is None:
         return None
-    return [_place(element, field.text, start, end, expected) for start, end, expected in spans]
+    found = []
+
+    def leaves():
+        if not found:
+            found.append(layout.text_nodes(element, field.text))
+        return found[0]
+    return [layout.place(element, field.text, start, end, expected, leaves) for start, end, expected in spans]
 
 def select_range(field, start, end, expected):
     """Selects [start, end) of the unchanged `field` and returns the Context for replace(), or None. A selection
@@ -340,10 +330,16 @@ def select_range(field, start, end, expected):
         return None
     if AXUIElementSetAttributeValue(element, "AXSelectedTextRange", _cf_range(start, end - start)) != kAXErrorSuccess:
         return None
-    now = capture(False)
-    if (now is not None and (now.app, now.window) == (field.app, field.window) and now.editable and not now.secure
-            and now.field is not None and CFEqual(now.field, field.handle) and now.caret == (start, end - start)
-            and now.text == expected):
-        return now
+    deadline = time.monotonic() + SELECT_SETTLE_S
+    while True:
+        now = capture(False)
+        if not (now is not None and (now.app, now.window) == (field.app, field.window) and now.editable
+                and not now.secure and now.field is not None and CFEqual(now.field, field.handle)):
+            break
+        if now.caret == (start, end - start) and now.text == expected:
+            return now
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.02)
     collapse()
     return None

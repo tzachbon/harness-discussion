@@ -159,7 +159,7 @@ def _count(diag, kind):
     diag["events"][kind] = diag["events"].get(kind, 0) + 1
 
 
-async def _receive(srv, pcm, language, prompt, diag):
+async def _receive(srv, pcm, language, prompt, diag, cancelled=lambda: False):
     track = _AudioTrack(pcm)
     fragments, errors, last_word, heard_ms = [], [], [], [0]
     pc = RTCPeerConnection(NO_STUN)
@@ -202,6 +202,8 @@ async def _receive(srv, pcm, language, prompt, diag):
         diag["stage"] = "connect"
         deadline = time.monotonic() + len(pcm) / (RATE * 2) + 30
         while time.monotonic() < deadline:
+            if cancelled():  # a cancelled dictation must not hold the transport for the next one
+                raise writer.Cancelled("The dictation was cancelled.")
             if errors:
                 raise SttError(errors[0], diag["stage"])
             if not srv.alive or pc.connectionState == "failed":
@@ -294,7 +296,7 @@ def _close_spare():
         except Exception:
             pass
 
-def _run(audio, language, prompt, diag):
+def _run(audio, language, prompt, diag, cancelled=lambda: False):
     pcm = decode_audio(audio)
     diag["audio_ms"] = len(pcm) * 1000 // (RATE * 2)
     _mark(diag, "decoded")
@@ -306,7 +308,7 @@ def _run(audio, language, prompt, diag):
         except Exception as error:
             raise SttError("backend_start_failed", "backend_start") from error
         _mark(diag, "backend_ready")
-        text = asyncio.run(_receive(srv, pcm, language, prompt, diag))
+        text = asyncio.run(_receive(srv, pcm, language, prompt, diag, cancelled))
         _mark(diag, "transcribed")
         return text
     finally:
@@ -343,7 +345,7 @@ def transcribe(audio: bytes, *, language: str = "", prompt: str = "", cancelled=
                     break
             if cancelled():
                 raise writer.Cancelled("The dictation was cancelled.")
-        return _run(audio, language, prompt, diag)
+        return _run(audio, language, prompt, diag, cancelled or (lambda: False))
     except writer.Cancelled:
         diag["code"] = "cancelled"
         raise

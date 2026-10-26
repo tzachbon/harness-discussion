@@ -1,10 +1,13 @@
 """The Tour mixin: lifecycle, the sandbox, the save guard, first run, and the menus' events."""
 import queue
+import threading
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from harness_discussion import app_practice, app_tour, hotkeys, settings, tour, tour_copy, tour_view
+from harness_discussion import app_practice, app_tour, app_writer, practice, hotkeys, settings, tour, tour_copy, tour_view
+
+from tests.test_practice import FakeBox, FakeReal
 
 
 class FakeTour:
@@ -159,11 +162,115 @@ class SandboxTest(FlowTest):
 
     def test_the_review_step_keeps_the_rewritten_box_text(self):
         self.app.open()
-        self.app.tour.box = SimpleNamespace(text=lambda: "Fixed text.")
+        self.app.tour.box = FakeBox("Fixed text.")
         self.app.tour_go(3)
         self.app._last_edit = (app_practice.practice.PracticeCtx("x", 1, -1, True, False), "x", "Fixed text.", "Fix")
         self.app.tour_next()
         self.assertEqual(self.app.tour.shown[-1]["box"], {"text": "Fixed text.", "select": None})
+
+    def test_review_callback_after_next_and_lifecycle_invalidation(self):
+        for reused in (False, True):
+            with self.subTest(reused=reused):
+                self.app = _App()
+                self.app._main = threading.get_ident()
+                self.app.open()
+                t = self.app.tour
+                def show(view):
+                    spec = view["box"]
+                    if spec is None:
+                        t.box = None
+                    elif reused and t.box is not None:
+                        t.box.reset_target()
+                        t.box.text_value, t.box.sel = spec["text"], (0, 0)
+                    else:
+                        t.box = FakeBox(spec["text"])
+                t.show = show
+                self.app.edit = practice.PracticeEdit(FakeReal(), None, None, self.app)
+                self.app.tour_go(3)
+                t.box._select(0, len(t.box.text()))
+                ctx = self.app.edit.capture()
+                self.assertTrue(self.app.edit.replace("Fixed text.", ctx))
+                self.app._last_edit = (ctx, ctx.text, "Fixed text.", "Fix")
+                callbacks = []
+                self.app.review = SimpleNamespace(show=lambda a, b, replace, copy: callbacks.append(replace))
+                self.app.host.copy_text = Mock()
+                self.app._toast = Mock()
+                app_writer.Writer.open_review(self.app)
+                self.app.tour_next()
+                self.assertEqual(t.box.text(), "Fixed text.")
+                self.assertFalse(self.app.edit.type_at_caret("stale", ctx))
+                self.assertFalse(self.app.edit.replace("stale", ctx))
+                callbacks[-1]("Reviewed text.")
+                self.assertEqual(t.box.text(), "Reviewed text.")
+                self.app._toast.assert_not_called()
+                review_ctx = self.app.edit.capture()
+                self.app.tour_action("start_over")
+                self.assertFalse(self.app.edit.type_at_caret("stale", review_ctx))
+                self.assertFalse(self.app.edit.undo(ctx, "old", "Reviewed text."))
+                navigation_ctx = self.app.edit.capture()
+                self.app.tour_go(5)
+                self.assertFalse(self.app.edit.type_at_caret("stale", navigation_ctx))
+                close_ctx = self.app.edit.capture()
+                self.app.tour_closed()
+                self.app.open(at=5)
+                self.app.tour.box = t.box  # even reusing the identical native field cannot revive it
+                self.assertFalse(self.app.edit.type_at_caret("stale", close_ctx))
+
+    def test_navigation_cancels_only_a_mode_retry_for_the_carried_practice_target(self):
+        for operation in ("practice", "external rewrite", "external dictation"):
+            external = operation != "practice"
+            with self.subTest(operation=operation):
+                self.app = _App()
+                self.app.open()
+                self.app.tour_go(3)
+                self.app.tour.box = FakeBox("Fixed text.")
+                ctx = self.app.tour.box.context()
+                self.app._last_edit = (ctx, "old", "Fixed text.", "Fix")
+                self.app.rewriting, self.app._rewrite_id = True, 7
+                self.app._rewrite_ctx = None if operation == "external rewrite" else (6 if external else 7, ctx)
+                self.app._rewrite_cancel = threading.Event()
+                self.app._set_rewriting = Mock()
+                self.app._arm_summary_stop = Mock()
+                self.app._restore_caret = Mock()
+                self.app.toast = SimpleNamespace(hide=Mock())
+                self.app.cancel_rewrite = lambda: app_writer.Writer.cancel_rewrite(self.app)
+                self.app.tour_next()
+                if external:
+                    self.assertFalse(self.app._rewrite_cancel.is_set())
+                    self.assertEqual(self.app._rewrite_id, 7)
+                    self.app._set_rewriting.assert_not_called()
+                    self.app.tour_closed()
+                    self.assertFalse(self.app._rewrite_cancel.is_set())
+                    self.assertEqual(self.app._rewrite_id, 7)
+                    continue
+                self.assertTrue(self.app._rewrite_cancel.is_set())
+                self.assertNotEqual(self.app._rewrite_id, 7)
+                app_writer.Writer._rewrite_done(self.app, 7, ctx, "Fix", ("late", "sample"),
+                                                (ctx, "old", "Fixed text."), None)
+                self.app._set_rewriting.assert_called_once_with(False)
+
+    def test_reset_live_box_posts_fresh_suggestions_for_identical_text(self):
+        box = FakeBox("We recieved the report yesterday", (0, 0))
+        self.app.tour = FakeTour(self.app)
+        self.app.tour.box = box
+        self.app._tour_index = tour.STEPS.index("live")
+        self.app._main = threading.get_ident()
+        self.app.edit = practice.PracticeEdit(FakeReal(), None, None, self.app)
+        posted = SimpleNamespace(_live_posted=None, events=queue.Queue())
+        found = [SimpleNamespace(key=("recieved", "received"))]
+        old = self.app.edit.observe()
+        post = app_tour.app_live.Live._live_post
+        post(posted, old, found, [], 0)
+        post(posted, self.app.edit.observe(), found, [], 0)
+        self.assertEqual(posted.events.qsize(), 1)
+        box.reset_target()
+        current = self.app.edit.observe()
+        post(posted, current, found, [], 0)
+        self.assertEqual(posted.events.qsize(), 2)
+        self.assertIsNone(self.app.edit.select_range(old, 3, 11, "recieved"))
+        ctx = self.app.edit.select_range(current, 3, 11, "recieved")
+        self.assertIsNotNone(ctx)
+        self.assertTrue(self.app.edit.replace("received", ctx))
 
     def test_closing_restores_the_remaining_practice_values(self):
         self.app.cfg.update(writer=False, live_check=False)
@@ -312,10 +419,10 @@ class ShortcutTest(FlowTest):
         self.assertEqual(win.cfg["rewrite_hotkey"], "<ctrl>+<alt>+e")
         win._show_shortcut.assert_called_once_with("rewrite_hotkey")
         win2 = SimpleNamespace(alive=True, cfg=dict(self.app.cfg),
-                               shortcuts={"rewrite_hotkey": {"label": {"text": ""}, "error": None}})
+                               shortcuts={"rewrite_hotkey": {"label": Mock(), "error": None}})
         self.app.settings_win = win2
         self.app.tour_action("shortcut", ("rewrite_hotkey", "y"))
-        self.assertEqual(win2.shortcuts["rewrite_hotkey"]["label"]["text"], hotkeys.label("y"))
+        win2.shortcuts["rewrite_hotkey"]["label"].show.assert_called_once_with("y")
 
     def test_a_settings_change_queues_a_refresh_only_while_the_tour_is_open(self):
         self.app.change("hotkey", "<ctrl>+<alt>+r")

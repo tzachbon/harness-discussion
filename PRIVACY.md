@@ -16,11 +16,13 @@ The app sends the text you play to the first ready voice source in Settings → 
 
 *Prepare speech as soon as I select text* is off by default. When it is on, and Cursor or Edge reads first, the opening sentences are sent when the bar appears, before you press play.
 
-On Windows and Mac, Dictation tries Local first by default. Downloading Whisper Small (486 MB) is a separate action in Settings → Dictation. Local transcription runs on your computer. If it is unavailable or fails, enabled Cursor or Codex sources can receive the recording in the saved order. Dictation audio is not saved.
+On Windows and Mac, Dictation tries Local first by default. Downloading Whisper Small (486 MB) is a separate action in Settings → Dictation. Local transcription runs on your computer. If it is unavailable or fails, enabled Cursor or Codex sources can receive the recording in the saved order. Dictation audio is not saved. The last 10 transcripts, raw and tidied, are saved on your computer so you can copy them from Recent Dictations in the tray or menu bar. Turn off *Keep recent dictations* in Settings → Dictation to stop saving them and delete the saved ones.
 
 Tidy prefers the installed, enabled Local writing model by default. Otherwise it follows the Writing source order, which can send the transcript to Cursor or Codex. Turn off **Prefer local tidy for faster results** to always follow that order. For fully offline dictation, disable Cursor and Codex in both Writing and Dictation, and download both local models first. Local transcription by itself does not make cloud cleanup or fallback offline.
 
 *Check as I type* (Settings → Writing, on by default once rewriting is on) sends the line you are typing, without selecting it, to the same writing sources after you pause, in every app except password fields, terminals, and apps you turn it off for. Turning it back on after turning it off asks first. Results stay in memory and are never saved. With only Local on, nothing leaves your computer.
+
+*About you* (Settings → General, on by default) adds your short note, today's date, the time, and your time zone's UTC offset to every rewrite, dictation tidy, Check as I type, and summary prompt, so it goes wherever that text goes. The note is empty until you write one and is cut at 400 characters unless you turn off the limit, which asks first. Turn About you off to send none of it.
 
 The optional speech-to-text server (Settings → Speech-to-text, off by default) sends audio and any prompt hint that other apps on your computer send it to OpenAI through your Codex sign-in. See [STT.md](STT.md).
 
@@ -28,7 +30,7 @@ Password fields are never read or rewritten. The log records the engine, timing,
 
 ## The Get Started tour
 
-The tour uses the same sources as the features it shows, and each step names the source it uses. Playing the voice sample and reading the practice sentence send that text to the first ready voice. Rewriting the sample, dictating the practice line, and pausing in the last step's box send that text or recording to the first ready writing or speech source. With no source ready, the tour shows sample results that never leave your computer. Practice doesn't change your saved settings unless you turn on a Keep switch or change a shortcut. New installs start with Writing and Check as I type on. Check as I type sends a line you type in any app to the first ready writing source after you pause; turn it off in Settings → Writing.
+The tour uses the same sources as the features it shows, and each step names the source it uses. Playing the voice sample and reading the practice sentence send that text to the first ready voice. Rewriting the sample, dictating the practice line, and pausing in the last step's box send that text or recording to the first ready writing or speech source. With no source ready, the tour shows sample results that never leave your computer. The last step asks for an optional About you note and saves it when you leave the step. Practice doesn't change your saved settings unless you turn on a Keep switch or change a shortcut. New installs start with Writing and Check as I type on. Check as I type sends a line you type in any app to the first ready writing source after you pause; turn it off in Settings → Writing.
 
 ## Downloads and update checks
 

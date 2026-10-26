@@ -3,10 +3,12 @@ import ctypes
 import hashlib
 import os
 import time
+import unicodedata
 from dataclasses import dataclass, field
 from ctypes import wintypes
 
 import uiautomation as uia
+from _ctypes import COMError
 
 from .. import edit_logic, live
 from . import clipboard, selection, uia_thread
@@ -23,6 +25,13 @@ k32.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wint
                                            ctypes.POINTER(wintypes.DWORD)]
 k32.CloseHandle.argtypes = [wintypes.HANDLE]
 MAX_DOCUMENT = 1_000_000
+def _mixed_direction(text):
+    """A line holding right-to-left script and left-to-right letters or digits: Chromium reports it in visual order."""
+    for line in text.splitlines():
+        kinds = {unicodedata.bidirectional(c) for c in line}
+        if kinds & {"R", "AL"} and kinds & {"L", "EN"}:
+            return True
+    return False
 NEWLINE = "\r\n"
 START, END = uia.TextPatternRangeEndpoint.Start, uia.TextPatternRangeEndpoint.End
 
@@ -77,7 +86,7 @@ def _inspect(limit=MAX_DOCUMENT):
     if not identity:
         return None
     app, window = identity
-    focus = uia.GetFocusedControl()
+    focus = selection.focused()
     ancestors = selection._safe_controls(focus, window)
     if ancestors is selection.PASSWORD:
         return Context("", app, window, False, True), "", None, None
@@ -286,6 +295,7 @@ def observe():
         if not identity or identity[0] == os.getpid():
             return None  # checked before any UIA call reaches our own Tk windows
         found = _inspect(live.LIVE_MAX_DOC)
+        _observed[:] = time.monotonic(), found
         if not found or found[2] is None:
             return None
         context, document = found[0], found[1]
@@ -294,8 +304,11 @@ def observe():
         name = _exe(context.app)
         if not name:
             return None
+        focus = selection.focused()
+        if focus.FrameworkId == "Chrome" and _mixed_direction(document):
+            return None  # ponytail: not checked in Chromium; read these once its text order is logical
         try:
-            r = uia.GetFocusedControl().BoundingRectangle
+            r = focus.BoundingRectangle
             rect = (r.left, r.top, r.right, r.bottom)
         except Exception:
             rect = None
@@ -346,20 +359,41 @@ def _same_field(field, found):
                 and (found[0].app, found[0].window, found[0]._element) == (field.app, field.window, field.handle)
                 and found[0]._digest == field.digest)
 
+_placed = [None, {}]  # where the last field sat on screen, and its placed spans
+_observed = [0.0, None]  # when observe() last read the field, and what it read: bounds() right after reuses it
+
 def bounds(field, spans):
     """Screen rectangles per (start, end, expected) span of `field`: a list (empty when scrolled out of view), or
-    None when the span cannot be placed exactly. None for the whole call when the field changed."""
+    None when the span cannot be placed exactly. None for the whole call when the field changed. An idle field is
+    polled twice a second, so spans are placed again only once its text, scroll or position changes."""
     def place():
-        found = _inspect(live.LIVE_MAX_DOC)
+        at, found = _observed
+        _observed[:] = 0.0, None  # once: a second call must see a change made since
+        if time.monotonic() - at > 0.2 or not _same_field(field, found):
+            found = _inspect(live.LIVE_MAX_DOC)  # read-only here: select_range and replace always read afresh
         if not _same_field(field, found):
             return None
-        out = []
-        for start, end, expected in spans:
-            candidate = _range_at(found[3], found[1], start, end, expected)
-            out.append(None if candidate is None else
-                       [(r.left, r.top, r.right, r.bottom) for r in candidate.GetBoundingRectangles()])
-        return out
+        if not spans:
+            return []
+        # the first span sits elsewhere after any scroll or move, even inside a box that stays put
+        first = _place(found, *spans[0])
+        where = (field.handle, field.digest, spans[0], first)
+        if first is None or _placed[0] != where:
+            _placed[:] = where, {spans[0]: first}
+        done = _placed[1]
+        for s in spans:
+            if s not in done:
+                done[s] = _place(found, *s)
+        return [done[s] for s in spans]
     return _run(place)
+
+def _place(found, start, end, expected):
+    candidate = _range_at(found[3], found[1], start, end, expected)
+    try:
+        return None if candidate is None else [(r.left, r.top, r.right, r.bottom)
+                                               for r in candidate.GetBoundingRectangles()]
+    except COMError:  # Notepad fails on a number inside a Hebrew line
+        return None
 
 def _collapse(span):
     caret = span.Clone()

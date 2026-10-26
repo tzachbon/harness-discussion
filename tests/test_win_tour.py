@@ -26,7 +26,7 @@ def state(cfg, **kw):
     return SimpleNamespace(**{**s, **kw})
 
 
-READ, REWRITE, DICTATE, LIVE, DONE = 2, 3, 5, 6, 7
+READ, REWRITE, DICTATE, LIVE, DONE = 2, 3, 5, 6, 8
 
 
 class TourBase(unittest.TestCase):
@@ -187,10 +187,10 @@ class Frame(TourBase):
         self.app.cfg["tour_steps"] = {"welcome": "tried", "voice": "skipped"}
         self.show(DONE, progress=self.app.cfg["tour_steps"])
         texts = [lbl["text"] for lbl in labels(self.w.win)]
-        rows = ["Welcome", "Voice", "Read", "Rewrite", "Review", "Dictation", "Check as I type"]
+        rows = ["Welcome", "Voice", "Read", "Rewrite", "Review", "Dictation", "Check as I type", "About you"]
         self.assertEqual([t for t in texts if t.removeprefix("✓ ").removesuffix(" – skipped") in rows],
                          ["✓ Welcome"] + [f"{r} – skipped" for r in rows[1:]])
-        self.assertEqual(texts.count("Try now"), 6)
+        self.assertEqual(texts.count("Try now"), 7)
         self.assertIn(tour_copy.MORE, texts)
         self.assertEqual(set(self.w.shortcuts), set(hotkeys.SHORTCUTS))
         click(self.root, self.w.win, "Try now")
@@ -263,13 +263,13 @@ class ShortcutRows(TourBase):
     def test_a_rewrite_view_shows_the_saved_shortcut(self):
         self.show(REWRITE)
         self.assertEqual(set(self.w.shortcuts), {"rewrite_hotkey"})
-        self.assertEqual(self.w.shortcuts["rewrite_hotkey"]["label"]["text"],
+        self.assertEqual(self.w.shortcuts["rewrite_hotkey"]["label"].text,
                          hotkeys.label(self.app.cfg["rewrite_hotkey"]))
 
     def test_a_recorded_chord_is_saved_through_the_tour(self):
         self.show(REWRITE)
         self.w._record_hotkey("rewrite_hotkey")
-        self.assertEqual(self.w.shortcuts["rewrite_hotkey"]["label"]["text"], "Press keys…")
+        self.assertEqual(self.w.shortcuts["rewrite_hotkey"]["label"].text, "Press keys…")
         self.w._hotkey_key(SimpleNamespace(keycode=0x59, state=self.CTRL | self.SHIFT, keysym="Y"))
         self.assertEqual(self.calls.mock_calls, [call.on_record(True),
                                                  call.tour_action("shortcut", ("rewrite_hotkey", "<ctrl>+<shift>+y")),
@@ -291,7 +291,7 @@ class ShortcutRows(TourBase):
         self.show(REWRITE)
         self.app.cfg["rewrite_hotkey"] = "<ctrl>+<shift>+e"
         self.w.refresh(self.view(REWRITE))
-        self.assertEqual(self.w.shortcuts["rewrite_hotkey"]["label"]["text"], "Ctrl+Shift+E")
+        self.assertEqual(self.w.shortcuts["rewrite_hotkey"]["label"].text, "Ctrl+Shift+E")
 
     def test_show_ends_a_recording_and_rebuilds_the_rows(self):
         self.show(REWRITE)
@@ -313,7 +313,7 @@ class ShortcutRows(TourBase):
         self.w._record_hotkey("rewrite_hotkey")
         self.key(self.w.win, 0x1B, keysym="Escape")
         self.assertIsNone(self.w._recording)
-        self.assertEqual(self.w.shortcuts["rewrite_hotkey"]["label"]["text"], hotkeys.label(saved))
+        self.assertEqual(self.w.shortcuts["rewrite_hotkey"]["label"].text, hotkeys.label(saved))
         self.app.tour_action.assert_not_called()
         self.w._user_close()
         self.assertEqual(self.calls.mock_calls, [call.on_record(True), call.on_record(False), call.tour_closed()])

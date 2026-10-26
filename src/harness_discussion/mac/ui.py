@@ -6,7 +6,7 @@ import AppKit
 import objc
 from Foundation import NSData, NSObject
 
-from .. import icons
+from .. import hotkeys, icons
 
 _keep = []  # AppKit holds targets weakly
 
@@ -142,6 +142,54 @@ def card(views, spacing=10, width=None):
         getattr(inner, a)().constraintEqualToAnchor_constant_(getattr(content, a)(), inset).setActive_(True)
     return box
 
+
+class Keys:
+    """A shortcut drawn as keycaps, one rounded chip per key, like an HTML <kbd> group. show(spec) draws the keys;
+    say(text) shows plain text instead, such as "Press keys…". `view` goes in a stack; `text` is what it reads as."""
+
+    def __init__(self, size=13, bold=True):
+        self.size, self.bold, self.text = size, bold, ""
+        self.view = stack([], vertical=False, spacing=4)
+        self.view.setAccessibilityElement_(True)  # VoiceOver reads the shortcut once, not cap by cap
+        self.view.setAccessibilityRole_(AppKit.NSAccessibilityStaticTextRole)
+
+    def show(self, spec, after=""):
+        names = hotkeys.keys(spec)
+        if not names:
+            return self.say("Off")
+        after_label = [label(after, self.size, self.bold)] if after else []
+        self._fill(hotkeys.label(spec) + after, [self._cap(name) for name in names] + after_label)
+
+    def say(self, text):
+        self._fill(text, [label(text, self.size, self.bold)])
+
+    def _fill(self, text, views):
+        for view in list(self.view.arrangedSubviews()):
+            self.view.removeArrangedSubview_(view)
+            view.removeFromSuperview()
+        for view in views:
+            self.view.addArrangedSubview_(view)
+        self.text = text
+        self.view.setAccessibilityLabel_(text)
+
+    def _cap(self, name):
+        box = AppKit.NSBox.alloc().init()
+        box.setBoxType_(AppKit.NSBoxCustom)
+        box.setTitlePosition_(AppKit.NSNoTitle)
+        box.setCornerRadius_(4)
+        box.setBorderWidth_(0)
+        box.setFillColor_(AppKit.NSColor.quaternaryLabelColor())
+        box.setContentViewMargins_((0, 0))
+        text = label(name, self.size - 2, secondary=True)
+        text.setTranslatesAutoresizingMaskIntoConstraints_(False)
+        content = box.contentView()
+        content.addSubview_(text)
+        for a in ("centerXAnchor", "centerYAnchor"):
+            getattr(text, a)().constraintEqualToAnchor_(getattr(content, a)()).setActive_(True)
+        side = self.size + 7  # fixed sizes: a box has no intrinsic size, so a stack could stretch it
+        box.heightAnchor().constraintEqualToConstant_(side).setActive_(True)
+        box.widthAnchor().constraintEqualToConstant_(max(side, text.fittingSize().width + 10)).setActive_(True)
+        return box
 
 def switch(value, fn):
     s = bind(AppKit.NSSwitch.alloc().init(), lambda s: fn(bool(s.state())))

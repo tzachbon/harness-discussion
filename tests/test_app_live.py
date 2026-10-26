@@ -94,9 +94,10 @@ class FakeMarks:
     def __init__(self):
         self.shown, self.hidden, self.word = None, 0, {}
 
-    def show(self, strips, badge):
+    def show(self, strips, badge, checking=()):
         self.shown = (strips, badge)
         self.word = {key: rect for key, rect in strips}
+        self.checking = list(checking)
 
     def hide(self):
         self.shown, self.word = None, {}
@@ -184,7 +185,7 @@ class WhenItChecks(unittest.TestCase):
 
     def test_one_check_after_a_pause_and_none_for_the_same_line_again(self):
         self.app.type("hello\ni thinks so, ok", at=0)
-        self.app.tick(1)
+        self.app.tick(0.5)
         self.assertEqual(self.app.source.texts, [])  # still typing
         self.app.tick(2)
         self.assertEqual(len(self.app.source.texts), 1)
@@ -358,7 +359,7 @@ class Actions(unittest.TestCase):
     def test_apply_changes_only_that_span_and_keeps_the_rest_without_a_new_check(self):
         message, actions, _ = self.click("i thinks")
         self.assertEqual(message, "i thinks → I think")
-        self.assertEqual(set(actions), {"Apply", "Dismiss", "Review", "More"})
+        self.assertEqual(set(actions), {"Apply", "Dismiss", "Review", "More", "×"})
         actions["Apply"]()
         self.assertEqual(self.field.text, "I think we should of gone.")
         self.assertEqual(self.app.toast_.shown[-1][0], "Applied")

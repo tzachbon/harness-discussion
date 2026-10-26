@@ -58,6 +58,7 @@ class PracticeField(Box):
 
     def load(self, text, select):
         """The step's sample; select is "all", "end" or None, as the view dict says."""
+        self.reset_target()
         tv = self.text_view
         tv.setString_(text)
         tv.setFont_(AppKit.NSFont.systemFontOfSize_(15))

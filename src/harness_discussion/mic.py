@@ -59,15 +59,19 @@ class Recorder:
         self.device = device
         self._chunks, self._size, self._lock, self._stream = [], 0, threading.Lock(), None
         self._power, self._samples = 0, 0
+        self._closing, self._stopped = False, threading.Event()
 
     def start(self):
         factory = self._factory
         if factory is None:
             import sounddevice
             factory = lambda cb: sounddevice.RawInputStream(
-                samplerate=RATE, channels=1, dtype="int16", callback=cb, device=_input_device(self.device))
+                samplerate=RATE, channels=1, dtype="int16", callback=cb, device=_input_device(self.device),
+                finished_callback=self._stopped.set)
         self._chunks, self._size = [], 0
         self._power, self._samples = 0, 0
+        self._closing = False
+        self._stopped.clear()
         with audio._live_lock:
             try:
                 self._open(factory)
@@ -96,6 +100,8 @@ class Recorder:
             raise
 
     def _callback(self, data, frames, time_info, status):
+        if self._closing:
+            raise audio.sd.CallbackAbort
         pcm = bytes(data)  # PortAudio passes a CFFI buffer, not Python bytes.
         samples = array("h", pcm)
         power = sum(s * s for s in samples)
@@ -118,14 +124,23 @@ class Recorder:
 
     def stop(self) -> bytes:
         """The recording as WAV, or b"" when nothing was recorded."""
-        with audio._live_lock:
-            stream, self._stream = self._stream, None
-            if stream is not None:
-                try:
-                    stream.stop()
-                finally:
-                    stream.close()
-                    audio._live.discard(stream)
+        stream, self._stream = self._stream, None
+        if stream is not None:
+            # As with PcmPlayer, CoreAudio can deadlock in stop() on the worker thread.
+            # Let the input callback stop it, then close after the IO stop notification.
+            self._closing = True
+            stopped = self._factory is not None or self._stopped.wait(audio.CLOSE_WAIT_S)
+            if stopped:
+                with audio._live_lock:
+                    try:
+                        if self._factory is not None:
+                            stream.stop()
+                    finally:
+                        stream.close()
+                        audio._live.discard(stream)
+            else:
+                # ponytail: keep an unconfirmed stream listed; reclaim it on app restart.
+                log.warning("microphone did not finish stopping; leaving stream open until restart")
         with self._lock:
             pcm = b"".join(self._chunks)
         return wav(pcm) if pcm else b""

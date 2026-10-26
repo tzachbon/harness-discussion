@@ -54,8 +54,17 @@ class Tour:
 
     def tour_go(self, index):
         box = self.tour_box()
+        carry = (box is not None and self.tour_step() == "rewrite" and index == tour.STEPS.index("review")
+                 and self._last_edit is not None and isinstance(self._last_edit[0], practice.PracticeCtx)
+                 and self._last_edit[0].target is box.target)
+        target = box.target if carry else None
         if box is not None and self.tour_step() in ("rewrite", "review"):
             self._review_text = box.text()  # Review shows it again, so its Replace finds the rewritten words
+        if box is not None:
+            if (carry and getattr(self, "rewriting", False)
+                    and getattr(self, "_rewrite_ctx", None) == (self._rewrite_id, self._last_edit[0])):
+                self.cancel_rewrite()
+            box.reset_target()
         self._tour_index = index
         step = self.tour_step()
         if step in ("rewrite", "review", "dictate", "live"):
@@ -63,8 +72,22 @@ class Tour:
         if step == "live":
             self._sandbox_on("live_check")
         self.tour.show(tour_view.view(index, self.tour_state()))
+        if carry and self.tour_box() is not None:
+            self.tour_box().review_target = target  # carry only Undo/Review; pending writes stay invalid
+
+    def tour_save_about(self):
+        """Leaving the About you step, by any way out, keeps what the box says; any text counts as tried."""
+        box = getattr(self.tour, "box", None)  # also while the window is closing
+        if self.tour_step() != "about" or box is None:
+            return
+        text = box.text().strip()[:writer.about_limit(self.cfg)]
+        if text != self.cfg.get("about_me", ""):
+            self.change("about_me", text)
+        if text:
+            self.tour_mark("about")
 
     def tour_next(self):
+        self.tour_save_about()
         step = self.tour_step()
         if step == "welcome" and not self._mac():
             self.tour_mark("welcome")
@@ -90,6 +113,10 @@ class Tour:
         self._tour_close(window_gone=True)
 
     def _tour_close(self, window_gone=False):
+        self.tour_save_about()
+        box = self.tour_box()
+        if box is not None:
+            box.reset_target()
         self._sandbox_end()
         self._tour_dismissed = True
         if not window_gone and self.tour:
@@ -140,7 +167,7 @@ class Tour:
             if key in getattr(win, "shortcut_labels", {}):  # Mac
                 win._show_shortcut(key)
             elif key in getattr(win, "shortcuts", {}):  # Windows
-                win.shortcuts[key]["label"]["text"] = hotkeys.label(spec)
+                win.shortcuts[key]["label"].show(spec)
 
     def _try_update(self):
         if self._sandbox:  # it saves self.cfg before installing: wait until the tour closes

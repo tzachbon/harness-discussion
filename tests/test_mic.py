@@ -1,4 +1,5 @@
 """Dictation pieces with no microphone or network: WAV, the tap threshold, the 60 s cap, and the transcript chain."""
+import threading
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -20,12 +21,81 @@ class FakeStream:
         self.closed = True
 
 
+def native_streams(*results):
+    results = iter(results)
+    def open_stream(**kw):
+        stream = next(results)
+        if isinstance(stream, Exception):
+            raise stream
+        kw["finished_callback"]()
+        return stream
+    return open_stream
+
+
 class MicTest(unittest.TestCase):
+    def test_native_stop_finishes_on_the_callback_thread_and_preserves_audio(self):
+        stream, opened = Mock(), {}
+        def open_stream(**kw):
+            opened.update(kw)
+            return stream
+        with patch.object(audio.sd, "RawInputStream", side_effect=open_stream):
+            rec = mic.Recorder()
+            rec.start()
+        pcm = b"\x01\x00" * mic.RATE
+        opened["callback"](pcm, mic.RATE, None, None)
+        requested = threading.Event()
+        self.addCleanup(audio._live.discard, stream)
+        errors = []
+        def io_thread():
+            try:
+                self.assertTrue(requested.wait(2))
+                self.assertFalse(audio._live_lock.locked())
+                with self.assertRaises(audio.sd.CallbackAbort):
+                    opened["callback"](pcm, mic.RATE, None, None)
+                stream.close.assert_not_called()
+                opened["finished_callback"]()
+            except BaseException as error:
+                errors.append(error)
+        io = threading.Thread(target=io_thread, daemon=True)
+        io.start()
+        wait = rec._stopped.wait
+        with patch.object(rec._stopped, "wait", side_effect=lambda timeout: requested.set() or wait(timeout)):
+            recorded = rec.stop()
+        io.join(2)
+        self.assertFalse(io.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(stt.decode_audio(recorded), pcm)
+        stream.stop.assert_not_called()
+        stream.abort.assert_not_called()
+        stream.close.assert_called_once_with()
+        self.assertNotIn(stream, audio._live)
+
+    def test_unfinished_native_stop_returns_audio_without_closing_or_blocking_reset_lock(self):
+        stream = Mock()
+        with patch.object(audio.sd, "RawInputStream", return_value=stream):
+            rec = mic.Recorder()
+            rec.start()
+        self.addCleanup(audio._live.discard, stream)
+        pcm = b"\x01\x00" * mic.RATE
+        rec._callback(pcm, mic.RATE, None, None)
+        with patch.object(audio, "CLOSE_WAIT_S", 0.01), self.assertLogs("harness_discussion", "WARNING"):
+            recorded = rec.stop()
+        self.assertEqual(stt.decode_audio(recorded), pcm)
+        stream.stop.assert_not_called()
+        stream.close.assert_not_called()
+        self.assertIn(stream, audio._live)
+        self.assertFalse(audio._live_lock.locked())
+        with patch.object(audio.sd, "RawOutputStream", side_effect=audio.sd.PortAudioError("gone")), \
+                patch.object(audio.sd, "_terminate") as terminate:
+            with self.assertRaises(audio.sd.PortAudioError):
+                audio.PcmPlayer()
+        terminate.assert_not_called()
+
     def test_stale_input_refreshes_once_and_resolves_the_selected_device_again(self):
         selected = {"name": "HyperX", "hostapi": 0, "max_input_channels": 1}
         other = {**selected, "name": "Other mic"}
         stream = Mock()
-        with patch("sounddevice.RawInputStream", side_effect=[audio.sd.PortAudioError("gone"), stream]) as opening, \
+        with patch("sounddevice.RawInputStream", side_effect=native_streams(audio.sd.PortAudioError("gone"), stream)) as opening, \
                 patch("sounddevice.query_devices", side_effect=[[selected, other], [other, selected]]), \
                 patch("sounddevice.query_hostapis", return_value=[{"name": "MME"}]), \
                 patch("sounddevice._terminate") as terminate, patch("sounddevice._initialize") as initialize:
@@ -41,7 +111,7 @@ class MicTest(unittest.TestCase):
         device = "Microphone (HyperX SoloCast 2), MME"
         devices = [{"name": "Wrong mic", "hostapi": 0, "max_input_channels": 1},
                    {"name": "Microphone (HyperX SoloCast 2)", "hostapi": 0, "max_input_channels": 2}]
-        with patch("sounddevice.RawInputStream") as stream, patch(
+        with patch("sounddevice.RawInputStream", side_effect=native_streams(Mock())) as stream, patch(
                 "sounddevice.query_devices", return_value=devices), patch(
                 "sounddevice.query_hostapis", return_value=[{"name": "MME"}]):
             rec = mic.Recorder(device=device)
@@ -64,7 +134,7 @@ class MicTest(unittest.TestCase):
 
     def test_missing_selected_device_is_resolved_again_after_refresh(self):
         selected = {"name": "HyperX", "hostapi": 0, "max_input_channels": 1}
-        with patch("sounddevice.RawInputStream") as opening, \
+        with patch("sounddevice.RawInputStream", side_effect=native_streams(Mock())) as opening, \
                 patch("sounddevice.query_devices", side_effect=[[], [selected]]), \
                 patch("sounddevice.query_hostapis", return_value=[{"name": "MME"}]), \
                 patch("sounddevice._terminate"), patch("sounddevice._initialize"):
@@ -87,7 +157,7 @@ class MicTest(unittest.TestCase):
     def test_failed_native_start_is_closed_before_refresh(self):
         failed, working = Mock(), Mock()
         failed.start.side_effect = audio.sd.PortAudioError("gone")
-        with patch("sounddevice.RawInputStream", side_effect=[failed, working]), \
+        with patch("sounddevice.RawInputStream", side_effect=native_streams(failed, working)), \
                 patch("sounddevice._terminate") as terminate, patch("sounddevice._initialize"):
             terminate.side_effect = lambda: self.assertNotIn(failed, audio._live)
             rec = mic.Recorder()

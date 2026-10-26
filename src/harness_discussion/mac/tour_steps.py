@@ -17,7 +17,8 @@ CARD, CHIP, LINE = (0x26, 0x26, 0x29), (0x3b, 0x3b, 0x40), (255, 255, 255, 0.08)
 PRIMARY, SUCCESS, WARNING = (0x0a, 0x84, 0xff), (0x30, 0xd1, 0x58), (0xff, 0x9f, 0x0a)
 TILES = {"welcome": ("speaker.wave.2.fill", (0x5e, 0x5c, 0xe6)), "voice": ("waveform", (0xbf, 0x5a, 0xf2)),
          "read": ("play.fill", PRIMARY), "rewrite": ("pencil", WARNING), "review": ("plusminus", SUCCESS),
-         "dictate": ("mic.fill", (0xff, 0x37, 0x5f)), "live": ("checkmark", (0x64, 0xd2, 0xff))}
+         "dictate": ("mic.fill", (0xff, 0x37, 0x5f)), "live": ("checkmark", (0x64, 0xd2, 0xff)),
+         "about": ("person.fill", (0x8e, 0x8e, 0x93))}
 DOTS = {"tried": ("●", SUCCESS), "skipped": ("●", FAINT), "now": ("▬", FG)}  # anything else: not reached
 
 
@@ -102,14 +103,14 @@ def shortcuts(t, v, width):
     done = bool(v["done"])
     rows = []
     for key, sub in v["shortcuts"]:
-        label = t.shortcut_labels[key] = text("", 13, bold=True)
+        label = t.shortcut_labels[key] = ui.Keys()
         t.shortcut_hints[key] = text(WINDOW_HINT, 11, FAINT, width=width - (28 if done else 0))
         name = text(SHORTCUT_TITLES[key], 12 if done else 13, MUTED)  # 12 pt fits the sheet beside the checklist
         if sub:
             name = ui.stack([name, text(sub, 11, FAINT)], spacing=1)
         change = small("Change…", lambda key=key: t._record_hotkey(key))
-        row = line([name, spacer(), label, change], width - 28) if done else \
-            ui.stack([name, label, change], vertical=False, spacing=10)
+        row = line([name, spacer(), label.view, change], width - 28) if done else \
+            ui.stack([name, label.view, change], vertical=False, spacing=10)
         t._show_shortcut(key)
         t._shown[key] = t.cfg[key]
         rows.append(ui.stack([row, t.shortcut_hints[key]], spacing=4))  # the stack drops the hint while it's hidden

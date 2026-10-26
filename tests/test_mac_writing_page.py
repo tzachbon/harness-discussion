@@ -158,25 +158,25 @@ class WritingSettingsTest(unittest.TestCase):
                 w._record_hotkey("rewrite_hotkey")
                 ctrl, alt = AppKit.NSEventModifierFlagControl, AppKit.NSEventModifierFlagOption
                 handlers[0](event(AppKit.NSEventTypeFlagsChanged, ctrl | alt))
-                self.assertEqual(label.stringValue(), "⌃⌥…")
+                self.assertEqual(label.text, "⌃⌥…")
                 handlers[0](event(AppKit.NSEventTypeKeyDown, ctrl | alt, 14))
                 self.assertEqual(self.changes[-1], ("rewrite_hotkey", "<ctrl>+<alt>+e"))
-                self.assertEqual(label.stringValue(), "⌃⌥E")
+                self.assertEqual(label.text, "⌃⌥E")
                 w._record_hotkey("rewrite_hotkey")
                 handlers[1](event(AppKit.NSEventTypeKeyDown, 0, 14))  # a key alone is a shortcut too
                 self.assertEqual(self.changes[-1], ("rewrite_hotkey", "e"))
-                self.assertEqual(label.stringValue(), "E")
+                self.assertEqual(label.text, "E")
                 w._record_hotkey("rewrite_hotkey")
                 saved = len(self.changes)
                 handlers[2](event(AppKit.NSEventTypeKeyDown, AppKit.NSEventModifierFlagCommand, 53))  # Esc cancels
         finally:
             w.win = real
         self.assertEqual(len(self.changes), saved)
-        self.assertEqual(label.stringValue(), "E")
+        self.assertEqual(label.text, "E")
 
     def test_a_shortcut_another_row_uses_is_refused(self):
         self.win._set_hotkey(self.win.cfg["hotkey"], "rewrite_hotkey")
-        self.assertEqual(self.win.shortcut_labels["rewrite_hotkey"].stringValue(), "Used by Read shortcut")
+        self.assertEqual(self.win.shortcut_labels["rewrite_hotkey"].text, "Used by Read shortcut")
         self.assertNotIn("rewrite_hotkey", [k for k, _ in self.changes])
         self.win._set_hotkey("<cmd>+<shift>+r", "rewrite_hotkey")
         self.assertEqual(self.changes[-1], ("rewrite_hotkey", "<cmd>+<shift>+r"))
@@ -192,6 +192,25 @@ class WritingSettingsTest(unittest.TestCase):
         self.win._set_hotkey("<shift>+<cmd>+<key_50>", "rewrite_hotkey")
         self.assertFalse(hints["rewrite_hotkey"].isHidden())
         self.assertTrue(hints["hotkey"].isHidden())
+
+    def test_recent_dictations_copy_the_tidied_text_and_the_original(self):
+        from harness_discussion import history
+        with mock.patch.object(history, "rows", return_value=[("Tidy.", "Tidy.", "words")]):
+            self.win.refresh_history()
+        row = self.win.history_list.arrangedSubviews()[0]
+        for b in row.arrangedSubviews()[2:]:
+            self.click(b)
+        self.assertEqual([c.args[0] for c in self.app.host.copy_text.call_args_list], ["Tidy.", "words"])
+
+    def test_rebuilding_recent_dictations_keeps_no_more_callbacks(self):
+        from harness_discussion import history
+        from harness_discussion.mac import ui
+        with mock.patch.object(history, "rows", return_value=[("Tidy.", "Tidy.", "words")]):
+            self.win.refresh_history()
+            kept = len(ui._keep)
+            for _ in range(5):
+                self.win.refresh_history()
+        self.assertEqual(len(ui._keep), kept)  # no transcript stays referenced after its row is gone
 
 
 if __name__ == "__main__":
