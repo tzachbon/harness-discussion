@@ -30,6 +30,11 @@ class Error(Exception):
     """Adapter-owned messages, safe to show without backend details."""
 
 
+def _validate_prompt(prompt):
+    if not isinstance(prompt, str) or len(prompt) > 1200:
+        raise ValueError("Vocabulary hint must be a string of at most 1200 characters.")
+
+
 def downloaded():
     try:
         return (json.loads((DIR / "ready.json").read_text(encoding="utf-8")) == REVISION
@@ -113,7 +118,10 @@ class LocalStt:
         except Exception as e:
             log.info("Local dictation warmup failed: %s", type(e).__name__)
 
-    def transcribe(self, audio, language="", cancelled=lambda: False):
+    def transcribe(self, audio, language="", cancelled=lambda: False, prompt=""):
+        if cancelled():
+            raise writer.Cancelled("The dictation was cancelled.")
+        _validate_prompt(prompt)
         while not self._lock.acquire(timeout=0.1):
             if cancelled():
                 raise writer.Cancelled("The dictation was cancelled.")
@@ -123,7 +131,7 @@ class LocalStt:
             self._load()
             stt.decode_audio(audio)  # common format, byte and duration limits before inference
             try:
-                return self._transcript(audio, language, cancelled)
+                return self._transcript(audio, language, cancelled, prompt)
             except RuntimeError:
                 if self._model.model.device != "cuda":
                     raise
@@ -131,16 +139,17 @@ class LocalStt:
                     raise writer.Cancelled("The dictation was cancelled.")
                 log.info("Local dictation GPU failed; retrying on CPU")
                 self._model = _load_model(force_cpu=True)
-                return self._transcript(audio, language, cancelled)
+                return self._transcript(audio, language, cancelled, prompt)
         finally:
             self._lock.release()
 
-    def _transcript(self, audio, language, cancelled):
+    def _transcript(self, audio, language, cancelled, prompt=""):
         if cancelled():
             raise writer.Cancelled("The dictation was cancelled.")
         # Preserve the container's sample rate. Whisper resamples it to 16 kHz itself.
         segments, _ = self._model.transcribe(io.BytesIO(audio), language=language or None, beam_size=1,
-                                             condition_on_previous_text=False)
+                                             condition_on_previous_text=False,
+                                             **({"initial_prompt": prompt} if prompt else {}))
         words = []
         try:
             for segment in segments:  # finish lazy inference while we still own the model

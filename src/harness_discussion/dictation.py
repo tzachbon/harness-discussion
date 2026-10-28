@@ -3,7 +3,7 @@ import logging
 
 from . import codex_rt, stt, writer
 from .llm_cursor import CursorStt
-from .local_stt import LocalStt
+from .local_stt import LocalStt, _validate_prompt
 
 log = logging.getLogger("harness_discussion")
 
@@ -21,15 +21,19 @@ class CodexStt:
     def prewarm(self):
         stt.prewarm()
 
-    def transcribe(self, audio, language="", cancelled=lambda: False):
-        return stt.transcribe(audio, language=language, cancelled=cancelled)
+    def transcribe(self, audio, language="", cancelled=lambda: False, prompt=""):
+        if cancelled():
+            raise writer.Cancelled("The dictation was cancelled.")
+        _validate_prompt(prompt)
+        return stt.transcribe(audio, language=language, cancelled=cancelled,
+                              **({"prompt": prompt} if prompt else {}))
 
 
 def sources():
     return [LocalStt(), CodexStt(), CursorStt()]
 
 
-def transcribe(audio, chain, order, language="", cancelled=lambda: False):
+def transcribe(audio, chain, order, language="", cancelled=lambda: False, prompt=""):
     """(text, source name) from the first source that returns words."""
     by_name = {s.name: s for s in chain}
 
@@ -37,6 +41,8 @@ def transcribe(audio, chain, order, language="", cancelled=lambda: False):
         if cancelled():
             raise writer.Cancelled("The dictation was cancelled.")
 
+    check()
+    _validate_prompt(prompt)
     for name, enabled in order:
         check()
         source = by_name.get(name)
@@ -47,7 +53,8 @@ def transcribe(audio, chain, order, language="", cancelled=lambda: False):
             if source.status() != "ready":
                 continue
             check()
-            text = (source.transcribe(audio, language=language, cancelled=cancelled)
+            hints = {"prompt": prompt} if prompt and isinstance(source, (LocalStt, CodexStt)) else {}
+            text = (source.transcribe(audio, language=language, cancelled=cancelled, **hints)
                     if name == "Local" or isinstance(source, CodexStt)
                     else source.transcribe(audio, language=language))
         except writer.Cancelled:
