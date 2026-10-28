@@ -22,7 +22,10 @@ def _fill(popup, titles, selected):
     popup.selectItemAtIndex_(max(0, selected))
 
 
-class WritingPage:
+from .learning_page import LearningSection
+
+
+class WritingPage(LearningSection):
     """Mixed into SettingsWindow, which owns app, cfg, _set, _fit and the shortcut rows."""
 
     def _writing_page(self):
@@ -129,6 +132,7 @@ class WritingPage:
                 _note("Hold the shortcut and speak. Release to transcribe and type at the cursor, tidied with the "
                       "dictation mode when that is on. A short tap does nothing. Local keeps audio on this Mac. "
                       "Enabled Cursor or Codex sources receive audio if earlier sources fail. Audio is not saved."),
+                ui.label("Learned words", 13, bold=True), self._learning_card(),
                 ui.label("Recent dictations", 13, bold=True), self._history_card()]
 
     def _history_card(self):

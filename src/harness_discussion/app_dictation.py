@@ -5,6 +5,7 @@ import time
 from dataclasses import dataclass, field
 
 from . import dictation, history, mic, writer
+from .app_learning import Learning
 from . import writer_settings as ws
 
 log = logging.getLogger("harness_discussion")
@@ -30,7 +31,7 @@ class _Recording:
     raw: tuple = None
 
 
-class Dictation:
+class Dictation(Learning):
     def _dictation_current(self, session):
         return (not self._writer_closed and not session.cancel.is_set()
                 and session.generation == self._dictate_generation and session.binding == self._dictate_binding)
@@ -56,6 +57,7 @@ class Dictation:
                 or cancel is not None and cancel.is_set()
                 or not (self.writer_ready and self.cfg["writer"]) or self.rewriting or self._writer_closed):
             return
+        self._stop_learning()
         owner = self._recorder or self._dictation_job
         if owner is not None:
             if owner.cancel.is_set():
@@ -271,7 +273,7 @@ class Dictation:
         at = self._anchor()
         sources = self._dictation_writers() if mode else []
         models, order, chain = self.cfg["writer_models"], self.cfg["stt_sources"], self.stt_sources
-        about = writer.about(self.cfg)
+        vocabulary, about = self._vocabulary_context()
         keep = lambda: self.cfg.get("dictation_history")  # read live: turning it off mid-dictation saves nothing
         skip = session.skip
         stop = lambda: self.cancel_rewrite() if rid == self._rewrite_id else None
@@ -287,11 +289,12 @@ class Dictation:
         def work():
             stt_s = rewrite_s = stt_name = None
             try:
-                text, stt_name = dictation.transcribe(audio, chain, order, cancelled=cancel.is_set)
+                text, stt_name = dictation.transcribe(audio, chain, order, cancelled=cancel.is_set,
+                                                    **({"prompt": vocabulary} if vocabulary else {}))
                 stt_s = time.monotonic() - released
                 if cancel.is_set():
                     raise writer.Cancelled("The dictation was cancelled.")
-                kept = _keep(text, keep)
+                kept = history.keep(text, keep)
                 session.raw = (text, kept)
                 if mode and not skip.is_set():
                     started = time.monotonic()
@@ -306,7 +309,7 @@ class Dictation:
                 # a source that finished despite Skip still yields the raw transcript the user asked for
                 if mode and not skip.is_set():
                     if kept is not None:
-                        _keep_tidied(kept, tidied, keep)
+                        history.keep_tidied(kept, tidied, keep)
                     result = (tidied, stt_name, source)
                 else:
                     result = (text, stt_name, None)
@@ -348,7 +351,7 @@ class Dictation:
             if raw and (isinstance(result, Exception) or result[0] != raw[0]):  # Skip beats a late tidy or its error
                 result = (raw[0], stt_name, None)
                 if raw[1] is not None:
-                    _keep_tidied(raw[1], None, lambda: self.cfg.get("dictation_history"))
+                    history.keep_tidied(raw[1], None, lambda: self.cfg.get("dictation_history"))
                     self.history_changed()
             if isinstance(result, writer.Cancelled):
                 self.toast.hide()
@@ -376,6 +379,7 @@ class Dictation:
                           and now is not None and not now.secure
                           and (now.app, now.window) == (ctx.app, ctx.window))
             if can_insert:
+                before = self._learning_before(ctx)
                 try:
                     placed = self.edit.type_at_caret(text, ctx, cancelled=lambda: session.activity.is_set() or not current())
                     attempted = getattr(ctx, "_insertion_attempted", False)
@@ -383,6 +387,8 @@ class Dictation:
                     placed = False
                     # An adapter without attempt metadata cannot prove a native exception sent no input.
                     attempted = getattr(ctx, "_insertion_attempted", True)
+                if placed and current():
+                    self._learning_arm(ctx, before, text)
                 if not current() or placed or attempted:
                     self.toast.hide()
                     return
@@ -405,15 +411,3 @@ class Dictation:
                 self._dictation_delivery = None
                 if session.cancel.is_set() and self._recorder is None and self._dictation_job is None:
                     self.toast.hide()
-
-def _keep(raw, keep):
-    try:
-        return history.add(raw, keep)
-    except OSError as e:  # history is a backup: never lose the dictation over it
-        log.info("dictation history not saved: %s", type(e).__name__)
-
-def _keep_tidied(at, text, keep):
-    try:
-        history.finish(at, text, keep)
-    except OSError as e:
-        log.info("dictation history not saved: %s", type(e).__name__)

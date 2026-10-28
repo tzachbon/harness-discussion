@@ -4,6 +4,36 @@ The same module serves Python callers and other apps on this Windows PC.
 It uses the existing Codex ChatGPT login, with no OpenAI API key. Audio goes
 to Codex's remote realtime service. The HTTP listener itself is localhost only.
 
+## Learning from corrections
+
+**Learn from dictation corrections** is on by default on Windows and macOS.
+After a confirmed insertion, the app observes that same editable field for up
+to 30 seconds. After a 1.5-second editing pause, similar spelling corrections
+can add names or terms to the local vocabulary. A notification offers Undo.
+Learning stops when the target changes, the field becomes unreadable, another
+dictation or rewrite starts, or the app closes. Clipboard-only delivery never
+starts learning. Check as I type pauses during the learning window.
+
+Settings → Dictation → Learned words lets you disable new learning, edit or
+remove entries one per line, or clear them all. Disabling learning keeps saved
+words available; clear the list to stop using them. Up to 200 terms are saved,
+with the newest retained. Words can contain letters, spaces, apostrophes and
+hyphens, up to 60 characters each. Editing or clearing the list also cancels
+pending learning, so an old result cannot put removed words back.
+
+The vocabulary is a spelling hint in later Local and Codex transcriptions and
+in dictation tidy, including Cursor tidy. Cursor raw transcription has no
+verified vocabulary-hint API, so turn tidy on to use the words with Cursor.
+Remote sources can receive the saved vocabulary with those requests; local
+learning itself makes no network request. The HTTP server API is unchanged.
+
+Learning uses conservative text comparisons, without model training. It skips
+punctuation/case-only changes, common English words, numbers, addresses, paths
+and code-like terms. Distant mishearings and editors that do not expose a safe
+text field may not be learned. External app autocorrections can also look like
+edits; use Undo or remove a mistaken entry. Editing before the inserted text
+can be confirmed skips learning for that dictation.
+
 ## Built-in dictation
 
 **Settings → Dictation → Local → Download** installs Whisper Small (486 MB), a

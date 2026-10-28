@@ -20,7 +20,10 @@ def status_text(status):
     return "Not checked" if status is None else settings.status_text(status)
 
 
-class WritingPage:
+from .learning_page import LearningSection
+
+
+class WritingPage(LearningSection):
     """Mixed into SettingsWindow, which owns win, cfg, _card and _set."""
 
     def _writing_page(self, page, font):
@@ -148,6 +151,7 @@ class WritingPage:
                   "earlier sources fail. Audio is not saved.",
                   style="Sub.Card.TLabel", wraplength=440).pack(anchor="w", pady=(8, 0))
         self.refresh_writing()
+        self._learning_section(page)
         self._history_section(page)
 
     def _modes_section(self, card, font):

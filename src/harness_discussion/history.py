@@ -1,5 +1,6 @@
 """Recent dictations on disk, so a transcript survives a failed tidy, a lost paste or a crash."""
 import json
+import logging
 import os
 import threading
 import time
@@ -71,3 +72,16 @@ def entries() -> list:
 def _preview(text, n=50):
     line = " ".join(text.split())
     return line if len(line) <= n else line[:n - 1] + "…"
+
+
+def keep(raw, keep):
+    try:
+        return add(raw, keep)
+    except OSError as e:  # history is a backup: never lose the dictation over it
+        logging.getLogger("harness_discussion").info("dictation history not saved: %s", type(e).__name__)
+
+def keep_tidied(at, text, keep):
+    try:
+        finish(at, text, keep)
+    except OSError as e:
+        logging.getLogger("harness_discussion").info("dictation history not saved: %s", type(e).__name__)

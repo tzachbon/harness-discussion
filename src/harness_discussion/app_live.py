@@ -36,6 +36,12 @@ class Live:
         if getattr(self, "live_ready", False):
             self._apply_live(key, value)
 
+    def change(self, key, value, save=True):
+        value = self._learning_setting(key, value)
+        super().change(key, value, save)
+        if key == "dictation_words":
+            self._refresh_learning_words()
+
     def _handle(self, kind, *args):
         if kind in self.LIVE_EVENTS:
             getattr(self, self.LIVE_EVENTS[kind])(*args)
@@ -72,7 +78,8 @@ class Live:
         """Checking runs only when on and while no rewrite or dictation is under way."""
         busy = (self.rewriting or getattr(self, "_holding", False) or getattr(self, "_recorder", None) is not None
                 or getattr(self, "_dictation_job", None) is not None)
-        return self.cfg["writer"] and self.cfg.get("live_check") and not busy
+        learning = self._learning is not None and not self._learning.closed
+        return self.cfg["writer"] and self.cfg.get("live_check") and not busy and not learning
 
     def _live_loop(self):
         while not self._live_stop.is_set():
@@ -82,6 +89,7 @@ class Live:
             if self._live_stop.is_set():
                 return
             try:
+                self._learning_tick()
                 self._live_tick()
             except Exception as e:
                 log.info("live check poll failed: %s", type(e).__name__)

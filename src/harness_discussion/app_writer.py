@@ -36,7 +36,8 @@ class Writer(Dictation):
                      "dictate_up": "_dictate_up", "dictated": "_dictated", "writer_info": "_writer_info",
                      "mic_answer": "_mic_answer", "recording_ready": "_recording_ready",
                      "recording_stopping": "_recording_stopping", "recording_done": "_recording_done",
-                     "dictation_timer": "_dictation_timer", "local_stt_downloaded": "_local_stt_downloaded"}
+                     "dictation_timer": "_dictation_timer", "local_stt_downloaded": "_local_stt_downloaded",
+                     "learning_words": "_learning_words", "learning_end": "_learning_end"}
 
     def _init_writer(self):
         self.edit = getattr(self.host, "edit", None)
@@ -180,6 +181,7 @@ class Writer(Dictation):
         """Captures the selection, rewrites it on a worker, and hands the result to `_rewrite_done`.
         prev: (ctx, original, inserted) to rewrite the original again in place of the inserted text.
         bar: the bar's button, which rewrites what it captured and never the whole field."""
+        self._stop_learning()
         if (not (self.writer_ready and self.cfg["writer"]) or self.rewriting
                 or self._recorder is not None or self._dictation_job is not None or self._writer_closed):
             return
@@ -409,6 +411,7 @@ class Writer(Dictation):
         self.toast.hide()
 
     def _close_writer(self):
+        self._stop_learning()
         if not hasattr(self, "_rewrite_cancel"):  # quit before _init_writer ran
             return
         self._press_gen += 1
