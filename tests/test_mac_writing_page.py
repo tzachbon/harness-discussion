@@ -125,6 +125,18 @@ class WritingSettingsTest(unittest.TestCase):
         w._polish_changed(True)
         self.assertTrue(w.dictate_popup.isEnabled())
 
+    def test_reopening_settings_lists_a_microphone_connected_since_and_keeps_the_choice(self):
+        from harness_discussion import mic
+        menu = self.win.microphone
+        self.win.cfg["dictate_microphone"] = "USB Mic, Core Audio"
+        with mock.patch.object(mic, "input_devices", return_value=["AirPods, Core Audio"]):
+            self.win.focus()
+        self.assertEqual(menu.itemTitles(), ["System default", "AirPods, Core Audio", "USB Mic, Core Audio"])
+        self.assertEqual(menu.titleOfSelectedItem(), "USB Mic, Core Audio")
+        menu.selectItemWithTitle_("AirPods, Core Audio")
+        self.click(menu)
+        self.assertEqual(self.changes[-1], ("dictate_microphone", "AirPods, Core Audio"))
+
     def test_a_status_refresh_keeps_an_unsaved_mode_draft(self):
         w = self.win
         w.mode_text.setStringValue_("Draft")

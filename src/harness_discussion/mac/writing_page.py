@@ -105,13 +105,9 @@ class WritingPage:
         permission = ui.stack([ui.stack([ui.label("Microphone", 13), self.mic_status], spacing=1), _spacer(),
                         ui.button("Open Settings", self.app.host.open_mic_settings)], vertical=False)
         permission.widthAnchor().constraintEqualToConstant_(WIDTH).setActive_(True)
-        self._mic_devices = ["", *mic.input_devices()]
-        chosen = self.cfg["dictate_microphone"]
-        if chosen not in self._mic_devices:
-            self._mic_devices.append(chosen)
         self.microphone = _popup(lambda i: self._set("dictate_microphone", self._mic_devices[i]))
         self.microphone.setAccessibilityLabel_("Input device")
-        _fill(self.microphone, ["System default", *self._mic_devices[1:]], self._mic_devices.index(chosen))
+        self.refresh_microphones()
         self.microphone.widthAnchor().constraintEqualToConstant_(WIDTH - 90).setActive_(True)
         input_row = ui.stack([ui.label("Input device", 13), _spacer(), self.microphone], vertical=False)
         input_row.widthAnchor().constraintEqualToConstant_(WIDTH).setActive_(True)
@@ -143,6 +139,14 @@ class WritingPage:
         self._clear_target = ui.target(lambda _s: self._clear_history())
         self.refresh_history()
         return _card([self.history_list])
+
+    def refresh_microphones(self):
+        """The inputs connected now, with the saved one kept selected even when it is unplugged."""
+        self._mic_devices = ["", *mic.input_devices()]
+        chosen = self.cfg["dictate_microphone"]
+        if chosen not in self._mic_devices:
+            self._mic_devices.append(chosen)
+        _fill(self.microphone, ["System default", *self._mic_devices[1:]], self._mic_devices.index(chosen))
 
     def refresh_history(self):
         """Each saved dictation with Copy, and Original when tidy changed it."""

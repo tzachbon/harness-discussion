@@ -15,15 +15,19 @@ log = logging.getLogger("harness_discussion")
 
 
 def input_devices():
-    """Stable sounddevice queries, without Windows' duplicate entries from other host APIs."""
+    """Stable sounddevice queries, without Windows' duplicate entries from other host APIs.
+    PortAudio lists devices once, so the list is reloaded first unless a reset would close open audio."""
     import sounddevice
-    try:
-        host = sounddevice.default.hostapi
-        api = sounddevice.query_hostapis(host)["name"]
-        return [f"{d['name']}, {api}" for d in sounddevice.query_devices()
-                if d["hostapi"] == host and d["max_input_channels"] > 0]
-    except (OSError, sounddevice.PortAudioError):
-        return []
+    with audio._live_lock:
+        try:
+            if not audio._live:
+                audio.reset()
+            host = sounddevice.default.hostapi
+            api = sounddevice.query_hostapis(host)["name"]
+            return [f"{d['name']}, {api}" for d in sounddevice.query_devices()
+                    if d["hostapi"] == host and d["max_input_channels"] > 0]
+        except (OSError, sounddevice.PortAudioError):
+            return []
 
 
 def _input_device(name):
@@ -78,8 +82,7 @@ class Recorder:
             except (audio.sd.PortAudioError, ValueError):
                 if self._factory is not None or audio._live:
                     raise
-                audio.sd._terminate()
-                audio.sd._initialize()
+                audio.reset()
                 self._open(factory)
         if self._factory is None:
             log.info("dictation microphone: %s", self.device or "System default")

@@ -60,6 +60,14 @@ _live, _live_lock = set(), threading.Lock()  # open input/output streams, which 
 CLOSE_WAIT_S = 1.0  # how long close() waits for the callback to stop the stream
 
 
+def reset():
+    """Reloads PortAudio's device list. Call with _live_lock held and nothing in _live.
+    After a failed reload PortAudio stays terminated, and terminating it again raises."""
+    if sd._initialized:
+        sd._terminate()
+    sd._initialize()
+
+
 class PcmPlayer:
     _hold, _holding, _last_write = 0, False, 0.0  # no cushion for players built without a sound device
     _closing = False
@@ -78,8 +86,7 @@ class PcmPlayer:
             except sd.PortAudioError:  # PortAudio lists devices once, so a headset or dock change leaves them stale
                 if _live:
                     raise
-                sd._terminate()
-                sd._initialize()
+                reset()
                 self._stream = self._open(rate, channels)
 
     def _open(self, rate, channels):
