@@ -129,9 +129,9 @@ class WritingSettingsTest(unittest.TestCase):
         from harness_discussion import mic
         menu = self.win.microphone
         self.win.cfg["dictate_microphone"] = "USB Mic, Core Audio"
-        with mock.patch.object(mic, "input_devices", return_value=["USB Mic, Core Audio", "AirPods, Core Audio"]):
+        with mock.patch.object(mic, "input_devices", return_value=["AirPods, Core Audio"]):
             self.win.focus()
-        self.assertEqual(menu.itemTitles(), ["System default", "USB Mic, Core Audio", "AirPods, Core Audio"])
+        self.assertEqual(menu.itemTitles(), ["System default", "AirPods, Core Audio", "USB Mic, Core Audio"])
         self.assertEqual(menu.titleOfSelectedItem(), "USB Mic, Core Audio")
         menu.selectItemWithTitle_("AirPods, Core Audio")
         self.click(menu)
