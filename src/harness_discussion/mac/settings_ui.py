@@ -206,6 +206,8 @@ class SettingsWindow(CaptionsPage, SummarizePage, ReadingPage, SttPage, WritingP
         self._refresh_stt()
         self.refresh_updates()
         self.refresh_permission()
+        if hasattr(self, "microphone"):  # only after Summarize
+            self.refresh_microphones()
         ui.show(self.win)
 
     def _fit(self):
