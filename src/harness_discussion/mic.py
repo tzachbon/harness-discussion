@@ -21,8 +21,7 @@ def input_devices():
     with audio._live_lock:
         try:
             if not audio._live:
-                sounddevice._terminate()
-                sounddevice._initialize()
+                audio.reset()
             host = sounddevice.default.hostapi
             api = sounddevice.query_hostapis(host)["name"]
             return [f"{d['name']}, {api}" for d in sounddevice.query_devices()
@@ -83,8 +82,7 @@ class Recorder:
             except (audio.sd.PortAudioError, ValueError):
                 if self._factory is not None or audio._live:
                     raise
-                audio.sd._terminate()
-                audio.sd._initialize()
+                audio.reset()
                 self._open(factory)
         if self._factory is None:
             log.info("dictation microphone: %s", self.device or "System default")

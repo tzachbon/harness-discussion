@@ -235,6 +235,17 @@ class MicTest(unittest.TestCase):
                 patch("sounddevice._terminate"), patch("sounddevice._initialize", side_effect=lambda: listed.__setitem__(0, now)):
             self.assertEqual(mic.input_devices(), ["MacBook Pro Microphone, Core Audio", "AirPods, Core Audio"])
 
+    def test_device_menu_recovers_after_a_failed_reload(self):
+        devices = [{"name": "AirPods", "hostapi": 0, "max_input_channels": 1}]
+        with patch("sounddevice._initialized", 0), patch(
+                "sounddevice._terminate", side_effect=audio.sd.PortAudioError("not initialized")) as terminate, \
+                patch("sounddevice._initialize") as initialize, patch("sounddevice.query_devices", return_value=devices), \
+                patch("sounddevice.query_hostapis", return_value={"name": "Core Audio"}), \
+                patch("sounddevice.default", SimpleNamespace(hostapi=0)):
+            self.assertEqual(mic.input_devices(), ["AirPods, Core Audio"])
+        terminate.assert_not_called()
+        initialize.assert_called_once_with()
+
     def test_device_menu_keeps_the_cached_list_while_audio_is_open(self):
         rec = mic.Recorder(lambda cb: Mock())
         rec.start()
