@@ -42,7 +42,7 @@ def _common(word):
     word = word.casefold().replace("’", "'")
     if word in _COMMON:
         return True
-    if word.endswith("ies") and word[:-3] + "y" in _COMMON:
+    if word.endswith(("ies", "ied")) and word[:-3] + "y" in _COMMON:
         return True
     for suffix in ("'s", "s", "es", "ed", "ing"):
         if word.endswith(suffix):

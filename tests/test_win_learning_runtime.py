@@ -109,7 +109,7 @@ class NativeLearning(unittest.TestCase):
                 u32.SendMessageW(target["edit"], 0x00C2, 1, ctypes.addressof(replacement))
                 until(lambda: app.cfg["dictation_words"] == ["Tzach"])
                 self.assertEqual(settings.load()["dictation_words"], ["Tzach"])
-                self.assertEqual(dict(clipboard.snapshot()), saved)
+                self.assertTrue(dict(clipboard.snapshot()) == saved, "Clipboard changed")
                 # A second real insertion must pass the learned hint to its selected source.
                 dictate()
                 self.assertEqual(hints, ["", "Tzach"])
@@ -126,7 +126,7 @@ class NativeLearning(unittest.TestCase):
                 self.assertEqual(settings.load()["dictation_words"], [])
                 window.close()
             finally:
-                self.assertEqual(dict(clipboard.snapshot()), saved)
+                self.assertTrue(dict(clipboard.snapshot()) == saved, "Clipboard changed")
 
 
 if __name__ == "__main__":
