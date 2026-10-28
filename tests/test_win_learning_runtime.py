@@ -15,6 +15,7 @@ import json
 import subprocess
 import time
 from ctypes import wintypes
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from harness_discussion import app_writer, local_stt, mic, settings
@@ -36,7 +37,7 @@ class NativeLearning(unittest.TestCase):
                "dictation_learn": True, "dictation_words": [],
                "writer_sources": [[n, False] for n in settings.WRITER_SOURCES],
                "stt_sources": [[n, n == "Local"] for n in settings.STT_SOURCES],
-               "sources": [[n, False] for n in settings.DEFAULT_SOURCES]}
+               "sources": [[n, n == "Windows"] for n in settings.DEFAULT_SOURCES]}
         settings.save(cfg)
         hints = []
 
@@ -66,7 +67,7 @@ class NativeLearning(unittest.TestCase):
         u32.SendMessageW.restype = ctypes.c_ssize_t
         u32.PostThreadMessageW.argtypes = [wintypes.DWORD, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
         devices = Devices()
-        with patch.object(TkHost, "engines", return_value=[]), \
+        with patch.object(TkHost, "engines", return_value=[SimpleNamespace(name="Windows", voices=[])]), \
                 patch.object(app_writer.dictation, "sources", return_value=[Source()]), \
                 patch.object(app_writer.mic, "Recorder", lambda device="": RECORDER(devices.factory, device=device)):
             host = TkHost()
