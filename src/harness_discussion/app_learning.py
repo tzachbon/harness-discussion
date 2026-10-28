@@ -50,6 +50,11 @@ class Learning:
         watch = self._learning
         if watch is None or watch.closed:
             return
+        at = time.monotonic() if now is None else now
+        if at >= watch.started + learning.WINDOW_S:
+            watch.closed = True
+            self.events.put(("learning_end", watch))
+            return
         try:
             field = self.edit.observe(watch.context)
             words = watch.poll(field, time.monotonic() if now is None else now)

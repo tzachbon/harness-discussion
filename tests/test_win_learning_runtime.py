@@ -73,8 +73,10 @@ class NativeLearning(unittest.TestCase):
             host.mic_permission = lambda then: then(True)
             host.history_changed = lambda: None
             app = App(host)
-            self.addCleanup(app._close_writer)
-            self.addCleanup(lambda: host.root.destroy() if host.root.winfo_exists() else None)
+            def close_app():
+                app._close_writer()
+                host.root.destroy()
+            self.addCleanup(close_app)
             def until(predicate, seconds=15):
                 deadline = time.monotonic() + seconds
                 while time.monotonic() < deadline:
@@ -123,7 +125,6 @@ class NativeLearning(unittest.TestCase):
                 self.assertEqual(settings.load()["dictation_words"], [])
                 window.close()
             finally:
-                app._close_writer()
                 self.assertEqual(dict(clipboard.snapshot()), saved)
 
 

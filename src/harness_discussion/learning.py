@@ -16,7 +16,41 @@ did is are was were be been being get got make made take took give gave come cam
 said tell see look use work time year day thing just also only very much many still too again never ever
 always about into onto over under after before between through back up down out in on at to of as so if
 than because while until hello hi thanks thank please lets let dont cant wont isnt cannot well right left
-me my mine yours ours theirs him myself yourself themselves itself ourselves loves likes wants needs""".split())
+me my mine yours ours theirs him myself yourself themselves itself ourselves loves likes wants needs
+able above across action add address almost along already although amount animal answer appear apply area
+around ask away baby bank begin believe best better big bird black blue body book boy bring build business
+buy call car care carry case cat cause center change child choose city class clear close color company
+complete computer consider continue control country course create cut dark data decide develop different
+difficult direction dog door draw drive early easy eat education effect end enough even example expect eye
+face fact family far father feel find finish fire fish five follow food force form friend full future garden
+girl glass government great green group grow hand happen happy hard head health hear help high history hold
+home hope hour house human idea important improve include information interest issue job keep key kid kind
+large late learn leave life light line list little live long lot low man manage market matter mean member
+mind minute miss money month morning mother move music name nature near news night north note nothing
+notice number offer office often once open order paper parent part pass past pay people person picture
+place plan plant play point possible power present probably problem process program provide public pull
+push put question quick read ready real reason receive record red relationship remember report require
+research result return road room rule run safe school science sea seem sell send sense service set several
+show side simple since sing sit site six size small social something sometimes soon sound south speak
+special stand start state stay step stop story stream street strong student study such suggest support
+sure system table talk teacher team technology term test three together town travel tree true try turn
+type understand university value view visit voice wait walk wall watch water way week white whole wide
+wife win window wish woman word world write wrong young zero""".split())
+
+
+def _common(word):
+    word = word.casefold().replace("’", "'")
+    if word in _COMMON:
+        return True
+    if word.endswith("ies") and word[:-3] + "y" in _COMMON:
+        return True
+    for suffix in ("'s", "s", "es", "ed", "ing"):
+        if word.endswith(suffix):
+            stem = word[:-len(suffix)]
+            if stem in _COMMON or stem + "e" in _COMMON or (
+                    len(stem) > 2 and stem[-1] == stem[-2] and stem[:-1] in _COMMON):
+                return True
+    return False
 
 
 def normalize(words):
@@ -56,7 +90,7 @@ def corrections(original, edited):
         if kind != "replace" or max(b - a, d - c) > 3:
             continue
         before, after = " ".join(old[a:b]), " ".join(new[c:d])
-        if not normalize([before]) or not normalize([after]) or any(w.casefold() in _COMMON for w in new[c:d]):
+        if not normalize([before]) or not normalize([after]) or any(_common(w) for w in new[c:d]):
             continue
         # ponytail: distant mishearings are skipped; add a local classifier only with a correction corpus.
         if difflib.SequenceMatcher(None, before.casefold().replace(" ", ""),

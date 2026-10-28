@@ -1,10 +1,11 @@
 import queue
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from harness_discussion import app_learning, learning
 from harness_discussion.edit_logic import Context, Field
+from harness_discussion.practice import PracticeEdit
 
 
 class App(app_learning.Learning):
@@ -31,6 +32,26 @@ class App(app_learning.Learning):
 
 
 class LearningApp(unittest.TestCase):
+    def test_deployed_practice_wrapper_forwards_bound_observation(self):
+        app = App()
+        real = app.edit
+        tour = SimpleNamespace(practice_box=lambda: None, sandboxed=lambda *keys: False)
+        app.edit = PracticeEdit(real, None, None, tour)
+        self.assertIs(app._learning_before(app.ctx), app.field)
+        tour.sandboxed = lambda *keys: True
+        self.assertIsNone(app._learning_before(app.ctx))
+        tour.sandboxed = lambda *keys: False
+        tour.practice_box = lambda: object()
+        self.assertIsNone(app._learning_before(app.ctx))
+
+    def test_expired_window_never_reads_the_field(self):
+        app = App()
+        watch = app.arm()
+        app.edit.observe = Mock()
+        app._learning_tick(31)
+        app.edit.observe.assert_not_called()
+        self.assertTrue(watch.closed)
+
     def test_exact_insertion_then_settled_change_emits_and_saves_words(self):
         app = App()
         watch = app.arm()

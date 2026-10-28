@@ -17,6 +17,8 @@ class Learning(unittest.TestCase):
 
     def test_skips_content_edits_symbols_case_punctuation_and_insertions(self):
         for old, new in [("why is this here", "what is this here"), ("hello there", "Hello there!"),
+                         ("Feed the cat", "Feed the cats"), ("Walk down the street", "Walk down the stream"),
+                         ("We start working", "We start walking"),
                          ("Ask Zach", "Ask Zach tomorrow"), ("Use /tmp/old", "Use /tmp/new"),
                          ("mail a@old.com", "mail a@new.com"), ("use abc_123", "use abc_124"),
                          ("Ask Zach", "Remember everything completely differently")]:
