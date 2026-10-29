@@ -6,7 +6,7 @@ import shutil
 import sys
 import tempfile
 
-from . import hotkeys, tour, writer
+from . import hotkeys, learning, tour, writer
 
 if sys.platform == "win32":
     import winreg
@@ -37,7 +37,7 @@ DEFAULTS = {"sources": [[n, True] for n in DEFAULT_SOURCES], "voices": {}, "spee
             "rewrite_hotkey": hotkeys.REWRITE, "dictate_hotkey": hotkeys.DICTATE,
             "stt_sources": [["Local", True], ["Cursor", True], ["Codex", True]], "dictate_polish": True,
             "dictate_mode": "Clean dictation", "dictate_local_tidy": True, "dictate_microphone": "",
-            "dictation_history": True,
+            "dictation_history": True, "dictation_learn": True, "dictation_words": [],
             # About you: a short note sent with every rewrite and summary prompt, with today's date
             "about_me": "", "about_me_on": True, "about_me_uncapped": False}
 WRITER_SOURCES, STT_SOURCES = ("Cursor", "Codex", "Local"), ("Local", "Cursor", "Codex")
@@ -101,7 +101,7 @@ def load(path=PATH) -> dict:
     s["caption_background_opacity"] = (min(max(float(opacity), 0.0), 1.0)
                                         if ok else DEFAULTS["caption_background_opacity"])
     for key in ("clipboard_fallback", "stt_server", "prefetch", "caption_background", "auto_update", "dictate_polish",
-                "dictate_local_tidy", "dictation_history"):
+                "dictate_local_tidy", "dictation_history", "dictation_learn"):
         if not isinstance(s[key], bool):
             s[key] = DEFAULTS[key]
     if not isinstance(s["ax_granted_build"], (str, type(None))):
@@ -112,6 +112,7 @@ def load(path=PATH) -> dict:
     for key in ("writer", "live_check", "tour_done"):
         if not isinstance(s[key], bool):
             s[key] = DEFAULTS[key]
+    s["dictation_words"] = learning.normalize(s["dictation_words"])
     s["tour_steps"] = tour.clean(s["tour_steps"])
     if isinstance(saved, dict) and "writer_sources" not in saved:  # first run of the Writer: follow the voice order
         voice_order = [n for n, _ in s["sources"] if n in WRITER_SOURCES]

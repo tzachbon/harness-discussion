@@ -13,17 +13,12 @@ from _ctypes import COMError
 from .. import edit_logic, live
 from . import clipboard, selection, uia_thread
 from . import input as keys
+from .process import executable as _exe
 
 u32 = ctypes.windll.user32
 u32.GetForegroundWindow.restype = wintypes.HWND
 u32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
 u32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
-k32 = ctypes.WinDLL("kernel32", use_last_error=True)
-k32.OpenProcess.restype = wintypes.HANDLE
-k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
-k32.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
-                                           ctypes.POINTER(wintypes.DWORD)]
-k32.CloseHandle.argtypes = [wintypes.HANDLE]
 MAX_DOCUMENT = 1_000_000
 def _mixed_direction(text):
     """A line holding right-to-left script and left-to-right letters or digits: Chromium reports it in visual order."""
@@ -72,28 +67,43 @@ def _run(fn, *args):
 def _foreground():
     hwnd = u32.GetForegroundWindow()
     pid, name = wintypes.DWORD(), ctypes.create_unicode_buffer(256)
-    if not hwnd or not u32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid)):
+    if not hwnd or not u32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid)) or not pid.value:
         return None
     if not u32.GetClassNameW(hwnd, name, len(name)) or name.value in selection.TERMINALS:
         return None
     return pid.value, hwnd
 
 
-def _inspect(limit=MAX_DOCUMENT):
+def _safe_target(identity, element):
+    if _foreground() != identity:
+        return False
+    focus = selection.focused()
+    if focus is None or tuple(focus.GetRuntimeId()) != element:
+        return False
+    controls = selection._safe_controls(focus, identity[1])
+    return bool(controls) and controls is not selection.PASSWORD
+
+
+def _inspect(limit=MAX_DOCUMENT, ctx=None):
     """(Context, document, selection range, document range), or None. The ranges are None when the focus has no
     usable text pattern."""
     identity = _foreground()
     if not identity:
         return None
     app, window = identity
+    if ctx is not None and (not ctx.app or not ctx.window or not ctx._element or ctx.secure or not ctx.editable
+                            or identity != (ctx.app, ctx.window)):
+        return None
     focus = selection.focused()
+    if focus is None:
+        return None
     ancestors = selection._safe_controls(focus, window)
     if ancestors is selection.PASSWORD:
         return Context("", app, window, False, True), "", None, None
     if not ancestors:
         return None
     element = tuple(focus.GetRuntimeId())
-    if not element:
+    if not element or (ctx is not None and element != ctx._element):
         return None
     for node in ancestors:
         pattern = node.GetPattern(uia.PatternId.TextPattern)
@@ -106,26 +116,39 @@ def _inspect(limit=MAX_DOCUMENT):
         value = node.GetPattern(uia.PatternId.ValuePattern)
         writable = (not value.IsReadOnly if value else
                     span.GetAttributeValue(uia.TextAttributeId.IsReadOnlyAttribute) is False)
+        if ctx is not None and not writable:
+            return None
         whole = pattern.DocumentRange
-        if whole.GetChildren():
+        if whole.GetChildren() or not _safe_target(identity, element):
             return None  # plain text cannot prove positions across embedded objects
         document = whole.GetText(limit + 1)
-        if len(document) > limit:
+        if len(document) > limit or not _safe_target(identity, element):
             return None
-        text = span.GetText(MAX_DOCUMENT + 1)
+        text = span.GetText(limit + 1)
         # uiautomation 2.0.29 CompareEndpoints forgets to unwrap its second argument.
         collapsed = span.textRange.CompareEndpoints(uia.TextPatternRangeEndpoint.Start, span.textRange,
                                                    uia.TextPatternRangeEndpoint.End) == 0
-        if collapsed != (text == ""):
+        if collapsed != (text == "") or not _safe_target(identity, element):
             return None
         prefix = whole.Clone()
         if not prefix.MoveEndpointByRange(uia.TextPatternRangeEndpoint.End, span,
                                           uia.TextPatternRangeEndpoint.Start, waitTime=0):
             return None
-        before = prefix.GetText(MAX_DOCUMENT + 1)
+        before = prefix.GetText(limit + 1)
         start, raw = len(_encoded(before)) // 2, _encoded(document)
         end = start + len(_encoded(text)) // 2
-        if raw[start * 2:end * 2] != _encoded(text) or _foreground() != identity:
+        if (len(raw) // 2 > limit or not 0 <= start <= end <= len(raw) // 2
+                or raw[:start * 2] != _encoded(before) or raw[start * 2:end * 2] != _encoded(text)
+                or not _safe_target(identity, element)):
+            return None
+        try:
+            raw[:start * 2].decode("utf-16-le")
+            raw[start * 2:end * 2].decode("utf-16-le")
+        except UnicodeDecodeError:
+            return None
+        value = node.GetPattern(uia.PatternId.ValuePattern)
+        if writable and (value.IsReadOnly if value else
+                         span.GetAttributeValue(uia.TextAttributeId.IsReadOnlyAttribute) is not False):
             return None
         context = Context(text, app, window, writable, False, element, start, end,
                           hashlib.sha256(raw).digest(), len(raw) // 2)
@@ -274,27 +297,15 @@ def select_back(n, ctx=None):
 
 # Check as you type: read the focused field and place text ranges without the clipboard or keys.
 
-def _exe(pid):
-    """The process's executable name, lowercased ("slack.exe"), or ""."""
-    handle = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
-    if not handle:
-        return ""
-    try:
-        buf, size = ctypes.create_unicode_buffer(1024), wintypes.DWORD(1024)
-        if not k32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
-            return ""
-        return os.path.basename(buf.value).lower()
-    finally:
-        k32.CloseHandle(handle)
-
-def observe():
+def observe(ctx=None) -> edit_logic.Field | None:
     """The focused editable, non-secure field as an edit_logic.Field, or None. Never another app's terminal, never
-    this app's own windows, never a document longer than live.LIVE_MAX_DOC."""
+    this app's own windows, never a document longer than live.LIVE_MAX_DOC. With ctx, require its native target,
+    allowing document and caret changes."""
     def look():
         identity = _foreground()
         if not identity or identity[0] == os.getpid():
             return None  # checked before any UIA call reaches our own Tk windows
-        found = _inspect(live.LIVE_MAX_DOC)
+        found = _inspect(live.LIVE_MAX_DOC) if ctx is None else _inspect(live.LIVE_MAX_DOC, ctx)
         _observed[:] = time.monotonic(), found
         if not found or found[2] is None:
             return None
@@ -312,6 +323,8 @@ def observe():
             rect = (r.left, r.top, r.right, r.bottom)
         except Exception:
             rect = None
+        if not _safe_target((context.app, context.window), context._element):
+            return None
         return edit_logic.Field(context.app, context.window, name, name.rsplit(".", 1)[0].capitalize(),
                                 _canonical(document), (context._start, context._end), context._digest, rect,
                                 context._element)

@@ -54,8 +54,13 @@ class PracticeEdit:
             return self._capture(box, box.context)
         return None if self.app.sandboxed("writer") else self.real.capture(clipboard_fallback)
 
-    def observe(self):
+    def observe(self, ctx=None):
         box = self.app.practice_box()
+        if ctx is not None:
+            # Tutorial edits must not seed real vocabulary; real contexts keep the native binding intact.
+            if isinstance(ctx, PracticeCtx) or box is not None or self.app.sandboxed("writer", "live_check"):
+                return None
+            return self.real.observe(ctx)
         if box is not None:  # only step 7 is checked as you type; steps 3-6 practise other features
             return self._capture(box, box.field) if self.app.tour_step() == "live" else None
         return None if self.app.sandboxed("writer", "live_check") else self.real.observe()

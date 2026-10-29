@@ -268,35 +268,77 @@ def _rect_of(element):
         return None
     return int(p.x), int(p.y), int(p.x + s.width), int(p.y + s.height)
 
-def observe():
+def _safe_observation(pid, window, element):
+    if _frontmost_pid() != pid or _window_number(pid) != window:
+        return False
+    current = _focused(pid)
+    if current is None or not CFEqual(current, element) or selection.secure_input() or not _editable(element):
+        return False
+    err, settable = AXUIElementIsAttributeSettable(element, "AXValue", None)
+    if err != kAXErrorSuccess or not settable:
+        return False
+    node = element
+    for _ in range(32):
+        role, subrole = _attr(node, "AXRole"), _attr(node, "AXSubrole")
+        if role is None or selection.SECURE in (role, subrole):
+            return False
+        node = _attr(node, "AXParent")
+        if node is None:
+            return True
+    return False
+
+
+def observe(ctx=None) -> edit_logic.Field | None:
     """The focused editable, non-secure field as an edit_logic.Field, or None. The text is the raw AXValue, since AX
-    ranges count its UTF-16 units as they are."""
+    ranges count its UTF-16 units as they are. With ctx, require its native target without activating AX features."""
     if not permission.trusted():
         return None
     app = _frontmost_app()
     if app is None or app.processIdentifier() == os.getpid() or app.bundleIdentifier() in TERMINALS:
         return None
     pid, bundle = app.processIdentifier(), app.bundleIdentifier() or ""
-    selection._expose(pid)
-    _enhance(pid, bundle)
-    element = _focused(pid)
-    if element is None or not _editable(element) or selection.secure_input() or selection.SECURE in (
-            _attr(element, "AXRole"), _attr(element, "AXSubrole")):
+    window = _window_number(pid)
+    if not pid or not window or (ctx is not None and (
+            not ctx.app or not ctx.window or ctx.field is None or ctx.secure or not ctx.editable
+            or (pid, window) != (ctx.app, ctx.window))):
         return None
-    err, settable = AXUIElementIsAttributeSettable(element, "AXValue", None)
-    if err != kAXErrorSuccess or not settable:  # a read-only text area: a log, a console, a locked document
+    if ctx is None:
+        selection._expose(pid)
+        _enhance(pid, bundle)
+    element = _focused(pid)
+    if element is None or (ctx is not None and not CFEqual(element, ctx.field)):
+        return None
+    if not _safe_observation(pid, window, element):
         return None
     count = _attr(element, "AXNumberOfCharacters")
-    if count is not None and int(count) > live.LIVE_MAX_DOC:
+    if count is not None and (not isinstance(count, int) or isinstance(count, bool)
+                              or not 0 <= count <= live.LIVE_MAX_DOC):
         return None
-    value, rng = _attr(element, "AXValue"), _range(element)
-    if value is None or rng is None:
+    try:
+        start, length = _range(element)
+    except (TypeError, ValueError, OverflowError):
         return None
-    text = str(value)
-    if live.units(text) > live.LIVE_MAX_DOC or _frontmost_pid() != pid:
+    if not all(isinstance(n, int) and not isinstance(n, bool) and 0 <= n <= live.LIVE_MAX_DOC
+               for n in (start, length)) or start + length > live.LIVE_MAX_DOC:
         return None
-    return edit_logic.Field(pid, _window_number(pid), bundle, str(app.localizedName() or bundle), text,
-                            (rng[0], rng[0] + rng[1]), _digest(text), _rect_of(element), element)
+    if not _safe_observation(pid, window, element):
+        return None
+    value = _attr(element, "AXValue")
+    if not isinstance(value, str):
+        return None
+    raw, end = value.encode("utf-16-le", "surrogatepass"), start + length
+    if len(raw) // 2 > live.LIVE_MAX_DOC or end > len(raw) // 2:
+        return None
+    try:
+        raw[:start * 2].decode("utf-16-le")
+        raw[start * 2:end * 2].decode("utf-16-le")
+    except UnicodeDecodeError:
+        return None
+    rect = _rect_of(element)
+    if not _safe_observation(pid, window, element):
+        return None
+    return edit_logic.Field(pid, window, bundle, str(app.localizedName() or bundle), value,
+                            (start, end), _digest(value), rect, element)
 
 def _same_field(field):
     """The field's element, still focused, with the same text; or None."""
