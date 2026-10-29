@@ -1,4 +1,5 @@
 """Mac paste cancellation at the native boundary, without driving an application."""
+from contextlib import nullcontext
 import importlib.util
 from dataclasses import replace
 from pathlib import Path
@@ -28,6 +29,7 @@ class MacInsertionGuard(unittest.TestCase):
         permission = types.ModuleType("harness_discussion.mac.permission")
         selection = types.ModuleType("harness_discussion.mac.selection")
         modules = {"AppKit": appkit, "Quartz": quartz, "ApplicationServices": services,
+                   "objc": types.SimpleNamespace(autorelease_pool=nullcontext),
                    "CoreFoundation": foundation, "harness_discussion.mac.pasteboard": board,
                    "harness_discussion.mac.permission": permission,
                    "harness_discussion.mac.selection": selection}
