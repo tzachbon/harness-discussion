@@ -5,11 +5,12 @@ import struct
 import urllib.error
 import urllib.request
 
-from . import cursor_auth
+from . import cursor_auth, sentences
 from .audio import NoAudioError
 from .engines import EdgeEngine
 
 URL = "https://api2.cursor.sh/aiserver.v1.AiService/TextToSpeech"
+MAX_UNITS = 1500  # Cursor rejects requests longer than 1500 UTF-16 code units with HTTP 400.
 VOICES = tuple((v, v.capitalize()) for v in (
     "altair ara atlas aurora carina castor celeste cosmo eve helios helix iris kepler leo "
     "liora lumen luna lux naksh orion perseus rex rigel sal sirius ursa zagan zenith").split())
@@ -101,7 +102,16 @@ class CursorEngine(EdgeEngine):
         return text, self.voice or self.default_voice, self.speed
 
     async def _source(self, text, voice, speed):
-        yield await asyncio.to_thread(synthesize, text, voice, speed)  # one whole MP3; EdgeStream decodes it
+        # ponytail: the conservative budget can halve request size; count per piece if latency matters.
+        limit = max(MAX_UNITS // 2, MAX_UNITS - sum(ord(c) > 0xFFFF for c in text))
+        for i, piece in enumerate(sentences.chunks(text, limit)):
+            try:
+                audio = await asyncio.to_thread(synthesize, piece, voice, speed)
+            except NoAudioError as e:
+                if i:
+                    raise RuntimeError(f"Cursor: {e}") from e  # earlier pieces may already have been heard
+                raise
+            yield audio
 
     def status(self):
         return cursor_auth.status()

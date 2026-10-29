@@ -204,6 +204,64 @@ class Engine(TempDb):
         self.assertEqual(sum(map(len, FakePlayer.opened[0].writes)), decode_whole(data) * 2)
         self.assertEqual(cursor_tts.decode(call.call_args[0][0].data)[2], b"ara")
 
+    def test_long_reads_fit_the_service_limit_and_play_every_piece(self):
+        for text in ("word " * 300 + "x", "שלום " * 400, "x" * 3001, "😀" * 751,
+                     "Read this. " * 90 + "😀" * 300):
+            for prepared in (False, True):
+                with self.subTest(text_length=len(text), prepared=prepared):
+                    sent, data = [], tone_mp3(0.1)
+
+                    def answer(req, timeout):
+                        fields = cursor_tts.decode(req.data)
+                        piece = fields[1].decode()
+                        sent.append(piece)
+                        if len(piece.encode("utf-16-le")) // 2 > 1500:
+                            raise urllib.error.HTTPError(cursor_tts.URL, 400, "too long", {}, None)
+                        self.assertEqual(fields[2], b"luna")
+                        self.assertEqual(struct.unpack("<f", fields[4])[0], 1.25)
+                        return reply(data)
+
+                    e = CursorEngine()
+                    e.Player, e.voice, e.speed = FakePlayer, "luna", 1.25
+                    FakePlayer.opened = []
+                    with mock.patch.object(cursor_tts, "_open", side_effect=answer):
+                        if prepared:
+                            e.prepare("en-US", text)
+                        done, result, heard = speak(e, text)
+                        self.assertTrue(done.wait(5))
+                    self.assertEqual((result, len(heard)), ([None], 1))
+                    self.assertTrue(all(len(p.encode("utf-16-le")) // 2 <= 1500 for p in sent))
+                    self.assertEqual("".join("".join(sent).split()), "".join(text.split()))
+                    if len(text.split()) > 1:
+                        self.assertEqual(" ".join(" ".join(sent).split()), " ".join(text.split()))
+                    self.assertEqual(sum(map(len, FakePlayer.opened[0].writes)),
+                                     decode_whole(data) * 2 * len(sent))
+
+    def test_a_later_piece_failure_does_not_restart_heard_text_on_another_engine(self):
+        e, fallback, done, result, heard = CursorEngine(), mock.Mock(), threading.Event(), [], []
+        e.Player = FakePlayer
+        fallback.name, fallback.speed = "Next", 1.0
+        fallback.min_speed, fallback.max_speed = 0, 2.0
+        fallback.speak.side_effect = lambda text, tag, finish, on_audio: finish(None)
+        chain = Chain([e, fallback])
+        calls = 0
+
+        def answer(req, timeout):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return reply(tone_mp3(0.1))
+            raise urllib.error.HTTPError(cursor_tts.URL, 503, "unavailable", {}, None)
+
+        with mock.patch.object(cursor_tts, "_open", side_effect=answer):
+            chain.speak("word " * 400, "en-US", lambda err: (result.append(err), done.set()),
+                        lambda: heard.append(1))
+            self.assertTrue(done.wait(5))
+        self.assertEqual((calls, heard), (2, [1]))
+        self.assertIsInstance(result[0], RuntimeError)
+        self.assertNotIsInstance(result[0], NoAudioError)
+        fallback.speak.assert_not_called()
+
     def test_prepare_sends_only_with_text_and_play_joins_it(self):
         e = CursorEngine()
         e.Player = FakePlayer
