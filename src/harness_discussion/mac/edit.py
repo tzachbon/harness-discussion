@@ -3,12 +3,13 @@
 There is no AX setter that keeps the app's own undo, so text goes in through the pasteboard and Cmd+V,
 and the user's pasteboard is put back afterwards.
 """
+import functools
 import hashlib
 import os
-import hashlib
 import time
 
 import AppKit
+import objc
 import Quartz
 import ApplicationServices as AS  # Check as you type reads its names when used
 from ApplicationServices import (AXUIElementCopyAttributeValue, AXUIElementCreateApplication,
@@ -29,6 +30,16 @@ MAX_DOCUMENT = 1_000_000
 NEWLINE = "\n"
 
 
+def _pooled(fn):
+    """Worker threads have no autorelease pool that drains, so a long-lived poll thread would keep every window
+    list and app object it touched until it exits."""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        with objc.autorelease_pool():
+            return fn(*args, **kwargs)
+    return wrapper
+
+
 def _attr(element, name):
     err, value = AXUIElementCopyAttributeValue(element, name, None)
     return value if err == kAXErrorSuccess else None
@@ -38,6 +49,7 @@ def _focused(pid):
     return _attr(AXUIElementCreateApplication(pid), "AXFocusedUIElement")
 
 
+@_pooled
 def _window_number(pid):
     """The frontmost on-screen window of `pid`, or 0."""
     infos = Quartz.CGWindowListCopyWindowInfo(
@@ -288,6 +300,7 @@ def _safe_observation(pid, window, element):
     return False
 
 
+@_pooled
 def observe(ctx=None) -> edit_logic.Field | None:
     """The focused editable, non-secure field as an edit_logic.Field, or None. The text is the raw AXValue, since AX
     ranges count its UTF-16 units as they are. With ctx, require its native target without activating AX features."""
@@ -350,6 +363,7 @@ def _same_field(field):
     value = _attr(element, "AXValue")
     return element if value is not None and _digest(str(value)) == field.digest else None
 
+@_pooled
 def bounds(field, spans):
     """Screen rectangles (top-left origin) per (start, end, expected) span: a list, empty when not visible, or None
     when the span cannot be placed exactly. None for the whole call when the field changed."""
