@@ -68,5 +68,18 @@ class GuardTest(unittest.TestCase):
             self.assertFalse(edit.select_back(4, CTX))
 
 
+class PoolTest(unittest.TestCase):
+    def test_each_live_poll_read_drains_its_own_autorelease_pool(self):
+        with mock.patch.object(edit, "objc") as objc, mock.patch.object(edit, "Quartz") as quartz, \
+                mock.patch.object(edit.permission, "trusted", return_value=False), \
+                mock.patch.object(edit, "_same_field", return_value=None):
+            quartz.CGWindowListCopyWindowInfo.return_value = []
+            self.assertEqual(edit._window_number(1), 0)
+            self.assertIsNone(edit.observe())
+            self.assertIsNone(edit.bounds(None, []))
+        self.assertEqual(objc.autorelease_pool.call_count, 3)
+        self.assertEqual(objc.autorelease_pool.return_value.__exit__.call_count, 3)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -289,14 +289,14 @@ class NativeHold:
     def _run(self):
         added = False
         try:
-            with objc.autorelease_pool():
-                with self.tracker.lock:
-                    if self._closed:
-                        return
-                    self._loop = CF.CFRunLoopGetCurrent()
-                    CF.CFRunLoopAddSource(self._loop, self._source, CF.kCFRunLoopDefaultMode)
-                    added = True
-                while True:
+            with self.tracker.lock:
+                if self._closed:
+                    return
+                self._loop = CF.CFRunLoopGetCurrent()
+                CF.CFRunLoopAddSource(self._loop, self._source, CF.kCFRunLoopDefaultMode)
+                added = True
+            while True:
+                with objc.autorelease_pool():  # drained every pass, or each tapped event lives until the thread ends
                     with self.tracker.lock:
                         if self._closed:
                             break
