@@ -232,6 +232,8 @@ class Engine(TempDb):
                     self.assertEqual((result, len(heard)), ([None], 1))
                     self.assertTrue(all(len(p.encode("utf-16-le")) // 2 <= 1500 for p in sent))
                     self.assertEqual("".join("".join(sent).split()), "".join(text.split()))
+                    if len(text.split()) > 1:
+                        self.assertEqual(" ".join(" ".join(sent).split()), " ".join(text.split()))
                     self.assertEqual(sum(map(len, FakePlayer.opened[0].writes)),
                                      decode_whole(data) * 2 * len(sent))
 
