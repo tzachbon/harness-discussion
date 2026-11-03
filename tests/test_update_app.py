@@ -9,6 +9,7 @@ import queue
 import sys
 import tempfile
 import threading
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
@@ -210,6 +211,31 @@ class UpdateApp(unittest.TestCase):
                 self.assertFalse(a.update_state()[1])
             finally:
                 finish.set()
+
+    def test_rate_limit_clears_busy_and_a_second_click_stays_offline(self):
+        a = self.app
+        cache = Path(self.temp.name) / "rate-limit-cache"
+        cache.mkdir()
+        (cache / "rate-limit-until").write_text(f"{int(time.time()) + 3600}\n", encoding="utf-8")
+        updates._rate_limit_until = None
+        try:
+            with patch.object(updates, "CACHE", cache), patch.object(updates, "urlopen") as opened, \
+                    patch.object(updates, "download") as download:
+                a.check_update()
+                a._handle(*a.events.get(timeout=2))
+                self.assertEqual(
+                    a.update_state()[0],
+                    "Could not update because GitHub is limiting requests from this network, so try again later.")
+                self.assertFalse(a.update_state()[1])
+                self.assertIsNone(a._pending_update)
+                a.check_update()
+                a._handle(*a.events.get(timeout=2))
+                self.assertFalse(a.update_state()[1])
+                self.assertIsNone(a._pending_update)
+                opened.assert_not_called()
+                download.assert_not_called()
+        finally:
+            updates._rate_limit_until = None
 
     def test_update_quit_stops_queue_pump_before_tk_is_used_again(self):
         a = self.app

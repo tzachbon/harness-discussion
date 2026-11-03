@@ -54,6 +54,10 @@ class Updates:
                 try:
                     asset = updates.check()
                     text = f"v{asset['version']} is available." if asset else "You are up to date."
+                except updates.RateLimited:
+                    asset, text = None, (
+                        "Could not check for updates because GitHub is limiting requests from this network, "
+                        "so try again later.")
                 except Exception as e:
                     asset, text = None, f"Could not check for updates: {e}"
                 self.events.put(("update_available", asset, text))
@@ -67,6 +71,10 @@ class Updates:
                         text = f"v{asset['version']} is ready to install."
                     else:
                         path, text = None, "You are up to date."
+                except updates.RateLimited:
+                    path, text = None, (
+                        "Could not update because GitHub is limiting requests from this network, "
+                        "so try again later.")
                 except Exception as e:
                     path, text = None, f"Could not update: {e}"
                 self.events.put(("update_result", path, text))
