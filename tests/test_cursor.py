@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import http.server
 import io
 import json
@@ -8,11 +9,14 @@ import struct
 import tempfile
 import threading
 import time
+import subprocess
 import unittest
 import urllib.error
 import urllib.request
 from pathlib import Path
 from unittest import mock
+
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from harness_discussion import cursor_auth, cursor_tts
 from harness_discussion.audio import NoAudioError
@@ -26,6 +30,18 @@ SECRET = "SECRET-SIGNATURE-0123456789"
 def jwt(exp):
     payload = base64.urlsafe_b64encode(json.dumps({"exp": exp}).encode()).rstrip(b"=").decode()
     return f"eyJhbGciOiJIUzI1NiJ9.{payload}.{SECRET}"
+
+
+def encrypted(token, password="pw"):
+    key = hashlib.pbkdf2_hmac("sha1", password.encode(), b"saltysalt", 1003, 16)
+    pad = 16 - len(token) % 16
+    enc = Cipher(algorithms.AES(key), modes.CBC(b" " * 16)).encryptor()
+    blob = b"v10" + enc.update(token.encode() + bytes([pad]) * pad) + enc.finalize()
+    return "cursor-safe-storage:v1:" + base64.b64encode(blob).decode()
+
+
+def keychain(password="pw"):
+    return mock.patch.object(cursor_auth.subprocess, "run", return_value=mock.Mock(stdout=password + "\n"))
 
 
 class TempDb(unittest.TestCase):
@@ -77,6 +93,26 @@ class Status(TempDb):
         con.commit()
         con.close()
         self.assertEqual((cursor_auth.status(), cursor_auth.token()), ("ready", token))
+
+    @mock.patch.object(cursor_auth.sys, "platform", "darwin")
+    @mock.patch.object(cursor_auth, "_key", None)
+    def test_a_mac_encrypted_token_is_decrypted_with_the_keychain_key_once(self):
+        token = jwt(time.time() + 3600)
+        self.store(encrypted(token))
+        with keychain() as run:
+            self.assertEqual((cursor_auth.status(), cursor_auth.token()), ("ready", token))
+        run.assert_called_once()
+
+    @mock.patch.object(cursor_auth.sys, "platform", "darwin")
+    @mock.patch.object(cursor_auth, "_key", None)
+    def test_a_denied_keychain_or_wrong_key_reads_as_signed_out_and_retries(self):
+        self.store(encrypted(jwt(time.time() + 3600)))
+        with mock.patch.object(cursor_auth.subprocess, "run", side_effect=subprocess.CalledProcessError(128, "security")):
+            self.assertEqual(cursor_auth.status(), "signed_out")
+        with keychain("wrong") as run:
+            self.assertEqual(cursor_auth.status(), "signed_out")
+            self.assertEqual(cursor_auth.status(), "signed_out")
+        self.assertEqual(run.call_count, 2)
 
     def test_an_unset_appdata_is_missing(self):
         with mock.patch.object(cursor_auth, "DB", Path("Cursor/User/globalStorage/state.vscdb")):
