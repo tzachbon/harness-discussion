@@ -31,6 +31,15 @@ def release(tag="v0.10.0"):
 
 
 class Releases(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        cache = patch.object(updates, "CACHE", Path(directory.name))
+        cache.start()
+        self.addCleanup(cache.stop)
+        updates._rate_limit_until = None
+        self.addCleanup(setattr, updates, "_rate_limit_until", None)
+
     def test_only_a_newer_numeric_version_is_selected(self):
         for current, expected in (("0.9.0", True), ("0.10.0", False), ("1.0.0", False)):
             with patch.object(updates, "current_version", return_value=current), patch.object(

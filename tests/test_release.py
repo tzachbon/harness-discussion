@@ -127,6 +127,11 @@ class Publication(unittest.TestCase):
         boundary = patch.object(subprocess, "run", side_effect=self.run_command)
         boundary.start()
         self.addCleanup(boundary.stop)
+        cache = patch.object(updates, "CACHE", Path(directory.name))
+        cache.start()
+        self.addCleanup(cache.stop)
+        updates._rate_limit_until = None
+        self.addCleanup(setattr, updates, "_rate_limit_until", None)
 
     def asset(self, state="uploaded", path=None):
         path = path or self.artifact
