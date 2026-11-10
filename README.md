@@ -91,7 +91,7 @@ Open **Settings** from the bar's **…** menu, the tray or menu bar icon, or by 
 | Voice | Needs | Speed | Where your text goes |
 | --- | --- | --- | --- |
 | Cursor | Cursor desktop app, signed in | 0.5× to 2× | Cursor, through your Cursor sign-in |
-| Codex realtime | Codex CLI signed in with ChatGPT | 0.5× to 1×. Above 1×, the next source reads. Picking Codex on the bar sets the speed to 1× | OpenAI, through your Codex sign-in |
+| Codex realtime | Codex CLI signed in with ChatGPT | 0.5× to 1×. Above 1×, the next source reads. Picking Codex on the bar lowers a faster speed to 1× | OpenAI, through your Codex sign-in |
 | Kokoro | A one-time 120 MB download from Settings | 0.5× to 2× | Stays on your computer |
 | Edge neural (Windows) | Internet | 0.5× to 2× | Microsoft's Edge read-aloud service |
 | Windows | Nothing, it's built in | 0.5× to 2× | Stays on your PC |
