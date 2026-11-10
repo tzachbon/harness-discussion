@@ -109,6 +109,9 @@ class Sources:
         tag = self._read_options and self._read_options[0]
         start = self._sentence  # the sentence on screen, not the start of a long piece
         reading = bool(self._read_options)
+        top = next((getattr(e, "max_speed", None) for e in self.chain.engines if e.name == name), None)
+        if top and self.cfg["speed"] > top:  # else order() skips the pick and the bar snaps back (Codex is 1× only)
+            self.change("speed", top)
         self.change("sources", [[name, True]] + [s for s in sources if s[0] != name])
         if reading:  # a read in progress starts over from that sentence on the picked source, ⏮ still reaching back
             paused = self.popup.paused

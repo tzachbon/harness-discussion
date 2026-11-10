@@ -331,6 +331,21 @@ class CoreTest(unittest.TestCase):
         app.skip(-1)
         self.assertEqual((first.spoken + second.spoken)[-1], "One.")
 
+    def test_picking_a_source_slower_than_the_speed_lowers_the_speed(self):
+        codex = Engine("Codex")
+        codex.max_speed = 1.0
+        app = self.make(Engine("Kokoro"), codex)
+        app.change("speed", 1.25)
+        app._popup_source("Codex")
+        self.assertEqual(app.cfg["speed"], 1.0)
+        self.assertEqual(app.popup.source, "Codex")
+        app.change("speed", 1.25)
+        app._popup_source("Kokoro")
+        app.play("One. Two.", None)
+        app._popup_source("Codex")  # mid-read: the read starts over on Codex
+        self.assertEqual(app.cfg["speed"], 1.0)
+        self.assertTrue(codex.spoken)
+
     def test_hotkey_setting_rearms_the_host(self):
         app = self.make(Engine("macOS"))
         app.change("hotkey", "")
