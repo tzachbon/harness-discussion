@@ -33,6 +33,21 @@ def native_streams(*results):
 
 
 class MicTest(unittest.TestCase):
+    def test_streaming_delivers_copied_pcm_past_cap_without_buffering(self):
+        chunks = []
+        rec = mic.Recorder(FakeStream, on_pcm=chunks.append)
+        rec.start()
+        data = bytearray(b"\x00\x20" * mic.RATE)
+        for _ in range(mic.MAX_SECONDS + 1):
+            rec._stream.cb(data, mic.RATE, None, None)
+        data[0] = 1
+        self.assertEqual(len(chunks), mic.MAX_SECONDS + 1)
+        self.assertEqual(chunks[0], b"\x00\x20" * mic.RATE)
+        self.assertEqual(rec._chunks, [])
+        self.assertEqual(rec.duration, mic.MAX_SECONDS + 1)
+        self.assertGreater(rec.level(), 0.5)
+        self.assertEqual(rec.stop(), b"")
+
     def test_native_stop_finishes_on_the_callback_thread_and_preserves_audio(self):
         stream, opened = Mock(), {}
         def open_stream(**kw):

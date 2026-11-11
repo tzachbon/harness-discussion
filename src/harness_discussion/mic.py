@@ -1,4 +1,4 @@
-"""Records the microphone for dictation: 24 kHz mono 16-bit, at most 60 s, returned as WAV bytes in memory."""
+"""Record 24 kHz mono 16-bit microphone audio as capped WAV or streaming PCM."""
 import io
 import logging
 import math
@@ -58,8 +58,9 @@ def is_tap(seconds: float) -> bool:
 
 
 class Recorder:
-    def __init__(self, stream_factory=None, device=""):
+    def __init__(self, stream_factory=None, device="", on_pcm=None):
         self._factory = stream_factory
+        self._on_pcm = on_pcm
         self.device = device
         self._chunks, self._size, self._lock, self._stream = [], 0, threading.Lock(), None
         self._power, self._samples = 0, 0
@@ -111,11 +112,16 @@ class Recorder:
         with self._lock:
             self._power += power
             self._samples += len(samples)
-            room = MAX_SECONDS * RATE * 2 - self._size
-            if room > 0:
-                chunk = pcm[:room]
-                self._chunks.append(chunk)
-                self._size += len(chunk)
+            if self._on_pcm is None:
+                room = MAX_SECONDS * RATE * 2 - self._size
+                if room > 0:
+                    chunk = pcm[:room]
+                    self._chunks.append(chunk)
+                    self._size += len(chunk)
+            else:
+                self._size += len(pcm)
+        if self._on_pcm is not None:
+            self._on_pcm(pcm)
 
     def level(self):
         """Recent RMS input on a 0–1 meter, with silence below -60 dBFS. Never stores audio separately."""
@@ -126,7 +132,7 @@ class Recorder:
         return max(0.0, min(1.0, (20 * math.log10(rms) + 60) / 60)) if rms else 0.0
 
     def stop(self) -> bytes:
-        """The recording as WAV, or b"" when nothing was recorded."""
+        """The recording as WAV, or b"" when streaming or nothing was recorded."""
         stream, self._stream = self._stream, None
         if stream is not None:
             # As with PcmPlayer, CoreAudio can deadlock in stop() on the worker thread.
