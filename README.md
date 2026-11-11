@@ -34,6 +34,7 @@ Harness Discussion reads with Cursor's voices through your Cursor desktop sign-i
 - **Rewrite in place.** Over text you can edit, ✎ on the bar, Ctrl+Shift+E on Windows, or ⌥⌘E on a Mac rewrites the selection with the default mode and pastes it back. Modes are Fix errors, Message, Email, Improve writing, Clean dictation, and your own. A toast offers Undo, Review (keep or revert each change), and another mode. Click × to dismiss the result on either platform. Press the rewrite shortcut twice quickly to pick a mode first. Cancel on the toast, or Esc, stops it. Cursor, Codex, then the local Qwen3-4B model rewrite, in the order you set. On for new installs; turn it off in Settings → Writing.
 - **About you.** A short note about you, plus today's date and time zone, goes with every rewrite and summary. Set it in the tour or Settings → General.
 - **Dictation.** Hold Ctrl+Shift+D on Windows (⌥⌘D on Mac), speak, then release. Local (Whisper Small, downloaded in Settings → Dictation) is tried first, then enabled cloud sources; the dictation mode tidies the result before insertion, preferring the enabled, downloaded Local writing model. Pick the input device in Settings → Dictation; input bars show while recording. Esc or × stops it. *Clean dictation* removes fillers and formats spoken steps as numbered lists, including corrected numbers. Settings → Dictation sets its own mode; custom prompts come from Writing → Modes. Turn off *Tidy dictation after transcribing* for raw text. A short tap does nothing. Uses the Writing switch. Windows support is experimental; live English, Hebrew, and mixed speech acceptance is pending ([#92](https://github.com/tzachbon/harness-discussion/issues/92)).
+- **Meeting notes.** When a call is detected, a toast asks whether to take notes. Recording starts only when you choose Take notes or Start Meeting Notes. It records your microphone (You) and computer sound (Them), then makes notes. Use headphones to avoid echo. Tell everyone and get their consent before recording.
 - **Pause, resume, stop, skip.** ⏸ pauses and ▶ continues from the same spot. ■ stops. ⏮ and ⏭ read again from the previous or next sentence.
 - **Read shortcut.** Ctrl+Alt+R on Windows, ⌥⌘R on a Mac, reads the selection at once and shows the bar at the pointer. Press it again to stop. Change it or turn it off in Settings → Reading.
 - **Speed on the bar.** 0.5× to 2×, saved and shared with Settings.
@@ -64,6 +65,8 @@ Requirements: Windows 11, 64-bit.
    - Or run `xattr -dr com.apple.quarantine "/Applications/Harness Discussion.app"` in Terminal, then open the app.
 3. Harness Discussion lives in the menu bar. The tour's first step asks for **Accessibility** access, which the app needs to read the selected text. A guide window opens System Settings for you and closes once access is granted. While access is missing, the menu bar icon shows a warning.
 4. Optional: sign in to Cursor, or install the Codex CLI and run `codex login`, as on Windows.
+
+Meeting notes needs **Screen & System Audio Recording** permission to record the other side of a call. Without it, notes have only your side.
 
 Requirements: macOS 13 or later on Apple silicon.
 
@@ -103,6 +106,7 @@ Open **Settings** from the bar's **…** menu, the tray or menu bar icon, or by 
 | Codex | Codex CLI signed in with ChatGPT | OpenAI, through your Codex sign-in |
 | Local (rewrite only) | The Summarize model | Stays on your computer |
 
+- Meeting audio parts go to the enabled Dictation sources in order. The transcript goes to the enabled Writing sources in order to make notes. Local keeps them on your computer. Audio, transcript, and notes stay on your computer until you delete the meeting in Meeting Notes.
 - For local read-aloud, enable only Kokoro and Windows or macOS in Settings → Voices. Writing and Dictation have separate source settings.
 - Password fields are never read or rewritten.
 - For local rewrites, turn off Cursor and Codex in Settings → Writing and use Local. Dictation audio goes to the first ready source (Local by default) and is not saved. For offline dictation and Tidy, download both local models and turn off Cursor and Codex under both Writing and Dictation. Enabled cloud fallbacks can receive audio or the transcript if a local stage fails.
@@ -127,6 +131,7 @@ Open **Settings** from the bar's **…** menu, the tray or menu bar icon, or by 
 - **Writing**: turns rewriting on or off, and sets the default mode, the rewrite shortcut, and the sources in order with each one's model and effort. The modes editor adds, renames, and deletes your own modes. Built-in modes keep their name, and Reset puts back their instructions.
 - **Dictation**: source order (Local first by default), local model download, cleanup and local preference, its own mode (including custom modes), hold shortcut, and input device. Input bars show while recording; × cancels. Dictation inserts quietly or copies to the clipboard without a safe target. Windows Microphone settings opens system privacy.
   If microphone shutdown stalls, captured audio still transcribes. Restart if the microphone stays unavailable.
+- **Meetings**: turn Meeting notes and call detection on or off, set a calendar link, and open the recordings folder. On a Mac, allow Calendar access and Screen & System Audio Recording here.
 - **Learned words**: on by default in Dictation. For 30 seconds after a confirmed paste, useful spelling corrections in that field can join your vocabulary. A notification offers Undo. Turn learning off, edit individual lines, or clear the list in Settings → Dictation. Saved words help later Local/Codex transcription and dictation tidy; cloud sources can receive them. [Details and limits](STT.md#learning-from-corrections).
 - **Shortcuts**: Change… records the next key you press, alone or with modifiers. Esc keeps the current shortcut. Holding modifiers such as Ctrl+Win on Windows or ⌃⌥ on Mac and letting go without a key records them alone. That shortcut fires when you let go, unless you pressed another key while holding them. A hold shortcut starts once they are all down. On a Mac, a shortcut with a key, such as ⌘`, reaches only Harness Discussion, so the app in front doesn't act on it too. With Stage Manager on, macOS switches windows with ⌘` first, unless you turn off “Move focus to next window” in System Settings → Keyboard → Keyboard Shortcuts → Keyboard.
 

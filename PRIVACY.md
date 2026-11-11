@@ -30,6 +30,14 @@ The optional speech-to-text server (Settings → Speech-to-text, off by default)
 
 Password fields are never read or rewritten. The log records the engine, timing, and errors, never the text.
 
+## Meetings
+
+When a call is detected, a toast asks whether to take notes. Nothing records until you choose Take notes or Start Meeting Notes. Meeting notes records your microphone as You and your computer's sound as Them. Use headphones so your speakers don't echo into your microphone. In many places everyone in a call must agree to be recorded. Tell everyone and get their consent before you record.
+
+The audio files (`you.wav` and `them.wav`), transcript, and notes stay on your computer until you delete the meeting in the Meeting Notes window. They are stored in `%LOCALAPPDATA%\harness-discussion\meetings` on Windows and `~/Library/Application Support/harness-discussion/meetings` on a Mac. Audio parts go to the enabled Dictation sources in order. The transcript goes to the enabled Writing sources in order to make notes. Only Local keeps both on your computer.
+
+An ICS calendar link is stored in `settings.json`. The app fetches the calendar from that address, following HTTPS redirects. Links must use HTTPS or webcal. On a Mac, EventKit reads events locally when you allow Calendar access. Meeting notes needs Screen & System Audio Recording permission on a Mac to capture computer sound.
+
 ## The Get Started tour
 
 The tour uses the same sources as the features it shows, and each step names the source it uses. Playing the voice sample and reading the practice sentence send that text to the first ready voice. Rewriting the sample, dictating the practice line, and pausing in the last step's box send that text or recording to the first ready writing or speech source. With no source ready, the tour shows sample results that never leave your computer. The last step asks for an optional About you note and saves it when you leave the step. Practice doesn't change your saved settings unless you turn on a Keep switch or change a shortcut. New installs start with Writing and Check as I type on. Check as I type sends a line you type in any app to the first ready writing source after you pause; turn it off in Settings → Writing.
