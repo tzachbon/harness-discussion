@@ -2,7 +2,7 @@
 from datetime import datetime
 
 import AppKit
-from Foundation import NSObject
+from Foundation import NSObject, NSMutableAttributedString, NSAttributedString
 
 from .. import meeting_copy as copy, meetings
 from . import ui
@@ -178,9 +178,35 @@ class NotesWindow:
             return
         transcript = self.tabs.selectedSegment() == 1
         self.text.setAccessibilityLabel_(copy.TRANSCRIPT if transcript else copy.NOTES)
-        text = '\n'.join(f'{int(t)//60:02d}:{int(t)%60:02d}  {who}  {body}' for t, who, body in self._lines()) if transcript else meetings.notes(self.meeting.id) or copy.NOTES_PLACEHOLDER
-        if self.text.string() != text:
-            self.text.setString_(text)
+        result = NSMutableAttributedString.alloc().init()
+        font = AppKit.NSFont.systemFontOfSize_(13)
+
+        def append(text, **attrs):
+            attributes = {AppKit.NSFontAttributeName: font, AppKit.NSForegroundColorAttributeName: AppKit.NSColor.labelColor()}
+            attributes.update(attrs)
+            result.appendAttributedString_(NSAttributedString.alloc().initWithString_attributes_(text, attributes))
+
+        if transcript:
+            for index, (t, who, body) in enumerate(self._lines()):
+                if index:
+                    append('\n')
+                append(f'{int(t)//60:02d}:{int(t)%60:02d}  ', **{AppKit.NSForegroundColorAttributeName: AppKit.NSColor.secondaryLabelColor()})
+                append(who, **{AppKit.NSForegroundColorAttributeName: AppKit.NSColor.systemBlueColor() if who == 'You' else AppKit.NSColor.secondaryLabelColor()})
+                append(f'  {body}')
+        else:
+            text = meetings.notes(self.meeting.id) or copy.NOTES_PLACEHOLDER
+            for index, line in enumerate(text.split('\n')):
+                if index:
+                    append('\n')
+                stripped = line.lstrip('#')
+                if len(stripped) < len(line) and stripped.startswith(' '):
+                    style = AppKit.NSMutableParagraphStyle.alloc().init()
+                    style.setParagraphSpacingBefore_(4)
+                    append(stripped.lstrip(), **{AppKit.NSFontAttributeName: AppKit.NSFont.boldSystemFontOfSize_(15), AppKit.NSParagraphStyleAttributeName: style})
+                else:
+                    append(line)
+        if not self.text.textStorage().isEqualToAttributedString_(result):
+            self.text.textStorage().setAttributedString_(result)
 
     def _markdown(self, transcript):
         return meetings.markdown(self.meeting, meetings.notes(self.meeting.id), self._lines(), transcript=transcript)
