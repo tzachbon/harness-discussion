@@ -40,6 +40,8 @@ class NotesWindowTest(unittest.TestCase):
         self.assertEqual([m.id for m in self.window.items], ['recording', 'done'])
         self.assertEqual(self.window.title.stringValue(), 'Done')
         self.assertIn('Fixture notes', self.window.text.string())
+        self.assertIn('Summary', self.window.text.string())
+        self.assertNotIn('## ', self.window.text.string())
         self.window.tabs.setSelectedSegment_(1)
         self.window._tab()
         self.assertTrue(self.window.text.string().startswith('00:00  You'))
