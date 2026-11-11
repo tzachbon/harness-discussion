@@ -23,6 +23,7 @@ uv run pyinstaller --noconfirm --clean --windowed --name "Harness Discussion" \
     --hidden-import harness_discussion.mac.main --collect-submodules harness_discussion.mac --copy-metadata harness-discussion \
     --collect-all kokoro_onnx --collect-all espeakng_loader \
     --collect-all faster_whisper --collect-all ctranslate2 --collect-all tokenizers \
+    --collect-all dateutil \
     --distpath build/dist --workpath build/work --specpath build packaging/launcher.py
 app="build/dist/Harness Discussion.app"
 plist="$app/Contents/Info.plist"
@@ -30,7 +31,10 @@ plutil -replace CFBundleShortVersionString -string "$version" "$plist"
 plutil -replace CFBundleVersion -string "$version" "$plist"
 plutil -replace LSUIElement -bool true "$plist"
 plutil -replace LSMinimumSystemVersion -string 13.0 "$plist"
-plutil -replace NSMicrophoneUsageDescription -string "Harness Discussion records while you hold the dictation shortcut." "$plist"
+plutil -replace NSMicrophoneUsageDescription -string "Harness Discussion records while you hold the dictation shortcut, and records meetings when you take notes." "$plist"
+plutil -replace NSCalendarsFullAccessUsageDescription -string "Harness Discussion uses your calendar to name meeting notes and to know when a meeting starts." "$plist"
+plutil -replace NSCalendarsUsageDescription -string "Harness Discussion uses your calendar to name meeting notes and to know when a meeting starts." "$plist"
+plutil -replace NSScreenCaptureUsageDescription -string "Harness Discussion captures computer audio when you take meeting notes." "$plist"
 plutil -replace HarnessDiscussionBuild -string "$version+$commit" "$plist"
 # A Developer ID from the MACOS_* secrets gives a notarized dmg that Gatekeeper opens without a warning.
 # Otherwise the local identity from setup_signing_mac.sh keeps the Accessibility grant across rebuilds,

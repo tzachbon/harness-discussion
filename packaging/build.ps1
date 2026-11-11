@@ -18,6 +18,7 @@ uv run @cudaArgs pyinstaller @cudaCollect --noconfirm --clean --windowed --name 
     --collect-all uiautomation --hidden-import pystray._win32 --hidden-import harness_discussion.win.main --copy-metadata harness-discussion `
     --collect-all kokoro_onnx --collect-all espeakng_loader `
     --collect-all faster_whisper --collect-all ctranslate2 --collect-all tokenizers `
+    --collect-all soundcard --collect-all dateutil --collect-all tzdata `
     --distpath build\dist --workpath build\work --specpath build packaging\launcher.py
 if ($LASTEXITCODE) { throw "pyinstaller failed" }
 $iscc = @("$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe", "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe") |
