@@ -329,6 +329,15 @@ class MeetingAppTest(unittest.TestCase):
         self.assertTrue(any("Notes ready:" in item[0] for item in self.app.meeting_toast.shown))
         self.assertIsNone(self.host.states[-1])
 
+    def test_done_while_recording_notifies_instead_of_replacing_pill(self):
+        m = meetings.new("Earlier sync", "", None, False)
+        self.app._meeting_session = object()
+        shown = len(self.app.meeting_toast.shown)
+        self.app._meeting_done(m.id, None)
+        self.app._meeting_session = None
+        self.assertEqual(len(self.app.meeting_toast.shown), shown)
+        self.assertEqual(self.host.notes[-1], "Notes ready: Earlier sync")
+
     def test_quit_recording_then_recover(self):
         self.app.cfg["meeting_consent"] = True
         with patch("harness_discussion.app_meetings.mic.Recorder", side_effect=self.capture):

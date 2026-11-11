@@ -288,9 +288,10 @@ class Meetings:
     def _meeting_done(self, meeting_id, error):
         self._processors.pop(meeting_id, None)
         self._meeting_progress_values.pop(meeting_id, None)
-        if self._meeting_session:
-            return
         message = copy.NOTES_FAILED_TOAST if error else copy.NOTES_READY.format(title=meetings.load(meeting_id).title)
+        if self._meeting_session:  # the pill owns the meeting toast while recording: tell the user through the system
+            self.host.notify(message)
+            return
         self._show_meeting_toast(message, [(copy.OPEN, lambda: self._meeting_open(meeting_id)), ("×", lambda: None)], hide_s=10)
 
     def _meeting_error(self, meeting_id, error):
