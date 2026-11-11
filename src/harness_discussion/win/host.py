@@ -4,17 +4,17 @@ import os
 import threading
 from ctypes import wintypes
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import filedialog, messagebox
 
 import pystray
 
-from .. import history
+from .. import history, meeting_copy as copy
 from ..codex_rt import CodexEngine
 from ..cursor_tts import CursorEngine
 from ..engines import EdgeEngine
-from ..icons import icon_image
+from ..icons import icon_image, recording_image
 from ..kokoro_tts import KokoroEngine
-from . import clipboard, edit, microphone, selection, uia_thread
+from . import clipboard, edit, loopback, mic_use, microphone, selection, uia_thread
 from .popup import Popup
 from .marks import Marks
 from .review import Review
@@ -22,6 +22,28 @@ from .settings_ui import SettingsWindow
 from .toast import Toast
 from .trigger import Escape, HotKey, SelectionTrigger
 from .voice import SapiEngine
+
+
+class MeetingToast(Toast):
+    def __init__(self, host):
+        self.host = host
+        super().__init__(host.root)
+
+    def show(self, *args, **kwargs):
+        super().show(*args, **kwargs)
+        if getattr(self.host.app, "meeting_toast", None) is self:
+            self.win.update_idletasks()
+            x, y = self.host.meeting_toast_xy()
+            self.win.geometry(f"{x:+d}{y:+d}")
+            self.bounds = (x, y, x + self.win.winfo_reqwidth(), y + self.win.winfo_reqheight())
+
+    def set_input_level(self, level):
+        super().set_input_level(level)
+        if getattr(self.host.app, "meeting_toast", None) is self:
+            self.win.update_idletasks()
+            x, y = self.host.meeting_toast_xy()
+            self.win.geometry(f"{x:+d}{y:+d}")
+            self.bounds = (x, y, x + self.win.winfo_reqwidth(), y + self.win.winfo_reqheight())
 
 
 class TkHost:
@@ -35,6 +57,8 @@ class TkHost:
         self.shortcuts = {}
         self._writer_esc, self._cancel_writer = [], None
         self._mode_menu = self._mode_choice = None
+        self._meeting_label = None
+        self._notes_window = None
         self.icon = pystray.Icon("harness-discussion", icon_image(), "Harness Discussion", self._menu())
 
     def _menu(self):
@@ -42,6 +66,11 @@ class TkHost:
         return pystray.Menu(
             pystray.MenuItem("Settings", put("settings"), default=True),
             pystray.MenuItem("Take the Tour", put("tour_replay")),
+            pystray.MenuItem(lambda _: self._meeting_label or "", None, enabled=False,
+                             visible=lambda _: bool(self._meeting_label)),
+            pystray.MenuItem(lambda _: copy.STOP_MEETING_NOTES if self._meeting_label else copy.START_MEETING_NOTES,
+                             put("meeting_tray")),
+            pystray.MenuItem(copy.MEETING_NOTES_MENU, put("meeting_open")),
             pystray.MenuItem("Recent Dictations", pystray.Menu(self._history_items),
                              visible=lambda _: self.app.cfg.get("dictation_history", True)),
             pystray.MenuItem(lambda _: f"Last voice source: {self.app.chain.last or '-'}", None, enabled=False),
@@ -71,11 +100,12 @@ class TkHost:
         watcher = Escape(on_escape,
                          suppress=lambda: bool(self.app.rewriting), autostart=False)
         self._writer_esc.append(watcher)
-        self._cancel_writer = on_escape
+        if self._cancel_writer is None:
+            self._cancel_writer = on_escape
         return watcher
 
     def make_toast(self):
-        return Toast(self.root)
+        return MeetingToast(self)
 
     def make_review(self):
         return Review(self.root)
@@ -186,7 +216,60 @@ class TkHost:
     def notify(self, message):
         self.icon.notify(message, "Harness Discussion")
 
-    def confirm(self, title, message):
+    def meeting_toast_xy(self):
+        area = wintypes.RECT()
+        if not ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(area), 0):
+            raise ctypes.WinError()
+        toast = self.app.meeting_toast
+        toast.win.update_idletasks()
+        return area.right - toast.win.winfo_reqwidth() - 12, area.bottom - toast.win.winfo_reqheight() - 12
+
+    def mic_users(self):
+        return mic_use.users()
+
+    def system_audio(self, on_pcm, on_error):
+        return loopback.SystemAudio(on_pcm, on_error)
+
+    def system_audio_status(self):
+        return "ready"
+
+    def screen_permission_guide(self):
+        pass
+
+    def calendar(self):
+        return None
+
+    def set_meeting_state(self, label):
+        self._meeting_label = label
+        self.icon.icon = recording_image(64) if label else icon_image()
+        self.icon.title = copy.TRAY_TOOLTIP if label else "Harness Discussion"
+        self.icon.update_menu()
+
+    def open_notes(self, app, meeting_id=None):
+        from .notes_window import NotesWindow
+        if self._notes_window and self._notes_window.win.winfo_exists():
+            self._notes_window.open(meeting_id)
+        else:
+            self._notes_window = NotesWindow(self.root, app, meeting_id)
+
+    def save_text(self, default_name, text):
+        path = filedialog.asksaveasfilename(parent=self.root, initialfile=default_name,
+                                            defaultextension=".md", filetypes=[("Markdown", "*.md")])
+        if not path:
+            return False
+        try:
+            with open(path, "w", encoding="utf-8", newline="\n") as f:
+                f.write(text)
+            return True
+        except OSError:
+            self.notify("Could not save the file.")
+            return False
+
+    def reveal(self, path):
+        os.startfile(str(path))
+
+    def confirm(self, title, message, ok="OK"):
+        # ponytail: use a custom dialog when a caller needs a non-OK label.
         return messagebox.askokcancel(title, message, icon="question", parent=self.root)
 
     def run(self, pump):
