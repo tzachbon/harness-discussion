@@ -257,7 +257,7 @@ The same Processor runs for recovery: it only looks at files and `transcript.jso
 ```json
 {"version": 1, "id": "2026-11-11T10-02-13-4f2a", "title": "Weekly sync", "app": "Zoom",
  "started_at": "2026-11-11T10:02:13+02:00", "ended_at": "2026-11-11T10:33:40+02:00",
- "state": "done", "error": "", "auto": true, "notes_source": "Codex",
+ "state": "done", "error": "", "auto": true,
  "event": {"title": "Weekly sync", "start": "2026-11-11T10:00:00+02:00", "end": "2026-11-11T10:30:00+02:00", "source": "ics"}}
 ```
 
