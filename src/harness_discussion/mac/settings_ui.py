@@ -11,6 +11,7 @@ from .about_page import AboutSection
 from .captions_page import CaptionsPage
 from .reading_page import ReadingPage
 from .stt_page import SttPage
+from .meetings_page import MeetingsPage
 from .summarize_page import SummarizePage
 from .writing_page import WritingPage
 
@@ -22,7 +23,7 @@ STATUS_COLOR = {"ready": "systemGreenColor", "missing": "systemRedColor", None: 
 # (title, SF Symbol, tile color) per sidebar page, in sidebar order
 PAGES = (("Voices", "waveform", "systemPurpleColor"), ("Captions", "captions.bubble.fill", "systemTealColor"),
          ("Reading", "text.cursor", "systemBlueColor"), ("Summarize", "sparkles", "systemPinkColor"),
-         ("Speech to Text", "mic.fill", "systemOrangeColor"), ("General", "gearshape.fill", "systemGrayColor"))
+         ("Speech to Text", "mic.fill", "systemOrangeColor"), ("Meetings", "person.2.wave.2.fill", "systemGreenColor"), ("General", "gearshape.fill", "systemGrayColor"))
 WRITER_PAGES = (("Writing", "pencil", "systemIndigoColor"), ("Dictation", "mic.circle.fill", "systemRedColor"))
 
 
@@ -64,7 +65,9 @@ def _nav_button(title, symbol, color, fn):
     b.setBordered_(False)
     b.setWantsLayer_(True)
     b.layer().setCornerRadius_(6)
-    b.setImage_(ui.inset(ui.tile(symbol, getattr(AppKit.NSColor, color)()), 6))
+    image = ui.pil_image(icons.page_image("Meetings", 44), 22) if title == "Meetings" else ui.tile(
+        symbol, getattr(AppKit.NSColor, color)())
+    b.setImage_(ui.inset(image, 6))
     b.setImagePosition_(AppKit.NSImageLeading)
     b.setAlignment_(AppKit.NSTextAlignmentLeft)
     b.setFont_(AppKit.NSFont.systemFontOfSize_(13))
@@ -73,7 +76,7 @@ def _nav_button(title, symbol, color, fn):
     return b
 
 
-class SettingsWindow(CaptionsPage, SummarizePage, ReadingPage, SttPage, WritingPage, AboutSection):
+class SettingsWindow(CaptionsPage, SummarizePage, ReadingPage, SttPage, MeetingsPage, WritingPage, AboutSection):
     def __init__(self, app, show_guide, welcome=False):
         self.app, self.cfg = app, dict(app.cfg)
         self._save_timer = self._recorder = None
@@ -132,7 +135,7 @@ class SettingsWindow(CaptionsPage, SummarizePage, ReadingPage, SttPage, WritingP
         self.permission_row = _card([ui.stack([
             warning, ui.label("Shortcuts and selected text need Accessibility permission.", 12, width=WIDTH - 130),
             ui.button("Fix this", show_guide, primary=True)], vertical=False, spacing=10)])
-        pages = [voices, captions, reading, summary, stt, general]
+        pages = [voices, captions, reading, summary, stt, self._meetings_page(), general]
         self.page_list = PAGES
         if app.writer_ready:  # after Summarize
             pages[4:4] = [self._writing_page(), self._dictation_page()]
@@ -233,6 +236,8 @@ class SettingsWindow(CaptionsPage, SummarizePage, ReadingPage, SttPage, WritingP
         self.speed_label.setStringValue_(settings.speed_label(speed))
 
     def close(self):
+        if hasattr(self, '_calendar_timer'):
+            self._calendar_timer.invalidate()
         self._flush()
         self._stop_recording()
         self.win.close()
