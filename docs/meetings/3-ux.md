@@ -32,7 +32,7 @@ toast A ──Not now / × / Esc / 30 s timeout──► idle, no more asks unti
 ```
 
 Toast A, shown at the bottom-right of the primary work area on Windows and under the menu bar item on Mac (both use
-the existing Toast with an explicit `x, y`). It stays 30 s (pass a `hide_ms` override; see T13) and pauses on hover.
+the existing Toast with an explicit `x, y`). It stays 30 s (pass `hide_s=30`; see T13) and pauses on hover.
 
 ```text
 Windows (Toast, dark pill)                         Mac (HUD pill)
