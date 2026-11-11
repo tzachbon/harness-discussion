@@ -579,10 +579,16 @@ dependencies = [
     { name = "pyobjc-framework-applicationservices", marker = "sys_platform == 'darwin'" },
     { name = "pyobjc-framework-avfoundation", marker = "sys_platform == 'darwin'" },
     { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin'" },
+    { name = "pyobjc-framework-coremedia", marker = "sys_platform == 'darwin'" },
+    { name = "pyobjc-framework-eventkit", marker = "sys_platform == 'darwin'" },
     { name = "pyobjc-framework-quartz", marker = "sys_platform == 'darwin'" },
+    { name = "pyobjc-framework-screencapturekit", marker = "sys_platform == 'darwin'" },
     { name = "pystray", marker = "sys_platform == 'win32'" },
+    { name = "python-dateutil" },
+    { name = "soundcard", marker = "sys_platform == 'win32'" },
     { name = "sounddevice" },
     { name = "truststore" },
+    { name = "tzdata", marker = "sys_platform == 'win32'" },
     { name = "uiautomation", marker = "sys_platform == 'win32'" },
 ]
 
@@ -616,10 +622,16 @@ requires-dist = [
     { name = "pyobjc-framework-applicationservices", marker = "sys_platform == 'darwin'", specifier = ">=11" },
     { name = "pyobjc-framework-avfoundation", marker = "sys_platform == 'darwin'", specifier = ">=11" },
     { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin'", specifier = ">=11" },
+    { name = "pyobjc-framework-coremedia", marker = "sys_platform == 'darwin'", specifier = ">=12,<13" },
+    { name = "pyobjc-framework-eventkit", marker = "sys_platform == 'darwin'", specifier = ">=12,<13" },
     { name = "pyobjc-framework-quartz", marker = "sys_platform == 'darwin'", specifier = ">=11" },
+    { name = "pyobjc-framework-screencapturekit", marker = "sys_platform == 'darwin'", specifier = ">=12,<13" },
     { name = "pystray", marker = "sys_platform == 'win32'", specifier = ">=0.19.5" },
+    { name = "python-dateutil", specifier = ">=2.9" },
+    { name = "soundcard", marker = "sys_platform == 'win32'", specifier = "==0.4.6" },
     { name = "sounddevice", specifier = ">=0.5.6" },
     { name = "truststore", specifier = ">=0.10" },
+    { name = "tzdata", marker = "sys_platform == 'win32'", specifier = ">=2025.2" },
     { name = "uiautomation", marker = "sys_platform == 'win32'", specifier = ">=2.0.29" },
 ]
 provides-extras = ["cuda"]
@@ -1367,6 +1379,19 @@ wheels = [
 ]
 
 [[package]]
+name = "pyobjc-framework-eventkit"
+version = "12.2.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyobjc-core" },
+    { name = "pyobjc-framework-cocoa" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/52/61/5d3974325bd80ba7ebfd5998fac085a1e014bff2119738003c3c7db537bd/pyobjc_framework_eventkit-12.2.2.tar.gz", hash = "sha256:f20a2f8cf55693f9d36f2c33a19325b56cb97fb544186658271c2d554e2a8f42", size = 33996, upload-time = "2026-08-11T19:44:24.631Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5f/db/1e9cbbce52e0629dd0582599e55c1fc1c846d5dc0f9ec5c9bed2c4f6a0c9/pyobjc_framework_eventkit-12.2.2-py2.py3-none-any.whl", hash = "sha256:f9f604ca02f4b7e4e89abe019eeb4ad31c872f2e94cfe2f5dd237af838997f54", size = 6952, upload-time = "2026-08-11T19:35:17.956Z" },
+]
+
+[[package]]
 name = "pyobjc-framework-quartz"
 version = "12.2.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1380,6 +1405,23 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ed/e4/8be95d2ff850f82fb55b44c63333a00a920bf8a73642e7d9c2f3638a26d2/pyobjc_framework_quartz-12.2.2-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:7f668979d0c7320bf8f7ed6e030da578f93ab0f5dd619b295ec735cd8d5faa34", size = 219003, upload-time = "2026-08-11T19:40:24.425Z" },
     { url = "https://files.pythonhosted.org/packages/bb/ae/b515852dbe491171f2f2e2eb7739588a5eb7f36720a739545337b8c0d706/pyobjc_framework_quartz-12.2.2-cp313-cp313-macosx_10_13_universal2.whl", hash = "sha256:0ec9751904ef975bf0789d760dc4fadcb400edc4ffe4a736eb54971968babe5c", size = 219404, upload-time = "2026-08-11T19:40:25.461Z" },
     { url = "https://files.pythonhosted.org/packages/ff/5f/c7ee66f4483385396d91f65036c62f3dd20bccaa07354643ef17b259aa75/pyobjc_framework_quartz-12.2.2-cp313-cp313t-macosx_10_13_universal2.whl", hash = "sha256:63f6f0f3233dcf650aac1374781e78961b0b17b33e3351953bacf8bd0c430593", size = 224462, upload-time = "2026-08-11T19:40:26.647Z" },
+]
+
+[[package]]
+name = "pyobjc-framework-screencapturekit"
+version = "12.2.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyobjc-core" },
+    { name = "pyobjc-framework-cocoa" },
+    { name = "pyobjc-framework-coremedia" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/de/b6/3a5b4a1d6410a06f5eafb17f17af55b1c7641455ca64ce55a9d05b72a096/pyobjc_framework_screencapturekit-12.2.2.tar.gz", hash = "sha256:6c16b1730186a012707e69532e6a03ae7282a6661f106db2663c0f0acc76420a", size = 38008, upload-time = "2026-08-11T19:45:19.875Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bc/3b/98dface3dc6de5ff56d048df8b65990b98ae6d174d6d1b025693dad99ceb/pyobjc_framework_screencapturekit-12.2.2-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:0438a2b3fa99fbc7624e97850051d82dc7f5436748cfa3a8ee3179b21a1f545b", size = 11567, upload-time = "2026-08-11T19:41:03.062Z" },
+    { url = "https://files.pythonhosted.org/packages/05/17/1bf74d227db0abc7ee8cd1d5affcdf8f81cdf514d14f6ce938b94f3b3d0f/pyobjc_framework_screencapturekit-12.2.2-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:5c81c68bc0399ad7ca6ccaa978574354a4da8fbb474527664fdbf08cc8f8abd5", size = 11598, upload-time = "2026-08-11T19:41:03.83Z" },
+    { url = "https://files.pythonhosted.org/packages/b9/b9/6faa6336f8fe8237585fb68485b2bd4e6a958ab024a3d2080c05699e230d/pyobjc_framework_screencapturekit-12.2.2-cp313-cp313-macosx_10_13_universal2.whl", hash = "sha256:63fffcebe5998fb05c924aacfdd481ae49bb79fde0242e99780d33869f047c58", size = 11620, upload-time = "2026-08-11T19:41:04.564Z" },
+    { url = "https://files.pythonhosted.org/packages/5a/fd/8524eed2eb852921e1e378e2963e5824bcf7b8022664deda869391fa197c/pyobjc_framework_screencapturekit-12.2.2-cp313-cp313t-macosx_10_13_universal2.whl", hash = "sha256:b5ae135d0ce93a70e32a5bb6a91b6fbaa3fbe159abd07e4c0eb8d8ce871ecffe", size = 11796, upload-time = "2026-08-11T19:41:05.286Z" },
 ]
 
 [[package]]
@@ -1407,6 +1449,18 @@ dependencies = [
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5c/64/927a4b9024196a4799eba0180e0ca31568426f258a4a5c90f87a97f51d28/pystray-0.19.5-py2.py3-none-any.whl", hash = "sha256:a0c2229d02cf87207297c22d86ffc57c86c227517b038c0d3c59df79295ac617", size = 49068, upload-time = "2023-09-17T13:44:26.872Z" },
+]
+
+[[package]]
+name = "python-dateutil"
+version = "4.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "tzdata" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/18/39/b3927f3616f6223832f9b760e4208e8a7c7e1dea2b4d9ad7d32a5d214c3a/python_dateutil-4.0.0.tar.gz", hash = "sha256:d7295ff14fdc0f92f662100bfb6c551d160ca090f2939f1ec5b9794265c03f06", size = 250419, upload-time = "2026-11-01T07:02:42.426Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2f/a9/52b89563d154433d79b51ed1eb4842bf7334cb2696891a7fe135618853d7/python_dateutil-4.0.0-py3-none-any.whl", hash = "sha256:a5e246f79eb80475e691bf93862cead98decd8a498cf53ba0516fcdc0f50dc1c", size = 92853, upload-time = "2026-11-01T07:02:40.797Z" },
 ]
 
 [[package]]
@@ -1483,6 +1537,20 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68a0e064b6af791aa332cf192da575fd474ed7d6f16a2/six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81", size = 34031, upload-time = "2024-12-04T17:35:28.174Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274", size = 11050, upload-time = "2024-12-04T17:35:26.475Z" },
+]
+
+[[package]]
+name = "soundcard"
+version = "0.4.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cffi" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f5/ef/85322a77399b19b23bd741ad57d86677687cdf9c9d9bc01997bc6bf9d30d/soundcard-0.4.6.tar.gz", hash = "sha256:9b46d64a26f97cd7d88bcfc385c97c069f97c5ec3404e4e7c23771598a8cf47b", size = 40830, upload-time = "2026-04-12T13:46:24.743Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4c/be/eb381e700a61b4ce899e14850d7ae78f9600fd2f8b58b4c52b8714e81917/soundcard-0.4.6-py3-none-any.whl", hash = "sha256:ab44b8c1033ac6ec49c5d618ce096dab9b60c7d7a427c92bef15856e5ebb3e09", size = 43939, upload-time = "2026-04-12T13:46:23.224Z" },
 ]
 
 [[package]]
@@ -1565,6 +1633,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f6/cc/6253133b5bb138fc3306cebfbda2c520f545d36b5be2c7255cc528bb45d6/typing_extensions-4.16.0.tar.gz", hash = "sha256:dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5", size = 113555, upload-time = "2026-07-02T08:40:05.92Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl", hash = "sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8", size = 45571, upload-time = "2026-07-02T08:40:04.659Z" },
+]
+
+[[package]]
+name = "tzdata"
+version = "2026.6"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7a/29/6a1391d31cd00ff9e927215a224a880e1e84e826b64ba80a499e51c074d8/tzdata-2026.6.tar.gz", hash = "sha256:85d2cd9c09f81f0bb29db27759fc83af4f1e620efb814f8c5bf8b4cc4feece6d", size = 201017, upload-time = "2026-10-28T09:57:09.137Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0a/66/9a06c2227fedfd4919f0eaaa8b94377d9730882a7e4f95823c9a331ab5e1/tzdata-2026.6-py2.py3-none-any.whl", hash = "sha256:0a10eec6e13ef16b627fabed9a5f2ba61a62b1c67f327305f4e7e412a70b4aec", size = 348210, upload-time = "2026-10-28T09:57:07.276Z" },
 ]
 
 [[package]]

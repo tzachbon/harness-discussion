@@ -18,10 +18,16 @@ dependencies = [
     "pyobjc-framework-applicationservices>=11; sys_platform == 'darwin'",
     "pyobjc-framework-avfoundation>=11; sys_platform == 'darwin'",
     "pyobjc-framework-cocoa>=11; sys_platform == 'darwin'",
+    "pyobjc-framework-coremedia>=12,<13; sys_platform == 'darwin'",
+    "pyobjc-framework-eventkit>=12,<13; sys_platform == 'darwin'",
     "pyobjc-framework-quartz>=11; sys_platform == 'darwin'",
+    "pyobjc-framework-screencapturekit>=12,<13; sys_platform == 'darwin'",
+    "python-dateutil>=2.9",
     "pystray>=0.19.5; sys_platform == 'win32'",
     "sounddevice>=0.5.6",
+    "soundcard==0.4.6; sys_platform == 'win32'",
     "truststore>=0.10",
+    "tzdata>=2025.2; sys_platform == 'win32'",
     "uiautomation>=2.0.29; sys_platform == 'win32'",
 ]
 

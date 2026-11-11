@@ -39,7 +39,9 @@ DEFAULTS = {"sources": [[n, True] for n in DEFAULT_SOURCES], "voices": {}, "spee
             "dictate_mode": "Clean dictation", "dictate_local_tidy": True, "dictate_microphone": "",
             "dictation_history": True, "dictation_learn": True, "dictation_words": [],
             # About you: a short note sent with every rewrite and summary prompt, with today's date
-            "about_me": "", "about_me_on": True, "about_me_uncapped": False}
+            "about_me": "", "about_me_on": True, "about_me_uncapped": False,
+            "meetings": False, "meeting_ask": True, "meeting_consent": False,
+            "meeting_ics_url": "", "meeting_eventkit": False}
 WRITER_SOURCES, STT_SOURCES = ("Cursor", "Codex", "Local"), ("Local", "Cursor", "Codex")
 SPEEDS = (0.5, 2.0)
 SPEED_PRESETS = (0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)  # the popup's speed menu
@@ -109,9 +111,12 @@ def load(path=PATH) -> dict:
     for key in ("hotkey", "rewrite_hotkey", "dictate_hotkey"):
         if s[key] != "" and not hotkeys.parse(s[key]):
             s[key] = DEFAULTS[key]
-    for key in ("writer", "live_check", "tour_done"):
+    for key in ("writer", "live_check", "tour_done", "meetings", "meeting_ask", "meeting_consent",
+                "meeting_eventkit"):
         if not isinstance(s[key], bool):
             s[key] = DEFAULTS[key]
+    if not isinstance(s["meeting_ics_url"], str) or len(s["meeting_ics_url"]) >= 2048:
+        s["meeting_ics_url"] = ""
     s["dictation_words"] = learning.normalize(s["dictation_words"])
     s["tour_steps"] = tour.clean(s["tour_steps"])
     if isinstance(saved, dict) and "writer_sources" not in saved:  # first run of the Writer: follow the voice order
