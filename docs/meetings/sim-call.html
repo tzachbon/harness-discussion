@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simulated Call</title>
+<style>
+  body { font: 16px system-ui, sans-serif; margin: 2rem; background: #fff; color: #111; }
+  button { font: inherit; padding: .5rem 1rem; margin-right: .5rem; }
+  #log { margin-top: 1rem; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>Simulated call</h1>
+<p>Start call holds the microphone (like a meeting app) and reads the "Them" lines through the speakers.
+Hang up releases the microphone. Serve it from localhost, not file://: run <code>uv run python -m http.server 8765 --bind 127.0.0.1 --directory docs/meetings</code> and open <code>http://127.0.0.1:8765/sim-call.html</code> in Chrome, Edge, or Safari.</p>
+<button id="start">Start call</button>
+<button id="hang" disabled>Hang up</button>
+<div id="state" role="status">Idle</div>
+<div id="log"></div>
+<script>
+// Fixed script, so the expected transcript is known. Them lines play at these seconds after Start call.
+const THEM = [
+  [10, "Thanks for joining. Let's decide the beta date today."],
+  [25, "Friday works for us if the tests pass on Thursday."],
+  [45, "Decision: we ship the beta on Friday."],
+  [60, "Action item: Dana sends the release note by Thursday."],
+  [80, "That's everything. Talk to you next week."],
+];
+let stream = null, timers = [];
+const $ = id => document.getElementById(id);
+const say = text => { speechSynthesis.speak(new SpeechSynthesisUtterance(text)); $("log").textContent += text + "\n"; };
+$("start").onclick = async () => {
+  stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  $("state").textContent = "In call (microphone held)";
+  $("start").disabled = true; $("hang").disabled = false;
+  timers = THEM.map(([s, text]) => setTimeout(() => say(text), s * 1000));
+};
+$("hang").onclick = () => {
+  timers.forEach(clearTimeout); speechSynthesis.cancel();
+  stream && stream.getTracks().forEach(t => t.stop()); stream = null;
+  $("state").textContent = "Hung up (microphone released)";
+  $("start").disabled = false; $("hang").disabled = true;
+};
+</script>
+</body>
+</html>
