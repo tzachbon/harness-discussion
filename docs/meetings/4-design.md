@@ -341,6 +341,9 @@ def open_notes(self, app, meeting_id=None)      # one window, focused if open
 def save_text(self, default_name: str, text: str) -> bool   # native save dialog
 def reveal(self, path) -> None                  # Explorer /select or NSWorkspace activateFileViewerSelectingURLs
 def screen_permission_guide(self)               # Mac: ScreenGuideWindow; Windows: no-op
+def meeting_toast_xy(self) -> tuple[int, int]  # top-left for the meeting toasts and pill: Windows bottom-right of the
+                                                # primary work area (SPI_GETWORKAREA minus toast size and a 12 px margin);
+                                                # Mac under the status item (its button window frame), else top-right of the main screen
 ```
 
 ### Settings keys
