@@ -86,6 +86,9 @@ class NotesTest(unittest.TestCase):
         self.assertEqual(list(w.list.get_children()), [self.second.id, self.first.id])
         self.assertEqual(w.title.cget("text"), "Weekly sync")
         self.assertIn("The team agreed", w.notes.get("1.0", "end"))
+        self.assertNotIn("##", w.notes.get("1.0", "end"))
+        self.assertIn("heading", w.notes.tag_names("1.0"))
+        self.assertFalse(w.event.winfo_manager())  # no calendar event: no empty gap
         self.assertIn("00:00  You  Hi everyone", w.transcript.get("1.0", "end"))
         w.copy_notes()
         self.assertIn("## Summary", self.app.host.copied)

@@ -58,16 +58,14 @@ class NotesWindow:
         self.title = tk.Label(detail, bg=CARD, anchor="w", font=("Segoe UI", 16, "bold"))
         self.title.pack(fill="x")
         self.event = tk.Label(detail, bg=CARD, fg=SUBTLE, anchor="w", font=("Segoe UI", 10))
-        self.event.pack(fill="x", pady=(4, 0))
         self.meta = tk.Label(detail, bg=CARD, fg=SUBTLE, anchor="w", font=("Segoe UI", 10))
         self.meta.pack(fill="x", pady=(4, 0))
-        state_row = tk.Frame(detail, bg=CARD)
-        state_row.pack(fill="x", pady=(6, 4))
+        self.state_row = state_row = tk.Frame(detail, bg=CARD)
         self.status = tk.Label(state_row, bg=CARD, fg=SUBTLE, anchor="w", font=("Segoe UI", 10))
         self.status.pack(side="left")
         self.retry = ttk.Button(state_row)
         self.tabs = ttk.Notebook(detail)
-        self.tabs.pack(fill="both", expand=True, pady=(6, 10))
+        self.tabs.pack(fill="both", expand=True, pady=(12, 10))
         self.notes = self._text(copy.NOTES)
         self.transcript = self._text(copy.TRANSCRIPT)
         self.notes.tag_configure("heading", font=("Segoe UI", 11, "bold"))
@@ -157,6 +155,7 @@ class NotesWindow:
     def _detail(self, m):
         self.title.configure(text=m.title if m else "")
         self.event.configure(text="")
+        self.event.pack_forget()
         self.meta.configure(text="")
         self.status.configure(text=_state(m, self.app) if m else "")
         self.retry.pack_forget()
@@ -164,6 +163,7 @@ class NotesWindow:
             if m.event:
                 start, end = _date(m.event['start']), _date(m.event['end'])
                 self.event.configure(text=f"📅 {m.event['title']} · {start:%a %d %b %Y, %H:%M}–{end:%H:%M}")
+                self.event.pack(fill="x", pady=(4, 0), after=self.title)
             start = _date(m.started_at)
             times = start.strftime("%H:%M") + ("–" + _date(m.ended_at).strftime("%H:%M") if m.ended_at else "")
             self.meta.configure(text=" · ".join(filter(None, (m.app, times, _length(m)))))
@@ -172,6 +172,10 @@ class NotesWindow:
                 self.retry.configure(text=copy.TRANSCRIBE_AGAIN if transcript else copy.MAKE_NOTES_AGAIN,
                                      command=lambda: self._retry(transcript))
                 self.retry.pack(side="left", padx=8)
+        if self.status.cget("text") or self.retry.winfo_manager():
+            self.state_row.pack(fill="x", pady=(6, 0), before=self.tabs)
+        else:
+            self.state_row.pack_forget()
         for button in (self.copy_button, self.export_button, self.folder_button):
             button.state(["!disabled"] if m else ["disabled"])
         busy = bool(m and (self.app.meeting_busy(m.id) or m.state not in ("done", "failed_transcript", "failed_notes")))
@@ -190,7 +194,8 @@ class NotesWindow:
         widget.configure(state="normal")
         widget.delete("1.0", "end")
         for line in text.splitlines(keepends=True):
-            widget.insert("end", line, "heading" if headings and line.startswith("#") else ())
+            heading = headings and line.startswith("#") and line.lstrip("#").startswith(" ")
+            widget.insert("end", line.lstrip("#").lstrip(" ") if heading else line, "heading" if heading else ())
         widget.configure(state="disabled")
 
     def _retry(self, transcript):
