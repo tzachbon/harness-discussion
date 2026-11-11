@@ -226,6 +226,7 @@ class Processor:
         while True:
             self._check()
             live = self.live()
+            work = []
             for track in ('you', 'them'):
                 path = meeting.folder / (track + '.wav')
                 if not path.exists():
@@ -236,14 +237,17 @@ class Processor:
                 chunks = chunker.feed(pcm)
                 if not live:
                     chunks += chunker.finish()
-                for begin, end in chunks:
-                    self._part(track, begin, end)
-                    if not live:
-                        meeting = meetings.load(self.id)
-                    if not live and meeting.state in ('recording', 'interrupted'):
-                        self._check()
-                        meeting.state = 'transcribing'
-                        meetings.save(meeting)
+                work += [(track, begin, end) for begin, end in chunks]
+            for done, (track, begin, end) in enumerate(work, 1):
+                self._part(track, begin, end)
+                if live:
+                    continue
+                self.post(('meeting_progress', self.id, done, len(work)))
+                meeting = meetings.load(self.id)
+                if meeting.state in ('recording', 'interrupted'):
+                    self._check()
+                    meeting.state = 'transcribing'
+                    meetings.save(meeting)
             if not live:
                 break
             self._cancel.wait(2)

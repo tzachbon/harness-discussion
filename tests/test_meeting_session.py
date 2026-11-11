@@ -258,6 +258,10 @@ class Tests(unittest.TestCase):
         self.assertEqual(m.state, 'done')
         for secret in ('Private title', 'https://private.invalid', 'secret transcript'):
             self.assertNotIn(secret, str(logs.output))
+        progress = [e[2:] for e in self.events if e[0] == 'meeting_progress']
+        total = progress[-1][1]
+        self.assertEqual(progress, [(n, total) for n in range(1, total + 1)])
+        self.assertEqual(total, len(calls) + sum(p.silent for p in meetings.parts(m.id)))
 
 
     def test_live_processor_preserves_stop_metadata(self):
