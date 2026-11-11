@@ -16,6 +16,7 @@ from .app_skip import Skips
 from .app_summarize import Summaries
 from .app_updates import Updates
 from .app_writer import Writer
+from .app_meetings import Meetings
 from .captions import Captions
 from .engines import causes as _causes
 from .sources import Sources
@@ -31,7 +32,7 @@ PIECE_CHARS = 5000
 FIRST_WORDS = 30
 
 
-class App(Captions, Sources, Updates, Summaries, Skips, Writer):
+class App(Captions, Sources, Updates, Summaries, Skips, Writer, Meetings):
     def __init__(self, host):
         self.host = host
         host.app = self
@@ -63,6 +64,7 @@ class App(Captions, Sources, Updates, Summaries, Skips, Writer):
             self.events.put(("settings", True))  # show new users where the app lives, with a welcome
         self._init_summaries()
         self._init_writer()
+        self._init_meetings()
         for key, value in self.cfg.items():
             self.apply(key, value)
         # hosts without in-place editing build the bar without the writing layout
@@ -88,6 +90,7 @@ class App(Captions, Sources, Updates, Summaries, Skips, Writer):
 
         self.host.start_trigger(self._selected, pressed)
         self.host.after(30_000, self._auto_update)
+        self._start_meetings()
         self.refresh_statuses()
 
     def apply(self, key, value):
@@ -403,6 +406,8 @@ class App(Captions, Sources, Updates, Summaries, Skips, Writer):
             self._summary_done(*args)
         elif kind in self.WRITER_EVENTS:
             getattr(self, self.WRITER_EVENTS[kind])(*args)
+        elif kind in self.MEETING_EVENTS:
+            getattr(self, self.MEETING_EVENTS[kind])(*args)
         elif kind == "call":
             args[0]()
         elif kind == "summarize_progress":
@@ -418,6 +423,7 @@ class App(Captions, Sources, Updates, Summaries, Skips, Writer):
         elif kind == "quit":
             self._closing = True
             self.stop()
+            self._close_meetings()
             self._close_summaries()
             self._close_writer()
             self._run_stt(False)

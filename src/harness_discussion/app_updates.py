@@ -100,8 +100,9 @@ class Updates:
         server = self.stt
         writing = getattr(self, "rewriting", False) or getattr(self, "_recorder", None)
         if (self._read_options or self.chain.busy or self._draining_stt or writing
+                or getattr(self, "meeting_busy", lambda: False)()
                 or (server and not server.busy.acquire(blocking=False))):
-            self._update_status("Update ready. Waiting for speech, transcription, and writing to finish…")
+            self._update_status("Update ready. Waiting for speech, transcription, writing, and meeting notes to finish…")
             self.host.after(1000, self._try_update)
             return
         try:
