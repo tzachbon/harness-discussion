@@ -253,6 +253,9 @@ class SourcesSettingsTest(unittest.TestCase):
         self.app = SimpleNamespace(
             cfg=dict(settings.DEFAULTS), statuses={"Cursor": "signed_out", "Codex": "missing"}, writer_ready=False,
             chain=SimpleNamespace(engines=engines), stt_error=None, check_update=lambda: None,
+            host=SimpleNamespace(calendar=lambda: SimpleNamespace(status=lambda: "not_determined"),
+                                 system_audio_status=lambda: "ready", screen_permission_guide=lambda: None),
+            _meeting_open=lambda: None, calendar_status="",
             update_state=lambda: ("", False), available_version=lambda: None,
             summarize_state=lambda: tuple(self.summary[:2]),
             summarize_action=lambda: self.summary.__setitem__(2, self.summary[2] + 1),
@@ -276,10 +279,11 @@ class SourcesSettingsTest(unittest.TestCase):
         self.assertEqual((self.rows["Codex"][2], self.rows["macOS"][2]), (None, None))
 
     def test_the_sidebar_shows_one_page_and_marks_voices_while_a_source_needs_a_sign_in(self):
-        self.assertEqual([p.isHidden() for p in self.win.pages], [False, True, True, True, True, True])
+        self.assertEqual([p.isHidden() for p in self.win.pages], [False, True, True, True, True, True, True])
         self.assertTrue(self.win.nav[0].title().endswith("●"))  # Cursor is signed out
-        self.win.nav[5].performClick_(None)
-        self.assertEqual([p.isHidden() for p in self.win.pages], [True, True, True, True, True, False])
+        self.assertEqual(self.win.page_list[5][0], "Meetings")
+        self.win.nav[6].performClick_(None)
+        self.assertEqual([p.isHidden() for p in self.win.pages], [True, True, True, True, True, True, False])
         self.app.statuses = {"Cursor": "ready", "Codex": "ready"}
         self.win.refresh_sources()
         self.assertFalse(self.win.nav[0].title().endswith("●"))
