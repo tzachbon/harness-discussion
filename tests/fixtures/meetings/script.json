@@ -1,0 +1,6 @@
+[
+  {"track":"you","at":0.5,"text":"Hi everyone, thanks for joining."},
+  {"track":"them","at":4.0,"text":"Thanks. Let's start with the beta date."},
+  {"track":"you","at":9.0,"text":"I think Friday works if QA signs off."},
+  {"track":"them","at":14.0,"text":"Agreed. Dana will send the release note by Thursday."}
+]
