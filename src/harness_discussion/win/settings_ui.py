@@ -17,12 +17,13 @@ from .summarize_page import SummarizePage
 from .history_section import HistorySection
 from .writing_page import WritingPage
 from .stt_page import build_page as stt_page
+from .meetings_page import MeetingsPage
 
 PAGE, BORDER, SUBTLE, SELECTED = "#f3f3f3", "#e5e5e5", "#5f5f5f", "#e6e6e6"
-PAGES = ("Voices", "Captions", "Reading", "Summarize", "Writing", "Dictation", "Speech to Text", "General")
+PAGES = ("Voices", "Captions", "Reading", "Summarize", "Writing", "Dictation", "Speech to Text", "Meetings", "General")
 
 
-class SettingsWindow(SourcesSection, SummarizePage, ShortcutRow, WritingPage, HistorySection, AboutSection):
+class SettingsWindow(SourcesSection, SummarizePage, ShortcutRow, WritingPage, HistorySection, AboutSection, MeetingsPage):
     def __init__(self, root, cfg, icon, on_change, on_test, stt_state=lambda: None,
                  update_state=lambda: ("Ready to check.", False), on_update=lambda: None, engines=(),
                  statuses=dict, on_play=lambda name: None, welcome=False, on_fix=lambda name: None, summarizer=None,
@@ -90,7 +91,7 @@ class SettingsWindow(SourcesSection, SummarizePage, ShortcutRow, WritingPage, Hi
         self.title = tk.Label(self.content, bg=PAGE, font=(text.replace("Text", "Display"), 20, "bold"), anchor="w")
         self.title.pack(fill="x", pady=(0, 8))
         self.pages = [tk.Frame(self.content, bg=PAGE) for _ in PAGES]
-        voices, captions, reading, summary, writing, dictation, stt, general = self.pages
+        voices, captions, reading, summary, writing, dictation, stt, meeting_page, general = self.pages
 
         card = self._card(voices, "Sources")
         self._sources_section(card, text, welcome)
@@ -184,6 +185,7 @@ class SettingsWindow(SourcesSection, SummarizePage, ShortcutRow, WritingPage, Hi
         self._dictation_page(dictation)
 
         stt_page(self, stt)
+        self._meetings_page(meeting_page, text, summarizer)
 
         w.protocol("WM_DELETE_WINDOW", self.close)
         self._fit_work_area(root)
@@ -198,6 +200,8 @@ class SettingsWindow(SourcesSection, SummarizePage, ShortcutRow, WritingPage, Hi
         self.title["text"] = PAGES[index]
         self._scroll_canvas.yview_moveto(0)
         self._refresh_nav()
+        if PAGES[index] == "Meetings":
+            self.refresh_meetings()
 
     def _refresh_nav(self):
         """The selected page is shaded and bold; Voices carries a dot while an enabled source needs a fix."""
@@ -335,6 +339,7 @@ class SettingsWindow(SourcesSection, SummarizePage, ShortcutRow, WritingPage, Hi
     def _flush_pending(self):
         self._about_changed()
         self._caption_font_changed()
+        self._meeting_url_changed()
         if self._save_job:
             self.win.after_cancel(self._save_job)
             self._save_pending()
