@@ -21,7 +21,7 @@ def _self_test():
     from ApplicationServices import AXIsProcessTrusted
 
     from .. import kokoro_tts
-    from . import (guide, host, pasteboard, permission, popup, practice_field, selection, settings_ui,  # noqa: F401
+    from . import (calendar, guide, host, mic_use, system_audio, pasteboard, permission, popup, practice_field, selection, settings_ui,  # noqa: F401
                    startup, tour, tour_steps, trigger, voice)
     kokoro_tts.self_test()
     AXIsProcessTrusted()
@@ -82,3 +82,7 @@ def main():
     except Exception:
         log.exception("crashed")
         raise
+
+
+if __name__ == "__main__":
+    main()

@@ -5,7 +5,7 @@ import AppKit
 import objc
 from Foundation import NSObject
 
-from .. import history, hotkeys, icons, settings, updates
+from .. import history, hotkeys, icons, meeting_copy, settings, updates
 from ..codex_rt import CodexEngine
 from ..cursor_tts import CursorEngine
 from ..kokoro_tts import KokoroEngine
@@ -51,10 +51,17 @@ class MacHost:
         self._mark = ui.pil_image(icons.menu_bar_image(36), 18)
         self.item = AppKit.NSStatusBar.systemStatusBar().statusItemWithLength_(
             AppKit.NSVariableStatusItemLength)
+        self._meeting_label = None
+        self._notes_window = None
+        self._screen_guide = None
         self.menu = AppKit.NSMenu.alloc().init()
         self.menu.setAutoenablesItems_(False)
         self.menu.setDelegate_(self.delegate)
         put = lambda *event: lambda _s: self.app.events.put(event)
+        self.meeting_status_item = self._add("", None)
+        self.meeting_action_item = self._add(meeting_copy.START_MEETING_NOTES, put("meeting_tray"))
+        self._add(meeting_copy.MEETING_NOTES_MENU, put("meeting_open"))
+        self.menu.addItem_(AppKit.NSMenuItem.separatorItem())
         self.status_item = self._add("", None)
         self.pause_item = self._add("Pause", lambda _s: self.app.popup.playing and self.app.popup._toggle())
         self.stop_item = self._add("Stop", lambda _s: self.app.popup.playing and self.app.popup._stop())
@@ -111,10 +118,17 @@ class MacHost:
     def refresh_menu(self):
         image = (ui.symbol("exclamationmark.triangle.fill", "Harness Discussion") if self._missing
                  else self._mark)
-        image.setTemplate_(not self._missing)
+        if self._meeting_label:
+            image = ui.pil_image(icons.recording_image(36), 18)
+        image.setTemplate_(not self._missing and not self._meeting_label)
         self.item.button().setImage_(image)
-        self.item.button().setToolTip_("Harness Discussion needs Accessibility permission" if self._missing
+        self.item.button().setToolTip_(meeting_copy.TRAY_TOOLTIP if self._meeting_label else
+                                       "Harness Discussion needs Accessibility permission" if self._missing
                                        else "Harness Discussion")
+        self.item.button().setAccessibilityLabel_(meeting_copy.RECORDING_ACCESSIBILITY if self._meeting_label else "Harness Discussion")
+        self.meeting_status_item.setHidden_(not self._meeting_label)
+        self.meeting_status_item.setTitle_(self._meeting_label or "")
+        self.meeting_action_item.setTitle_(meeting_copy.STOP_MEETING_NOTES if self._meeting_label else meeting_copy.START_MEETING_NOTES)
         self.permission_item.setHidden_(not self._missing)
         self.error_item.setHidden_(self._error is None)
         self.error_item.setTitle_(f"Last error: {self._error or ''}")
@@ -272,7 +286,7 @@ class MacHost:
         self._error = message[:80]
         self.refresh_menu()
 
-    def confirm(self, title, message, ok="Download"):
+    def confirm(self, title, message, ok="OK"):
         alert = AppKit.NSAlert.alloc().init()
         alert.setMessageText_(title)
         alert.setInformativeText_(message)
@@ -280,6 +294,68 @@ class MacHost:
         alert.addButtonWithTitle_("Cancel")
         self.ns.activateIgnoringOtherApps_(True)  # an accessory app's alert opens behind the active app otherwise
         return alert.runModal() == AppKit.NSAlertFirstButtonReturn
+
+    def meeting_toast_xy(self):
+        button = self.item.button()
+        window = button.window() if button else None
+        if window:
+            frame = window.frame()
+            return top_left(AppKit.NSMakePoint(frame.origin.x, frame.origin.y))
+        frame = AppKit.NSScreen.mainScreen().visibleFrame()
+        return top_left(AppKit.NSMakePoint(frame.origin.x + frame.size.width - 300, frame.origin.y + frame.size.height))
+
+    def mic_users(self):
+        from . import mic_use
+        return mic_use.users()
+
+    def system_audio(self, on_pcm, on_error):
+        from .system_audio import SystemAudio
+        return SystemAudio(on_pcm, on_error)
+
+    def system_audio_status(self):
+        import Quartz
+        return "ready" if Quartz.CGPreflightScreenCaptureAccess() else "needs_permission"
+
+    def screen_permission_guide(self):
+        from .guide import ScreenGuideWindow
+        if self._screen_guide and self._screen_guide.alive:
+            self._screen_guide.focus()
+        else:
+            self._screen_guide = ScreenGuideWindow()
+
+    def calendar(self):
+        from . import calendar
+        return calendar
+
+    def set_meeting_state(self, label):
+        was_recording = bool(self._meeting_label)
+        self._meeting_label = label
+        self.refresh_menu()
+        if was_recording != bool(label):
+            announcement = meeting_copy.RECORDING_STARTED if label else meeting_copy.RECORDING_STOPPED
+            AppKit.NSAccessibilityPostNotificationWithUserInfo(
+                self.item.button(), AppKit.NSAccessibilityAnnouncementRequestedNotification,
+                {AppKit.NSAccessibilityAnnouncementKey: announcement,
+                 AppKit.NSAccessibilityPriorityKey: AppKit.NSAccessibilityPriorityMedium})
+
+    def open_notes(self, app, meeting_id=None):
+        from .notes_window import NotesWindow
+        if self._notes_window and self._notes_window.alive:
+            self._notes_window.focus(meeting_id)
+        else:
+            self._notes_window = NotesWindow(app, meeting_id)
+
+    def save_text(self, default_name, text):
+        panel = AppKit.NSSavePanel.savePanel()
+        panel.setNameFieldStringValue_(default_name)
+        if panel.runModal() != AppKit.NSModalResponseOK:
+            return False
+        with open(panel.URL().path(), "w", encoding="utf-8") as output:
+            output.write(text)
+        return True
+
+    def reveal(self, path):
+        AppKit.NSWorkspace.sharedWorkspace().activateFileViewerSelectingURLs_([AppKit.NSURL.fileURLWithPath_(str(path))])
 
     def run(self, pump):
         def tick():
