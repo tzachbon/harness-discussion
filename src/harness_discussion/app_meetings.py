@@ -73,17 +73,19 @@ class Meetings:
 
     def _fetch_calendar(self):
         now = datetime.now().astimezone()
-        start, end = now - timedelta(hours=1), now + timedelta(hours=24)
+        start, end = now - timedelta(hours=1), now + timedelta(days=7)  # detection only uses events happening now
         result, status = [], copy.CALENDAR_NOT_SET
         try:
             url = self.cfg.get("meeting_ics_url", "")
             if url:
                 result.extend(calendar_ics.parse(calendar_ics.fetch(url), start, end))
-                status = copy.EVENTS_TODAY.format(n=sum(e.start.astimezone().date() == now.date() for e in result))
             cal = self.host.calendar()
             if cal and self.cfg.get("meeting_eventkit") and cal.status() == "allowed":
                 result.extend(cal.events(start, end))
-                status = copy.EVENTS_TODAY.format(n=sum(e.start.astimezone().date() == now.date() for e in result))
+            if url or result:
+                today = sum(e.start.astimezone().date() == now.date() for e in result)
+                status = (copy.EVENTS_TODAY.format(n=today) if today
+                          else copy.EVENTS_WEEK.format(n=len(result)))
         except Exception as exc:
             log.info("Meeting calendar failed: %s", type(exc).__name__)
             status = copy.CALENDAR_ERROR

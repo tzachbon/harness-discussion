@@ -329,6 +329,22 @@ class MeetingAppTest(unittest.TestCase):
         self.assertTrue(any("Notes ready:" in item[0] for item in self.app.meeting_toast.shown))
         self.assertIsNone(self.host.states[-1])
 
+    def test_calendar_status_counts_today_else_next_seven_days(self):
+        from datetime import datetime, timedelta
+        now = datetime.now().astimezone()
+        later = [meetings.Event("Planning", now + timedelta(days=d), now + timedelta(days=d, hours=1), "ics")
+                 for d in (2, 3)]
+        self.app.cfg["meeting_ics_url"] = "https://calendar.example/private.ics"
+        for found, expected in ((later, meeting_copy.EVENTS_WEEK.format(n=2)),
+                                ([*later, meetings.Event("Now", now, now + timedelta(hours=1), "ics")],
+                                 meeting_copy.EVENTS_TODAY.format(n=1))):
+            with patch("harness_discussion.app_meetings.calendar_ics.fetch", return_value="ics"), \
+                 patch("harness_discussion.app_meetings.calendar_ics.parse", return_value=found) as parse:
+                self.app._fetch_calendar()
+            self.assertGreaterEqual(parse.call_args.args[2] - now, timedelta(days=6))
+            kind, events, status = self.app.events.get_nowait()
+            self.assertEqual((kind, status), ("meeting_events", expected))
+
     def test_done_while_recording_notifies_instead_of_replacing_pill(self):
         m = meetings.new("Earlier sync", "", None, False)
         self.app._meeting_session = object()
