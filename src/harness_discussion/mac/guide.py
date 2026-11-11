@@ -65,3 +65,39 @@ class GuideWindow:
         self.status.setStringValue_("Permission granted")
         self.status.setTextColor_(AppKit.NSColor.systemGreenColor())
         self.after(1000, self.win.close)
+
+
+class ScreenGuideWindow:
+    def __init__(self):
+        import Quartz
+        from .. import meeting_copy as copy
+        self.spinner = AppKit.NSProgressIndicator.alloc().init()
+        self.spinner.setStyle_(AppKit.NSProgressIndicatorStyleSpinning)
+        self.spinner.startAnimation_(None)
+        self.status = ui.label(copy.WAITING_PERMISSION, 12, secondary=True)
+        def open_settings():
+            AppKit.NSWorkspace.sharedWorkspace().openURL_(AppKit.NSURL.URLWithString_(
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"))
+        content = ui.stack([
+            ui.label(copy.GUIDE_HEADING, 15, bold=True, width=WIDTH),
+            ui.label(copy.GUIDE_BODY, 12, secondary=True, width=WIDTH),
+            ui.stack([ui.label(f"{i}. {step}", 13, width=WIDTH) for i, step in enumerate(copy.GUIDE_STEPS, 1)], spacing=6),
+            ui.stack([ui.button(copy.OPEN_SYSTEM_SETTINGS, open_settings, primary=True), self.spinner, self.status],
+                     vertical=False, spacing=10),
+        ], spacing=14, inset=22)
+        self.win = ui.window(copy.GUIDE_TITLE, content)
+        def check():
+            if not self.alive:
+                self.timer.invalidate()
+            elif Quartz.CGPreflightScreenCaptureAccess():
+                self.timer.invalidate()
+                self.win.close()
+        self.timer = ui.timer(1, check, repeats=True)
+        ui.show(self.win)
+
+    @property
+    def alive(self):
+        return self.win.isVisible()
+
+    def focus(self):
+        ui.show(self.win)
