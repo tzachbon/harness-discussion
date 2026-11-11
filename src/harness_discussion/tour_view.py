@@ -3,7 +3,7 @@ and never decide copy."""
 from . import hotkeys, sources, tour, tour_copy, writer
 from .settings import status_text
 
-DONE_LABELS = ("Voice", "Read", "Rewrite", "Review", "Dictation", "Check as I type", "About you")
+DONE_LABELS = ("Voice", "Read", "Rewrite", "Review", "Dictation", "Check as I type", "Meeting notes", "About you")
 WRITER_FIX = {"Cursor": "Sign in to Cursor", "Codex": "Sign in to Codex", "Local": "Download Local…"}
 
 
@@ -170,6 +170,16 @@ def _live(v, s, tried):
                              "Turn it off in Settings → Writing."}
 
 
+def _meetings(v, s, tried):
+    enabled = s.cfg.get("meetings", False)
+    v["rows"].append(_row("Asks when Zoom, Teams, Meet, or a browser uses the microphone.",
+                          actions=[] if enabled else [("Turn on Meeting notes", ("meetings", None))],
+                          pill="✓ Meeting notes is on" if enabled else None, ok=enabled))
+    if s.mac and getattr(s, "system_audio_status", None) == "needs_permission":
+        v["rows"].append(_row("System audio permission", actions=[("Allow system audio", ("system_audio", None))]))
+    v["ready"] = enabled
+
+
 def _about(v, s, tried):
     v["box"] = {"text": s.cfg.get("about_me", ""), "select": "end"}
     if tried:
@@ -193,4 +203,4 @@ def _done(s):
 
 
 _STEPS = {"welcome": _welcome, "voice": _voice, "read": _read, "rewrite": _rewrite, "review": _review,
-          "dictate": _dictate, "live": _live, "about": _about}
+          "dictate": _dictate, "live": _live, "meetings": _meetings, "about": _about}

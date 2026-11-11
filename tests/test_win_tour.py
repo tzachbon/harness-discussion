@@ -14,7 +14,7 @@ from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import Mock, call, patch
 
-from harness_discussion import hotkeys, settings, tour_copy, tour_view, writer_settings
+from harness_discussion import hotkeys, settings, tour as tour_model, tour_copy, tour_view, writer_settings
 from harness_discussion.win import host, practice_field, tour, tour_steps
 from tests.test_win_writer_ui import click, labels
 
@@ -26,7 +26,7 @@ def state(cfg, **kw):
     return SimpleNamespace(**{**s, **kw})
 
 
-READ, REWRITE, DICTATE, LIVE, DONE = 2, 3, 5, 6, 8
+READ, REWRITE, DICTATE, LIVE, DONE = 2, 3, 5, 6, len(tour_model.STEPS)
 
 
 class TourBase(unittest.TestCase):
@@ -190,7 +190,7 @@ class Frame(TourBase):
         rows = ["Welcome", "Voice", "Read", "Rewrite", "Review", "Dictation", "Check as I type", "About you"]
         self.assertEqual([t for t in texts if t.removeprefix("✓ ").removesuffix(" – skipped") in rows],
                          ["✓ Welcome"] + [f"{r} – skipped" for r in rows[1:]])
-        self.assertEqual(texts.count("Try now"), 7)
+        self.assertEqual(texts.count("Try now"), len(tour_model.STEPS) - 1)
         self.assertIn(tour_copy.MORE, texts)
         self.assertEqual(set(self.w.shortcuts), set(hotkeys.SHORTCUTS))
         click(self.root, self.w.win, "Try now")

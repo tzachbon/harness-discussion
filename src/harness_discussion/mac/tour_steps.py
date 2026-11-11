@@ -18,6 +18,7 @@ PRIMARY, SUCCESS, WARNING = (0x0a, 0x84, 0xff), (0x30, 0xd1, 0x58), (0xff, 0x9f,
 TILES = {"welcome": ("speaker.wave.2.fill", (0x5e, 0x5c, 0xe6)), "voice": ("waveform", (0xbf, 0x5a, 0xf2)),
          "read": ("play.fill", PRIMARY), "rewrite": ("pencil", WARNING), "review": ("plusminus", SUCCESS),
          "dictate": ("mic.fill", (0xff, 0x37, 0x5f)), "live": ("checkmark", (0x64, 0xd2, 0xff)),
+         "meetings": ("person.2.wave.2.fill", SUCCESS),
          "about": ("person.fill", (0x8e, 0x8e, 0x93))}
 DOTS = {"tried": ("●", SUCCESS), "skipped": ("●", FAINT), "now": ("▬", FG)}  # anything else: not reached
 

@@ -4,9 +4,9 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from harness_discussion import hotkeys, live, settings, tour, tour_copy, tour_view
+from harness_discussion import app_tour, hotkeys, live, settings, tour, tour_copy, tour_view
 from harness_discussion import writer_settings as ws
 
 
@@ -27,7 +27,12 @@ class ProgressTest(unittest.TestCase):
     def test_resume(self):
         self.assertEqual(tour.resume_at({}), 0)
         self.assertEqual(tour.resume_at({"welcome": "tried", "voice": "skipped"}), 2)
-        self.assertEqual(tour.resume_at({s: "tried" for s in tour.STEPS}), 8)
+        self.assertEqual(tour.resume_at({s: "tried" for s in tour.STEPS}), len(tour.STEPS))
+
+    def test_old_progress_resumes_at_missing_step(self):
+        old = ("welcome", "voice", "read", "rewrite", "review", "dictate", "live", "about")
+        self.assertEqual(tour.STEPS[tour.resume_at({s: "tried" for s in old})], "meetings")
+        self.assertEqual(tour.STEPS[tour.resume_at({s: "tried" for s in old[:-2]})], "live")
 
     def test_mark_keeps_a_tried_step(self):
         self.assertEqual(tour.mark({"read": "tried"}, "read", "skipped")["read"], "tried")
@@ -85,6 +90,18 @@ class ViewTest(unittest.TestCase):
         p = patch.object(hotkeys.sys, "platform", "darwin")
         p.start()
         self.addCleanup(p.stop)
+
+    def test_meetings_step_follows_enabled_state_and_permission(self):
+        i = tour.STEPS.index("meetings")
+        self.assertEqual(tour.STEPS[i + 1], "about")
+        v = tour_view.view(i, state(mac=False))
+        self.assertIsNone(v["box"])
+        self.assertEqual(v["rows"][0]["actions"], [("Turn on Meeting notes", ("meetings", None))])
+        self.assertFalse(v["ready"])
+        v = tour_view.view(i, state(cfg=dict(settings.DEFAULTS, meetings=True), system_audio_status="needs_permission"))
+        self.assertTrue(v["ready"])
+        self.assertEqual(v["rows"][0]["pill"], "✓ Meeting notes is on")
+        self.assertEqual(v["rows"][1]["actions"], [("Allow system audio", ("system_audio", None))])
 
     def test_windows_welcome_has_no_card_and_next_is_primary(self):
         v = tour_view.view(0, state(mac=False))
@@ -195,7 +212,7 @@ class ViewTest(unittest.TestCase):
         self.assertEqual(tour_view.view(2, state())["shortcuts"], [("hotkey", None)])
         self.assertEqual(tour_view.view(3, state())["shortcuts"], [("rewrite_hotkey", None)])
         self.assertEqual(tour_view.view(5, state())["shortcuts"], [("dictate_hotkey", None)])
-        self.assertEqual(tour_view.view(8, state())["shortcuts"],
+        self.assertEqual(tour_view.view(len(tour.STEPS), state())["shortcuts"],
                          [("hotkey", None), ("rewrite_hotkey", "press twice to pick a mode"), ("dictate_hotkey", None)])
         for i in (0, 1, 4, 6, 7):
             self.assertEqual(tour_view.view(i, state())["shortcuts"], [])
@@ -239,8 +256,8 @@ class ViewTest(unittest.TestCase):
         self.assertEqual(tour_view.view(3, s)["box"], {"text": tour_copy.REWRITE, "select": "all"})
         self.assertEqual(tour_view.view(5, s)["box"], {"text": "", "select": None})
         self.assertEqual(tour_view.view(6, s)["box"], {"text": tour_copy.LIVE, "select": "end"})
-        self.assertEqual(tour_view.view(7, s)["box"], {"text": "", "select": "end"})  # About you: the saved note
-        self.assertIsNone(tour_view.view(8, s)["box"])
+        self.assertEqual(tour_view.view(tour.STEPS.index("about"), s)["box"], {"text": "", "select": "end"})  # About you: the saved note
+        self.assertIsNone(tour_view.view(len(tour.STEPS), s)["box"])
         self.assertEqual(tour_view.view(5, s)["quote"], tour_copy.SAY)
 
     def test_the_dictation_step_needs_access_on_a_mac(self):
@@ -251,8 +268,8 @@ class ViewTest(unittest.TestCase):
     def test_dots_and_the_step_number(self):
         s = state(progress={"welcome": "tried", "voice": "skipped"})
         v = tour_view.view(2, s)
-        self.assertEqual((v["index"], v["count"], v["step"]), (2, 8, "read"))
-        self.assertEqual(v["dots"], ["tried", "skipped", "now", "", "", "", "", ""])
+        self.assertEqual((v["index"], v["count"], v["step"]), (2, len(tour.STEPS), "read"))
+        self.assertEqual(v["dots"], ["tried", "skipped", "now"] + [""] * (len(tour.STEPS) - 3))
 
     def test_next_is_primary_only_for_a_tried_step(self):
         s = state()
@@ -263,15 +280,36 @@ class ViewTest(unittest.TestCase):
     def test_the_done_screen_lists_the_steps_and_the_skipped_one(self):
         progress = {s: "tried" for s in tour.STEPS if s != "live"}
         progress["live"] = "skipped"
-        v = tour_view.view(8, state(progress=progress))
-        self.assertEqual(v["title"], "You're set: 7 of 8 tried")
+        v = tour_view.view(len(tour.STEPS), state(progress=progress))
+        self.assertEqual(v["title"], f"You're set: {len(tour.STEPS) - 1} of {len(tour.STEPS)} tried")
         labels = [(label, tried, step) for label, tried, step in v["done"]["rows"]]
         self.assertIn(("Check as I type", False, "live"), labels)
         self.assertIn(("Voice", True, "voice"), labels)
         self.assertEqual(labels[0][0], "Allow access")
-        self.assertEqual(tour_view.view(8, state(mac=False, progress=progress))["done"]["rows"][0][0], "Welcome")
+        self.assertEqual(tour_view.view(len(tour.STEPS), state(mac=False, progress=progress))["done"]["rows"][0][0], "Welcome")
         self.assertIn("Summarize on the bar", v["done"]["more"])
         self.assertIsNone(v["status"])
+
+
+class MeetingActionTest(unittest.TestCase):
+    def test_enable_uses_app_consent_path_and_refreshes(self):
+        app = SimpleNamespace(set_meetings=Mock(return_value=False), _tour_refresh=Mock())
+        app_tour.Tour.tour_action(app, "meetings")
+        app.set_meetings.assert_called_once_with(True)
+        app._tour_refresh.assert_called_once_with()
+
+    def test_next_marks_enabled_or_skipped(self):
+        for enabled, expected in ((True, None), (False, tour.SKIPPED)):
+            app = SimpleNamespace(tour_save_about=Mock(), tour_step=lambda: "meetings",
+                                  cfg={"meetings": enabled, "tour_steps": {}}, tour_mark=Mock(),
+                                  _tour_back_to_done=False, _tour_index=tour.STEPS.index("meetings"),
+                                  tour_go=Mock())
+            app_tour.Tour.tour_next(app)
+            if enabled:
+                app.tour_mark.assert_called_once_with("meetings")
+            else:
+                app.tour_mark.assert_called_once_with("meetings", expected)
+            app.tour_go.assert_called_once_with(tour.STEPS.index("about"))
 
 
 class LiveConfirmTextTest(unittest.TestCase):

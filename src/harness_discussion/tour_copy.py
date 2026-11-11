@@ -39,6 +39,11 @@ COPY = {
              "Click at the end of the line, type a space, and pause. Click the underline, or press {rewrite} "
              "to apply them all.",
              "Click at the end of the line, type a space, and pause. Click the underline to apply it."),
+    "meetings": ("Notes for your calls",
+                 "Turn on Meeting notes and the app asks when a call starts. It records you and the call, then "
+                 "writes a summary, decisions, and action items. It saves them on this computer until you delete "
+                 "them. Transcripts and notes use your Dictation and Writing sources; only Local keeps them on "
+                 "this computer. Tell the others before you record. Use headphones to prevent speaker echo.", None),
     "about": ("Tell the writing tools about you",
               "A line or two:\n• Who you are and what you do\n• Your working days and hours\n"
               "• How you like to write\nThe date and time zone are added for you.", None),

@@ -91,6 +91,8 @@ class Tour:
         step = self.tour_step()
         if step == "welcome" and not self._mac():
             self.tour_mark("welcome")
+        elif step == "meetings" and self.cfg.get("meetings"):
+            self.tour_mark(step)
         elif step and self.cfg["tour_steps"].get(step) != tour.TRIED:
             self.tour_mark(step, tour.SKIPPED)  # Next before success counts as Skip
         back, self._tour_back_to_done = self._tour_back_to_done, False
@@ -199,6 +201,8 @@ class Tour:
                                writer_source=self.tour_writer_source(), stt_source=self.tour_stt_source(),
                                has_practice_edit=self._last_edit is not None
                                and isinstance(self._last_edit[0], practice.PracticeCtx),
+                               system_audio_status=(self.host.system_audio_status()
+                                                    if self._mac() and self.tour_step() == "meetings" else None),
                                review_text=self._review_text,
                                sample_used=self._sample_used)
 
@@ -234,6 +238,11 @@ class Tour:
             if self.sandboxed("writer") or not self.cfg["writer"]:
                 self.change("writer", True)  # the OS view has already confirmed; live_check comes with writer
             self.change("live_check", True)
+        elif name == "meetings":
+            self.set_meetings(True)
+            self._tour_refresh()
+        elif name == "system_audio":
+            self.host.screen_permission_guide()
         elif name == "shortcut":
             self.tour_shortcut(*arg)
         elif name == "start_over":
