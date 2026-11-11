@@ -106,9 +106,9 @@ def page_image(name, size=20):
                                                           (0, r), (-r * 0.28, r * 0.28), (-r, 0),
                                                           (-r * 0.28, -r * 0.28))], fill="white")
     elif name == "Meetings":
-        for x in (21, 43):
-            d.ellipse(g(x - 7, 13, x + 7, 27), fill="white")
-            d.rounded_rectangle(g(x - 10, 31, x + 10, 50), radius=9 * k, fill="white")
+        # a person: head over rounded shoulders, legible at 20 px where two figures blur into dots
+        d.ellipse(g(23, 12, 41, 30), fill="white")
+        d.chord(g(13, 33, 51, 71), 180, 360, fill="white")
     elif name == "Speech to Text":  # a microphone
         d.rounded_rectangle(g(24, 10, 40, 38), radius=8 * k, fill="white")
         d.arc(g(16, 22, 48, 46), 0, 180, fill="white", width=w)

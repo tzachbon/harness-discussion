@@ -278,8 +278,8 @@ works with `meetings` False (consent first); logs never contain the script text.
 **Writes:** `src/harness_discussion/win/toast.py`, `src/harness_discussion/mac/toast.py`, `src/harness_discussion/icons.py`,
 `tests/test_meeting_icons.py`.
 `Toast.show(..., hide_s=None)` overrides the 6 s auto-hide for that show only. `icons.recording_image(size)` = the app
-icon with a red dot at top right (like `badged`, color `#e81123`). `icons.page_image("Meetings")` glyph: two white
-heads and shoulders on `#16a34a`.
+icon with a red dot at top right (like `badged`, color `#e81123`). `icons.page_image("Meetings")` glyph: one white
+head and shoulders (two figures blur at 20 px) on `#16a34a`.
 **DoD:** `uv run python -m unittest tests.test_meeting_icons tests.test_win_toast_wave tests.test_mac_popup` passes
 (image sizes, the red pixel present; toast tests skip off their platform).
 
