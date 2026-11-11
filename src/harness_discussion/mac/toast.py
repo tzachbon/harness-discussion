@@ -103,10 +103,11 @@ class Toast:
     def message(self):
         return str(self.label.stringValue())
 
-    def show(self, message, x, y, actions=(), busy=False, above=None):
+    def show(self, message, x, y, actions=(), busy=False, above=None, hide_s=None):
         """actions: (title, fn) for a button, or (title, [(title, fn, checked)]) for a menu button.
         x, y: the top-left point to show it at. A busy toast spins and stays until replaced.
         above: the top of the bar it sits under, to go above the bar instead when there is no room under it."""
+        self._hide_s = hide_s
         for view in self.actions:
             self.row.removeArrangedSubview_(view)
             view.removeFromSuperview()
@@ -177,7 +178,7 @@ class Toast:
     def schedule_hide(self):
         self.cancel_hide()
         if self.visible and not self.menu_open and not self._busy:
-            self._timer = ui.timer(HIDE_S, self.hide)
+            self._timer = ui.timer(HIDE_S if self._hide_s is None else self._hide_s, self.hide)
 
     def cancel_hide(self):
         if self._timer:

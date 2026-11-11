@@ -72,8 +72,9 @@ class Toast:
         w.bind("<Enter>", self._enter)
         w.bind("<Leave>", self._leave)
 
-    def show(self, message, x=None, y=None, actions=None, busy=False, above=None):
+    def show(self, message, x=None, y=None, actions=None, busy=False, above=None, hide_s=None):
         """Show at (x, y), or the pointer. Shared actions are (title, fn) or (title, [(title, fn, checked)])."""
+        self._hide_ms = None if hide_s is None else round(hide_s * 1000)
         self._close_menu()
         self._clear_shared_actions()
         self.meter.pack_forget()
@@ -234,7 +235,7 @@ class Toast:
     def _schedule_hide(self):
         self._cancel_hide()
         if not self._hovered and not self._busy and not self._menu_open and self.visible:
-            self._hide_job = self.win.after(HIDE_MS, self._hide_timeout)
+            self._hide_job = self.win.after(HIDE_MS if self._hide_ms is None else self._hide_ms, self._hide_timeout)
 
     def _hide_timeout(self):
         self._hide_job = None

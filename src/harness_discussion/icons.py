@@ -80,7 +80,7 @@ def menu_bar_image(size=36):
     return img.resize((size, size), Image.LANCZOS)
 
 
-PAGE_COLORS = {"Voices": "#8e5cf0", "Captions": "#14a3a3", "Reading": "#2f7ff2", "Summarize": "#e8467c",
+PAGE_COLORS = {"Voices": "#8e5cf0", "Captions": "#14a3a3", "Reading": "#2f7ff2", "Summarize": "#e8467c", "Meetings": "#16a34a",
                "Speech to Text": "#f08a24", "General": "#7a7f8a"}
 
 
@@ -105,6 +105,10 @@ def page_image(name, size=20):
             d.polygon([g(cx + dx, cy + dy) for dx, dy in ((0, -r), (r * 0.28, -r * 0.28), (r, 0), (r * 0.28, r * 0.28),
                                                           (0, r), (-r * 0.28, r * 0.28), (-r, 0),
                                                           (-r * 0.28, -r * 0.28))], fill="white")
+    elif name == "Meetings":
+        for x in (21, 43):
+            d.ellipse(g(x - 7, 13, x + 7, 27), fill="white")
+            d.rounded_rectangle(g(x - 10, 31, x + 10, 50), radius=9 * k, fill="white")
     elif name == "Speech to Text":  # a microphone
         d.rounded_rectangle(g(24, 10, 40, 38), radius=8 * k, fill="white")
         d.arc(g(16, 22, 48, 46), 0, 180, fill="white", width=w)
@@ -124,4 +128,11 @@ def badged(image):
     image = image.copy()
     size = image.width
     ImageDraw.Draw(image).ellipse((size * 0.62, 0, size - 1, size * 0.38), fill="#f7630c", outline="white")
+    return image
+
+
+def recording_image(size):
+    """The app icon with a red recording indicator."""
+    image = icon_image(size)
+    ImageDraw.Draw(image).ellipse((size * 0.62, 0, size - 1, size * 0.38), fill="#e81123", outline="white")
     return image
