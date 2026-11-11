@@ -58,13 +58,13 @@ class MacHost:
         self.menu.setAutoenablesItems_(False)
         self.menu.setDelegate_(self.delegate)
         put = lambda *event: lambda _s: self.app.events.put(event)
+        self.status_item = self._add("", None)
+        self.pause_item = self._add("Pause", lambda _s: self.app.popup.playing and self.app.popup._toggle())
+        self.stop_item = self._add("Stop", lambda _s: self.app.popup.playing and self.app.popup._stop())
         self.meeting_status_item = self._add("", None)
         self.meeting_action_item = self._add(meeting_copy.START_MEETING_NOTES, put("meeting_tray"))
         self._add(meeting_copy.MEETING_NOTES_MENU, put("meeting_open"))
         self.menu.addItem_(AppKit.NSMenuItem.separatorItem())
-        self.status_item = self._add("", None)
-        self.pause_item = self._add("Pause", lambda _s: self.app.popup.playing and self.app.popup._toggle())
-        self.stop_item = self._add("Stop", lambda _s: self.app.popup.playing and self.app.popup._stop())
         self.menu.addItem_(AppKit.NSMenuItem.separatorItem())
         self.speed_menu = self._submenu("Speed")
         self.source_menu = self._submenu("Voice Source")
@@ -330,6 +330,12 @@ class MacHost:
     def set_meeting_state(self, label):
         was_recording = bool(self._meeting_label)
         self._meeting_label = label
+        if was_recording != bool(label):
+            items = (self.status_item, self.pause_item, self.stop_item)
+            for item in items:
+                self.menu.removeItem_(item)
+            for index, item in enumerate(items, 4 if label else 0):
+                self.menu.insertItem_atIndex_(item, index)
         self.refresh_menu()
         if was_recording != bool(label):
             announcement = meeting_copy.RECORDING_STARTED if label else meeting_copy.RECORDING_STOPPED

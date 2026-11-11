@@ -39,9 +39,9 @@ class WritingSettingsTest(unittest.TestCase):
 
     def test_writing_and_dictation_follow_summarize(self):
         self.assertEqual([t for t, _, _ in self.win.page_list][3:6], ["Summarize", "Writing", "Dictation"])
-        self.assertEqual(len(self.win.pages), 8)
+        self.assertEqual(len(self.win.pages), 9)
         self.win.nav[7].performClick_(None)
-        self.assertEqual([p.isHidden() for p in self.win.pages], [True] * 7 + [False])
+        self.assertEqual([p.isHidden() for p in self.win.pages], [True] * 7 + [False, True])
 
     def test_writer_rows_show_status_fix_and_order(self):
         rows = self.win.writer_rows
