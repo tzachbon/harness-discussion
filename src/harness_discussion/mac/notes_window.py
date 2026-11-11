@@ -44,7 +44,8 @@ class _Table(NSObject):
         m = self.owner.items[row]
         start, _, length = _dates(m)
         glyph = {'recording': '●', 'done': '✓', 'failed_transcript': '!', 'failed_notes': '!'}.get(m.state, '◷')
-        return f"{glyph}  {m.title}\n{start:%d %b %Y %H:%M} · {length} · {m.state.replace('_', ' ')}"
+        state = '' if m.state == 'done' else ' · ' + m.state.replace('_', ' ')  # the ✓ glyph already says done
+        return f"{glyph}  {m.title}\n{start:%a %d %b %H:%M} · {length}{state}"
 
     def tableViewSelectionDidChange_(self, notification):
         row = self.owner.table.selectedRow()
