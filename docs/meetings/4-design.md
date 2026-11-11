@@ -389,8 +389,9 @@ extraction from `docs/meetings/spikes/sck_audio.py`. `didStopWithError` calls `o
 `Quartz.CGPreflightScreenCaptureAccess()`; `request()` is `Quartz.CGRequestScreenCaptureAccess()`.
 
 Mac `mac/calendar.py` (spike passed): `EKEventStore.alloc().init()`, status from
-`EKEventStore.authorizationStatusForEntityType_(EKEntityTypeEvent)` mapped to `allowed` (3 full access, or 1 on
-macOS 13's authorized), `not_determined` (0), `denied`, `restricted`. Request with
+`EKEventStore.authorizationStatusForEntityType_(EKEntityTypeEvent)` mapped as EKAuthorizationStatus defines it on
+every macOS version: 0 `not_determined`, 1 `restricted`, 2 `denied`, 3 `allowed` (macOS 14+ fullAccess, macOS 13
+`authorized`, same value), 4 write-only counts as `denied` (events cannot be read). Verified: status 3 on macOS 26. Request with
 `requestFullAccessToEventsWithCompletion_` when present, else `requestAccessToEntityType_completion_`. Events from
 `predicateForEventsWithStartDate_endDate_calendars_(start, end, None)`, skipping `isAllDay()`.
 
